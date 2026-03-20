@@ -176,8 +176,6 @@ function renderRunningUpdate() {
   sel.addEventListener('change', renderRunningUpdate);
 })();
 
-renderRunningUpdate();
-
 var fteChart, netChart;
 
 function render() {
@@ -322,7 +320,38 @@ function render() {
 
 document.getElementById('periodCount').addEventListener('change', render);
 document.getElementById('groupBy').addEventListener('change', render);
-render();
+
+// === LIVE DATA LOADING (auto-refresh every 5 minutes) ===
+var REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
+var refreshTimer = null;
+
+function loadLiveData() {
+  fetch('/api/tickets')
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.error) {
+        document.getElementById('loadingOverlay').innerHTML = '<div style="color:#dc2626;">Error: ' + data.error + '<br><small>Retrying in 30 seconds...</small></div>';
+        setTimeout(loadLiveData, 30000);
+        return;
+      }
+      RAW_DATA = data.raw;
+      OFFBOARD_DATA = data.offboard;
+      document.getElementById('timestampLine').textContent = 'Data last extracted: ' + data.timestamp + ' | ' + data.counts.created + ' created, ' + data.counts.offboarded + ' offboarded tickets (auto-refreshes every 5 min)';
+      document.getElementById('loadingOverlay').style.display = 'none';
+      document.getElementById('liveContent').style.display = 'block';
+      renderRunningUpdate();
+      render();
+      // Schedule next refresh
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(loadLiveData, REFRESH_INTERVAL);
+    })
+    .catch(function(err) {
+      document.getElementById('loadingOverlay').innerHTML = '<div style="color:#dc2626;">Failed to load data: ' + err.message + '<br><small>Retrying in 30 seconds...</small></div>';
+      setTimeout(loadLiveData, 30000);
+    });
+}
+
+loadLiveData();
 
 // === TAB SWITCHING ===
 function switchTab(tab) {
