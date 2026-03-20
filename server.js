@@ -3,7 +3,7 @@ const express = require('express');
 const path = require('path');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const HUBSPOT_KEY = process.env.HUBSPOT_TOKEN;
 const HUBSPOT_API = 'https://api.hubapi.com/crm/v3/objects/tickets/search';
 const PIPELINES = ['4483329', '3857063', '20565603'];
