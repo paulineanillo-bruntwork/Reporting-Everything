@@ -7,135 +7,485 @@
 <title>FTE Hires Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
+  :root {
+    --bg: #f4f6fb;
+    --surface: #ffffff;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --text-muted: #64748b;
+    --text-faint: #94a3b8;
+    --blue: #2563eb;
+    --blue-light: #dbeafe;
+    --blue-dark: #1e40af;
+    --green: #059669;
+    --green-light: #d1fae5;
+    --red: #dc2626;
+    --red-light: #fee2e2;
+    --yellow-light: #fef9c3;
+    --radius: 16px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-lg: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  }
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a2e; padding: 24px; }
-  h1 { font-size: 24px; margin-bottom: 4px; }
-  .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
-  .card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-  .card .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; margin-bottom: 4px; }
-  .card .value { font-size: 28px; font-weight: 700; }
-  .card.onboard .value { color: #2563eb; }
-  .card.offboard .value { color: #dc2626; }
-  .card.net .value { color: #059669; }
-  .chart-container { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 24px; }
-  .chart-container h2 { font-size: 16px; margin-bottom: 16px; }
-  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-  th { background: #f8f9fa; text-align: left; padding: 12px 16px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #666; border-bottom: 2px solid #e9ecef; }
-  td { padding: 10px 16px; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
-  tr:hover td { background: #f8f9fa; }
-  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
-  .tag-onboard { background: #dbeafe; color: #1d4ed8; }
-  .tag-offboard { background: #fee2e2; color: #dc2626; }
-  .week-current { font-weight: 600; background: #fffbeb; }
-  .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 24px; flex-wrap: wrap; }
-  .controls label { font-size: 13px; color: #666; }
-  .controls select { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
-  .weight-legend { background: #fff; border-radius: 12px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 24px; font-size: 13px; }
-  .weight-legend span { margin-right: 20px; }
-  .weight-legend strong { color: #1a1a2e; }
-  .running-update { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 24px; }
-  .running-update h2 { font-size: 18px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; }
-  .running-update select { padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
-  .ru-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-  .ru-table th, .ru-table td { padding: 8px 16px; border: 1px solid #e5e7eb; text-align: center; font-size: 14px; }
-  .ru-table th { background: #f8f9fa; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #666; }
-  .ru-table th:first-child, .ru-table td:first-child { text-align: left; font-weight: 500; }
-  .ru-table .ru-header-hire { font-weight: 700; font-size: 14px; color: #1a1a2e; }
-  .ru-table .ru-header-churn { font-weight: 700; font-size: 14px; color: #1a1a2e; }
-  .ru-table .ru-hc-row td { font-weight: 700; font-size: 15px; }
-  .ru-table .ru-fte-row td { font-weight: 700; font-size: 15px; }
-  .ru-table .ru-net-row { background: #fef9c3; }
-  .ru-table .ru-net-row td { font-weight: 700; font-size: 16px; }
-  .tabs { display: flex; gap: 0; margin-bottom: 24px; }
-  .tab-btn { padding: 10px 24px; border: 1px solid #d1d5db; background: #fff; cursor: pointer; font-size: 14px; font-weight: 500; color: #666; border-bottom: 2px solid transparent; }
-  .tab-btn:first-child { border-radius: 8px 0 0 8px; }
-  .tab-btn:last-child { border-radius: 0 8px 8px 0; }
-  .tab-btn.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  /* === HEADER === */
+  .header {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    color: #fff;
+    padding: 28px 40px 20px;
+  }
+  .header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 4px;
+  }
+  .header .subtitle {
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 400;
+  }
+  .header .timestamp {
+    color: #64748b;
+    font-size: 12px;
+    margin-top: 6px;
+  }
+
+  /* === NAVIGATION TABS === */
+  .nav-bar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 40px;
+    display: flex;
+    gap: 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  }
+  .tab-btn {
+    padding: 14px 28px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-muted);
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s;
+  }
+  .tab-btn:hover { color: var(--text); background: #f8fafc; }
+  .tab-btn.active {
+    color: var(--blue);
+    border-bottom-color: var(--blue);
+    font-weight: 600;
+  }
+
+  /* === MAIN CONTENT === */
+  .main { padding: 28px 40px 40px; max-width: 1400px; margin: 0 auto; }
+
   .tab-content { display: none; }
   .tab-content.active { display: block; }
-  .year-btns { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-  .year-btn { padding: 6px 16px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
-  .year-btn.active { background: #2563eb; color: #fff; border-color: #2563eb; }
-  .hist-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 24px; font-size: 13px; }
-  .hist-table th, .hist-table td { padding: 6px 10px; border: 1px solid #e5e7eb; text-align: center; }
-  .hist-table th { background: #f8f9fa; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; color: #666; }
-  .hist-table .month-hdr { background: #1a1a2e; color: #fff; font-weight: 700; font-size: 12px; }
-  .hist-table .sub-hdr-hire { background: #dbeafe; color: #1d4ed8; font-weight: 600; }
-  .hist-table .sub-hdr-churn { background: #fee2e2; color: #dc2626; font-weight: 600; }
-  .hist-table .row-label { text-align: left; font-weight: 500; padding-left: 12px; }
+
+  /* === LOADING === */
+  .loading {
+    text-align: center;
+    padding: 80px 20px;
+    color: var(--text-muted);
+  }
+  .loading .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* === SUMMARY CARDS === */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 28px; }
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    box-shadow: var(--shadow);
+    border-left: 4px solid transparent;
+  }
+  .card .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .card .value { font-size: 32px; font-weight: 800; letter-spacing: -1px; }
+  .card.onboard { border-left-color: var(--blue); }
+  .card.onboard .value { color: var(--blue); }
+  .card.offboard { border-left-color: var(--red); }
+  .card.offboard .value { color: var(--red); }
+  .card.net { border-left-color: var(--green); }
+  .card.net .value { color: var(--green); }
+
+  /* === RUNNING UPDATE === */
+  .running-update {
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+  .ru-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    background: #fafbfc;
+  }
+  .ru-header h2 {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .ru-header select {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    background: var(--surface);
+    cursor: pointer;
+  }
+  .ru-body { padding: 0; }
+  .ru-table { width: 100%; border-collapse: collapse; }
+  .ru-table th, .ru-table td {
+    padding: 10px 24px;
+    text-align: center;
+    font-size: 14px;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .ru-table th {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    font-weight: 600;
+    background: #fafbfc;
+    padding: 12px 24px;
+  }
+  .ru-table th:first-child, .ru-table td:first-child {
+    text-align: left;
+    font-weight: 500;
+  }
+  .ru-table .col-hire { color: var(--blue-dark); }
+  .ru-table .col-churn { color: var(--red); }
+  .ru-table .ru-hc-row td { font-weight: 700; font-size: 16px; background: #fafbfc; }
+  .ru-table .ru-fte-row td { font-weight: 700; font-size: 16px; background: var(--blue-light); }
+  .ru-table .ru-net-row td {
+    font-weight: 800;
+    font-size: 18px;
+    background: var(--yellow-light);
+    border-bottom: none;
+  }
+  .ru-table .indent { padding-left: 40px; color: var(--text-muted); font-size: 13px; }
+  .ru-table tr:last-child td { border-bottom: none; }
+
+  /* === CONTROLS === */
+  .controls-bar {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .control-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .control-group label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+  .control-group select {
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--surface);
+    cursor: pointer;
+  }
+  .weight-legend {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-faint);
+    display: flex;
+    gap: 16px;
+  }
+  .weight-legend span strong { color: var(--text-muted); }
+
+  /* === CHARTS === */
+  .chart-panel {
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: 24px;
+    overflow: hidden;
+  }
+  .chart-panel .chart-title {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 18px 24px 0;
+    color: var(--text);
+  }
+  .chart-panel .chart-wrap { padding: 16px 24px 20px; }
+
+  /* === TABLES === */
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; }
+  .tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .tag-onboard { background: var(--blue-light); color: var(--blue-dark); }
+  .tag-offboard { background: var(--red-light); color: var(--red); }
+
+  /* === YEAR BUTTONS === */
+  .year-btns { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+  .year-btn {
+    padding: 8px 20px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    transition: all 0.15s;
+  }
+  .year-btn:hover { border-color: var(--blue); color: var(--blue); }
+  .year-btn.active {
+    background: var(--blue);
+    color: #fff;
+    border-color: var(--blue);
+    font-weight: 600;
+  }
+
+  /* === HISTORICAL SUMMARY TABLE === */
+  .hist-summary {
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  .hist-summary .hs-title {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    background: #fafbfc;
+  }
+  .hist-summary table th {
+    background: #fafbfc;
+    padding: 12px 20px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-muted);
+    font-weight: 600;
+    border-bottom: 2px solid var(--border);
+  }
+  .hist-summary table td {
+    padding: 11px 20px;
+    font-size: 14px;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .hist-summary table tr:hover td { background: #f8fafc; }
+  .hist-summary table tr:last-child td { border-bottom: none; }
+
+  /* === HISTORICAL DETAIL TABLE === */
+  .hist-table-wrap {
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow-x: auto;
+    margin-bottom: 24px;
+  }
+  .hist-table-wrap .ht-title {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    background: #fafbfc;
+    position: sticky;
+    left: 0;
+  }
+  .hist-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .hist-table th, .hist-table td {
+    padding: 8px 12px;
+    border: 1px solid #e2e8f0;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .hist-table .month-hdr {
+    background: #1e293b;
+    color: #fff;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.3px;
+  }
+  .hist-table .sub-hdr-hire {
+    background: var(--blue-light);
+    color: var(--blue-dark);
+    font-weight: 600;
+    font-size: 11px;
+  }
+  .hist-table .sub-hdr-churn {
+    background: var(--red-light);
+    color: var(--red);
+    font-weight: 600;
+    font-size: 11px;
+  }
+  .hist-table .row-label {
+    text-align: left;
+    font-weight: 500;
+    padding-left: 16px;
+    position: sticky;
+    left: 0;
+    background: var(--surface);
+    z-index: 1;
+    border-right: 2px solid var(--border);
+    min-width: 160px;
+  }
   .hist-table .hc-row td { font-weight: 700; }
-  .hist-table .fte-row td { font-weight: 700; background: #f0f9ff; }
-  .hist-table .net-row td { font-weight: 700; background: #fef9c3; font-size: 14px; }
-  @media (max-width: 768px) { body { padding: 12px; } .cards { grid-template-columns: 1fr 1fr; } }
+  .hist-table .hc-row .row-label { background: #fafbfc; }
+  .hist-table .fte-row td { font-weight: 700; background: #eff6ff; }
+  .hist-table .fte-row .row-label { background: #eff6ff; }
+  .hist-table .net-row td { font-weight: 800; background: var(--yellow-light); font-size: 14px; }
+  .hist-table .net-row .row-label { background: var(--yellow-light); }
+
+  /* === RESPONSIVE === */
+  @media (max-width: 900px) {
+    .header, .nav-bar, .main { padding-left: 20px; padding-right: 20px; }
+    .cards { grid-template-columns: 1fr; }
+    .controls-bar { flex-direction: column; align-items: flex-start; }
+    .weight-legend { margin-left: 0; }
+    .card .value { font-size: 26px; }
+  }
 </style>
 </head>
 <body>
-<h1>FTE Hires Dashboard</h1>
-<p class="subtitle">FTE counts from HubSpot ticket pipelines</p>
-<p class="subtitle" style="color:#999; font-size:12px;" id="timestampLine">Loading live data from HubSpot...</p>
 
-<div class="tabs">
-  <button class="tab-btn active" onclick="switchTab('live')">Live Dashboard</button>
-  <button class="tab-btn" onclick="switchTab('history')">Historical Records</button>
+<div class="header">
+  <h1>FTE Hires Dashboard</h1>
+  <p class="subtitle">FTE counts from HubSpot ticket pipelines</p>
+  <p class="timestamp" id="timestampLine">Connecting to HubSpot...</p>
 </div>
 
+<div class="nav-bar">
+  <button class="tab-btn active" onclick="switchTab('live', this)">Live Dashboard</button>
+  <button class="tab-btn" onclick="switchTab('history', this)">Historical Records</button>
+</div>
+
+<div class="main">
+
+<!-- ==================== LIVE DASHBOARD ==================== -->
 <div id="tab-live" class="tab-content active">
-<div id="loadingOverlay" style="text-align:center;padding:60px 20px;font-size:16px;color:#666;">
-  <div style="font-size:32px;margin-bottom:12px;">&#9203;</div>
-  Fetching live data from HubSpot...<br><small>This may take a few seconds</small>
-</div>
-<div id="liveContent" style="display:none;">
-<div class="running-update">
-  <h2>Running Update <select id="ruMonth"></select></h2>
-  <table class="ru-table" id="ruTable"></table>
-</div>
-<div class="weight-legend">
-  <strong>FTE Weights:</strong>
-  <span>Full-Time = <strong>1.0</strong></span>
-  <span>Part-Time Under 20hrs = <strong>0.25</strong></span>
-  <span>All Others = <strong>0.5</strong></span>
-</div>
-<div class="controls">
-  <label>View by <select id="groupBy">
-    <option value="week" selected>Week</option>
-    <option value="month">Month</option>
-  </select></label>
-  <label>Show last <select id="periodCount">
-    <option value="1">1</option>
-    <option value="4">4</option>
-    <option value="8">8</option>
-    <option value="12" selected>12</option>
-    <option value="26">26</option>
-    <option value="52">52</option>
-    <option value="0">All time</option>
-  </select></label>
-</div>
-<div class="cards" id="summaryCards"></div>
-<div class="chart-container">
-  <h2 id="chartTitle">Monthly FTE - Created vs Offboarded</h2>
-  <canvas id="fteChart" height="100"></canvas>
-</div>
-<div class="chart-container">
-  <h2 id="netChartTitle">Monthly Net FTE (Created - Offboarded)</h2>
-  <canvas id="netChart" height="80"></canvas>
-</div>
-</div>
+
+<div id="loadingOverlay" class="loading">
+  <div class="spinner"></div>
+  Fetching live data from HubSpot...<br><small style="color:#94a3b8">This may take a few seconds</small>
 </div>
 
+<div id="liveContent" style="display:none;">
+
+<!-- Running Update -->
+<div class="running-update">
+  <div class="ru-header">
+    <h2>Running Update</h2>
+    <select id="ruMonth"></select>
+  </div>
+  <div class="ru-body">
+    <table class="ru-table" id="ruTable"></table>
+  </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="cards" id="summaryCards"></div>
+
+<!-- Controls -->
+<div class="controls-bar">
+  <div class="control-group">
+    <label>View by</label>
+    <select id="groupBy">
+      <option value="week" selected>Week</option>
+      <option value="month">Month</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <label>Show last</label>
+    <select id="periodCount">
+      <option value="4">4</option>
+      <option value="8">8</option>
+      <option value="12" selected>12</option>
+      <option value="26">26</option>
+      <option value="52">52</option>
+      <option value="0">All time</option>
+    </select>
+  </div>
+  <div class="weight-legend">
+    <span>Full-Time = <strong>1.0</strong></span>
+    <span>Part-Time &lt;20hrs = <strong>0.25</strong></span>
+    <span>Others = <strong>0.5</strong></span>
+  </div>
+</div>
+
+<!-- Charts -->
+<div class="chart-panel">
+  <div class="chart-title" id="chartTitle">Weekly FTE - Created vs Offboarded</div>
+  <div class="chart-wrap"><canvas id="fteChart" height="100"></canvas></div>
+</div>
+<div class="chart-panel">
+  <div class="chart-title" id="netChartTitle">Weekly Net FTE (Created - Offboarded)</div>
+  <div class="chart-wrap"><canvas id="netChart" height="80"></canvas></div>
+</div>
+
+</div><!-- /liveContent -->
+</div><!-- /tab-live -->
+
+<!-- ==================== HISTORICAL RECORDS ==================== -->
 <div id="tab-history" class="tab-content">
   <div class="year-btns" id="yearBtns"></div>
-  <div class="chart-container">
-    <h2>Historical FTE - New Hires vs Churn by Contract Type</h2>
-    <canvas id="histChart" height="120"></canvas>
+  <div class="chart-panel">
+    <div class="chart-title">Historical FTE - New Hires vs Churn by Contract Type</div>
+    <div class="chart-wrap"><canvas id="histChart" height="120"></canvas></div>
   </div>
-  <div class="chart-container">
-    <h2>Historical Net FTE</h2>
-    <canvas id="histNetChart" height="80"></canvas>
+  <div class="chart-panel">
+    <div class="chart-title">Historical Net FTE</div>
+    <div class="chart-wrap"><canvas id="histNetChart" height="80"></canvas></div>
   </div>
   <div id="histSummaryContainer"></div>
   <div id="histTableContainer"></div>
 </div>
+
+</div><!-- /main -->
 
 <script>
 var RAW_DATA = [];
@@ -281,25 +631,27 @@ function renderRunningUpdate() {
   var typeLabels = {'Full-Time':'Full Time','Part-Time':'Part Time','Part-Time-Under-20-Hours':'Part Time under 20 hrs','Output-Based':'Output-Based','Project-Based':'Project-Based','Trial':'Trial'};
 
   var netFTE = Math.round((c.hire._fte - c.churn._fte) * 100) / 100;
+  var netColor = netFTE >= 0 ? 'var(--green)' : 'var(--red)';
+  var netPrefix = netFTE >= 0 ? '+' : '';
 
-  var html = '<thead><tr><th></th><th class="ru-header-hire">New Hires</th><th class="ru-header-churn">Churn</th></tr></thead><tbody>';
+  var html = '<thead><tr><th></th><th class="col-hire">New Hires</th><th class="col-churn">Churn</th></tr></thead><tbody>';
   html += '<tr class="ru-hc-row"><td><strong>Headcount</strong></td><td><strong>' + c.hire._total + '</strong></td><td><strong>' + c.churn._total + '</strong></td></tr>';
 
   types.forEach(function(t) {
     var h = c.hire[t] || 0;
     var ch = c.churn[t] || 0;
     if (h === 0 && ch === 0) return;
-    html += '<tr><td style="padding-left:24px">' + (typeLabels[t] || t) + '</td><td>' + (h || '') + '</td><td>' + (ch || '') + '</td></tr>';
+    html += '<tr><td class="indent">' + (typeLabels[t] || t) + '</td><td>' + (h || '-') + '</td><td>' + (ch || '-') + '</td></tr>';
   });
 
   html += '<tr class="ru-fte-row"><td><strong>FTE Equivalent</strong></td><td><strong>' + fmtFTE(Math.round(c.hire._fte * 100) / 100) + '</strong></td><td><strong>' + fmtFTE(Math.round(c.churn._fte * 100) / 100) + '</strong></td></tr>';
-  html += '<tr class="ru-net-row"><td><strong>Net FTE</strong></td><td colspan="2" style="text-align:center"><strong>' + fmtFTE(netFTE) + '</strong></td></tr>';
+  html += '<tr class="ru-net-row"><td><strong>Net FTE</strong></td><td colspan="2" style="text-align:center;color:' + netColor + '"><strong>' + netPrefix + fmtFTE(netFTE) + '</strong></td></tr>';
   html += '</tbody>';
 
   document.getElementById('ruTable').innerHTML = html;
 }
 
-// Populate month dropdown
+// Populate month dropdown - format: "Current Month - 2026 March"
 (function initRUDropdown() {
   var now = new Date();
   var curMonth = now.getUTCFullYear() + '-' + String(now.getUTCMonth() + 1).padStart(2, '0');
@@ -328,8 +680,6 @@ function render() {
   var periodLabel = groupBy === 'month' ? 'Monthly' : 'Weekly';
   document.getElementById('chartTitle').textContent = periodLabel + ' FTE - Created vs Offboarded';
   document.getElementById('netChartTitle').textContent = periodLabel + ' Net FTE (Created - Offboarded)';
-  var today = new Date();
-  var currentKey = groupBy === 'month' ? getMonthKey(today.toISOString()) : getSundayOfWeek(today.toISOString());
 
   var totalCreated = data.reduce(function(s, d) { return s + d.created; }, 0);
   var totalOffboarded = data.reduce(function(s, d) { return s + d.offboarded; }, 0);
@@ -371,10 +721,10 @@ function render() {
           var hc = isCreated ? data[idx].c_count : data[idx].o_count;
           if (fte === 0 && hc === 0) return;
           ctx.font = 'bold 11px -apple-system, sans-serif';
-          ctx.fillStyle = '#1a1a2e';
+          ctx.fillStyle = '#1e293b';
           ctx.fillText(fmtFTE(fte) + ' FTE', info.x, info.maxY - 14);
           ctx.font = '10px -apple-system, sans-serif';
-          ctx.fillStyle = '#666';
+          ctx.fillStyle = '#64748b';
           ctx.fillText(hc + ' HC', info.x, info.maxY - 3);
         });
       });
@@ -402,7 +752,7 @@ function render() {
     options: {
       responsive: true,
       layout: { padding: { top: 25 } },
-      plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+      plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 }, padding: 16 } } },
       scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'FTE Hires' } } }
     }
   });
@@ -419,7 +769,7 @@ function render() {
         ctx.save();
         ctx.font = 'bold 11px -apple-system, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillStyle = '#1a1a2e';
+        ctx.fillStyle = '#1e293b';
         var yPos = val >= 0 ? bar.y - 6 : bar.y + 14;
         ctx.fillText(fmt, bar.x, yPos);
         ctx.restore();
@@ -461,13 +811,13 @@ function loadLiveData() {
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (data.error) {
-        document.getElementById('loadingOverlay').innerHTML = '<div style="color:#dc2626;">Error: ' + data.error + '<br><small>Retrying in 30 seconds...</small></div>';
+        document.getElementById('loadingOverlay').innerHTML = '<div style="color:var(--red);">Error: ' + data.error + '<br><small>Retrying in 30 seconds...</small></div>';
         setTimeout(loadLiveData, 30000);
         return;
       }
       RAW_DATA = data.raw;
       OFFBOARD_DATA = data.offboard;
-      document.getElementById('timestampLine').textContent = 'Data last extracted: ' + data.timestamp + ' | ' + data.counts.created + ' created, ' + data.counts.offboarded + ' offboarded tickets (auto-refreshes every 5 min)';
+      document.getElementById('timestampLine').textContent = 'Data last extracted: ' + data.timestamp + '  |  ' + data.counts.created + ' created, ' + data.counts.offboarded + ' offboarded tickets  |  Auto-refreshes every 5 min';
       document.getElementById('loadingOverlay').style.display = 'none';
       document.getElementById('liveContent').style.display = 'block';
       renderRunningUpdate();
@@ -476,7 +826,7 @@ function loadLiveData() {
       refreshTimer = setTimeout(loadLiveData, REFRESH_INTERVAL);
     })
     .catch(function(err) {
-      document.getElementById('loadingOverlay').innerHTML = '<div style="color:#dc2626;">Failed to load data: ' + err.message + '<br><small>Retrying in 30 seconds...</small></div>';
+      document.getElementById('loadingOverlay').innerHTML = '<div style="color:var(--red);"><strong>Failed to load data</strong><br>' + err.message + '<br><small>Retrying in 30 seconds...</small></div>';
       setTimeout(loadLiveData, 30000);
     });
 }
@@ -484,11 +834,11 @@ function loadLiveData() {
 loadLiveData();
 
 // === TAB SWITCHING ===
-function switchTab(tab) {
+function switchTab(tab, btn) {
   document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
   document.querySelectorAll('.tab-btn').forEach(function(el) { el.classList.remove('active'); });
   document.getElementById('tab-' + tab).classList.add('active');
-  event.target.classList.add('active');
+  btn.classList.add('active');
   if (tab === 'history' && !histRendered) renderHistory();
 }
 
@@ -574,7 +924,7 @@ function updateHistCharts() {
         ctx.save();
         ctx.font = 'bold 10px -apple-system, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillStyle = '#1a1a2e';
+        ctx.fillStyle = '#1e293b';
         ctx.fillText(fmtFTE(val), bar.x, val >= 0 ? bar.y - 5 : bar.y + 12);
         ctx.restore();
       });
@@ -602,7 +952,7 @@ function updateHistCharts() {
       ctx.save();
       ctx.textAlign = 'center';
       ctx.font = 'bold 9px -apple-system, sans-serif';
-      ctx.fillStyle = '#1a1a2e';
+      ctx.fillStyle = '#1e293b';
       Object.keys(meta).forEach(function(stack) {
         Object.keys(meta[stack]).forEach(function(j) {
           var info = meta[stack][j];
@@ -634,7 +984,7 @@ function updateHistCharts() {
     options: {
       responsive: true,
       layout: { padding: { top: 20 } },
-      plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 } } } },
+      plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 10 }, padding: 14 } } },
       scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'FTE' } } }
     }
   });
@@ -665,31 +1015,31 @@ function updateHistTable() {
   var data = getFilteredHist();
   var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-  // === SUMMARY TABLE (like live dashboard) ===
+  // === SUMMARY TABLE ===
   var sumContainer = document.getElementById('histSummaryContainer');
-  var sumHtml = '<table style="margin-bottom:24px;"><thead><tr><th>Month</th><th>Created (FTE)</th><th>Offboarded (FTE)</th><th>Net FTE</th></tr></thead><tbody>';
+  var sumHtml = '<div class="hist-summary"><div class="hs-title">Monthly FTE Summary</div><table><thead><tr>' +
+    '<th style="text-align:left">Month</th><th>Created (FTE)</th><th>Offboarded (FTE)</th><th>Net FTE</th></tr></thead><tbody>';
   data.forEach(function(d) {
     var p = d.m.split('-');
     var label = monthNames[parseInt(p[1])-1] + ' ' + p[0];
     var net = d.net;
     sumHtml += '<tr>' +
-      '<td>' + label + '</td>' +
-      '<td><span class="tag tag-onboard">' + fmtFTE(d.h.fte) + '</span></td>' +
-      '<td><span class="tag tag-offboard">' + fmtFTE(d.c.fte) + '</span></td>' +
-      '<td style="color:' + (net >= 0 ? '#059669' : '#dc2626') + '; font-weight:600">' + (net >= 0 ? '+' : '') + fmtFTE(net) + '</td></tr>';
+      '<td style="text-align:left;font-weight:500">' + label + '</td>' +
+      '<td style="text-align:center"><span class="tag tag-onboard">' + fmtFTE(d.h.fte) + '</span></td>' +
+      '<td style="text-align:center"><span class="tag tag-offboard">' + fmtFTE(d.c.fte) + '</span></td>' +
+      '<td style="text-align:center;color:' + (net >= 0 ? 'var(--green)' : 'var(--red)') + '; font-weight:700">' + (net >= 0 ? '+' : '') + fmtFTE(net) + '</td></tr>';
   });
-  sumHtml += '</tbody></table>';
+  sumHtml += '</tbody></table></div>';
   sumContainer.innerHTML = sumHtml;
 
   // === DETAILED BREAKDOWN TABLE ===
   var container = document.getElementById('histTableContainer');
-
-  var html = '<table class="hist-table"><thead><tr><th></th>';
+  var html = '<div class="hist-table-wrap"><div class="ht-title">Detailed Breakdown by Contract Type</div><table class="hist-table"><thead><tr><th class="row-label"></th>';
   data.forEach(function(d) {
     var p = d.m.split('-');
     html += '<th colspan="2" class="month-hdr">' + monthNames[parseInt(p[1])-1] + ' ' + p[0] + '</th>';
   });
-  html += '</tr><tr><th></th>';
+  html += '</tr><tr><th class="row-label"></th>';
   data.forEach(function() { html += '<th class="sub-hdr-hire">New Hires</th><th class="sub-hdr-churn">Churn</th>'; });
   html += '</tr></thead><tbody>';
 
@@ -705,9 +1055,9 @@ function updateHistTable() {
     {key:'pb', label:'Project-Based'}
   ];
   types.forEach(function(t) {
-    html += '<tr><td class="row-label" style="padding-left:24px">' + t.label + '</td>';
+    html += '<tr><td class="row-label" style="padding-left:28px;color:var(--text-muted)">' + t.label + '</td>';
     data.forEach(function(d) {
-      html += '<td>' + (d.h[t.key] || '') + '</td><td>' + (d.c[t.key] || '') + '</td>';
+      html += '<td>' + (d.h[t.key] || '-') + '</td><td>' + (d.c[t.key] || '-') + '</td>';
     });
     html += '</tr>';
   });
@@ -717,10 +1067,13 @@ function updateHistTable() {
   html += '</tr>';
 
   html += '<tr class="net-row"><td class="row-label"><strong>Net FTE</strong></td>';
-  data.forEach(function(d) { html += '<td colspan="2"><strong>' + fmtFTE(d.net) + '</strong></td>'; });
+  data.forEach(function(d) {
+    var color = d.net >= 0 ? 'var(--green)' : 'var(--red)';
+    html += '<td colspan="2" style="color:' + color + '"><strong>' + (d.net >= 0 ? '+' : '') + fmtFTE(d.net) + '</strong></td>';
+  });
   html += '</tr>';
 
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   container.innerHTML = html;
 }
 
