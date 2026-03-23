@@ -20,12 +20,18 @@ function getFTEWeight(type) {
 }
 
 async function hubspotSearch(body) {
-  const res = await fetch(HUBSPOT_API, {
+  var url = HUBSPOT_API;
+  var headers = { 'Content-Type': 'application/json' };
+
+  if (HUBSPOT_TOKEN && HUBSPOT_TOKEN.startsWith('pat-')) {
+    headers['Authorization'] = 'Bearer ' + HUBSPOT_TOKEN;
+  } else {
+    url = HUBSPOT_API + '?hapikey=' + HUBSPOT_TOKEN;
+  }
+
+  const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + HUBSPOT_TOKEN
-    },
+    headers: headers,
     body: JSON.stringify(body)
   });
   if (!res.ok) {

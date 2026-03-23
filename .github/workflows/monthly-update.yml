@@ -1,0 +1,60 @@
+name: Monthly Historical Data Update
+
+# Runs at 21:00 UTC on days 28-31 (= 5:00 AM GMT+8 on the next day)
+# The script checks if it's actually the 1st of the month in GMT+8 before proceeding
+on:
+  schedule:
+    - cron: '0 21 28-31 * *'
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+
+jobs:
+  update-historical:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if it's the 1st in GMT+8
+        id: datecheck
+        run: |
+          # At 21:00 UTC, GMT+8 is already 5:00 AM the next day
+          GMT8_DAY=$(TZ='Asia/Manila' date +%d)
+          echo "GMT+8 day: $GMT8_DAY"
+          if [ "$GMT8_DAY" = "01" ]; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+          else
+            echo "Not the 1st in GMT+8, skipping."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout repo
+        if: steps.datecheck.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: steps.datecheck.outputs.skip != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        if: steps.datecheck.outputs.skip != 'true'
+        run: npm ci
+
+      - name: Run monthly update script
+        if: steps.datecheck.outputs.skip != 'true'
+        env:
+          HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
+        run: node monthly-update.js
+
+      - name: Commit and push changes
+        if: steps.datecheck.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          # Only commit if there are changes
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            MONTH=$(TZ='Asia/Manila' date -d 'yesterday' +"%B %Y")
+            git commit -m "Add ${MONTH} historical data (automated monthly update)"
+            git push
+          fi
