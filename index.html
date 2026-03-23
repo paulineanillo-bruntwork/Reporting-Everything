@@ -302,6 +302,10 @@
     border-bottom: 1px solid var(--border);
     background: #fafbfc;
   }
+  .hist-summary .hs-scroll {
+    max-height: 480px;
+    overflow-y: auto;
+  }
   .hist-summary table th {
     background: #fafbfc;
     padding: 12px 20px;
@@ -311,6 +315,9 @@
     color: var(--text-muted);
     font-weight: 600;
     border-bottom: 2px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }
   .hist-summary table td {
     padding: 11px 20px;
@@ -1017,7 +1024,7 @@ function updateHistTable() {
 
   // === SUMMARY TABLE ===
   var sumContainer = document.getElementById('histSummaryContainer');
-  var sumHtml = '<div class="hist-summary"><div class="hs-title">Monthly FTE Summary</div><table><thead><tr>' +
+  var sumHtml = '<div class="hist-summary"><div class="hs-title">Monthly FTE Summary</div><div class="hs-scroll"><table><thead><tr>' +
     '<th style="text-align:left">Month</th><th>Created (FTE)</th><th>Offboarded (FTE)</th><th>Net FTE</th></tr></thead><tbody>';
   data.forEach(function(d) {
     var p = d.m.split('-');
@@ -1029,7 +1036,7 @@ function updateHistTable() {
       '<td style="text-align:center"><span class="tag tag-offboard">' + fmtFTE(d.c.fte) + '</span></td>' +
       '<td style="text-align:center;color:' + (net >= 0 ? 'var(--green)' : 'var(--red)') + '; font-weight:700">' + (net >= 0 ? '+' : '') + fmtFTE(net) + '</td></tr>';
   });
-  sumHtml += '</tbody></table></div>';
+  sumHtml += '</tbody></table></div></div>';
   sumContainer.innerHTML = sumHtml;
 
   // === DETAILED BREAKDOWN TABLE ===
