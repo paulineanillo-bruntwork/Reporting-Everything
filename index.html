@@ -1026,7 +1026,7 @@ function updateHistTable() {
   var sumContainer = document.getElementById('histSummaryContainer');
   var sumHtml = '<div class="hist-summary"><div class="hs-title">Monthly FTE Summary</div><div class="hs-scroll"><table><thead><tr>' +
     '<th style="text-align:left">Month</th><th>Created (FTE)</th><th>Offboarded (FTE)</th><th>Net FTE</th></tr></thead><tbody>';
-  data.forEach(function(d) {
+  data.slice().reverse().forEach(function(d) {
     var p = d.m.split('-');
     var label = monthNames[parseInt(p[1])-1] + ' ' + p[0];
     var net = d.net;
