@@ -2,39 +2,57 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
+const session = require('express-session');
+const { Issuer, generators } = require('openid-client');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HUBSPOT_KEY = process.env.HUBSPOT_TOKEN;
 const HUBSPOT_API = 'https://api.hubapi.com/crm/v3/objects/tickets/search';
 const PIPELINES = ['4483329', '3857063', '20565603'];
-const APP_PASSWORD = process.env.APP_PASSWORD || '1234';
+
+const KEYCLOAK_URL = process.env.KEYCLOAK_URL;
+const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM;
+const KEYCLOAK_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID;
+const KEYCLOAK_CLIENT_SECRET = process.env.KEYCLOAK_CLIENT_SECRET;
+const APP_URL = process.env.APP_URL || ('http://localhost:' + PORT);
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+
+if (!KEYCLOAK_URL || !KEYCLOAK_REALM || !KEYCLOAK_CLIENT_ID) {
+  console.error('Missing required env vars: KEYCLOAK_URL, KEYCLOAK_REALM, KEYCLOAK_CLIENT_ID');
+  process.exit(1);
+}
 
 // Parse form data and JSON
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
-// Simple cookie-based session tokens
-var validTokens = {};
+// Session middleware
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: APP_URL.startsWith('https'),
+    maxAge: 8 * 60 * 60 * 1000 // 8 hours
+  }
+}));
 
-function generateToken() {
-  return crypto.randomBytes(32).toString('hex');
-}
+// OIDC client — initialised before server starts
+var oidcClient;
 
-function parseCookies(req) {
-  var cookies = {};
-  var header = req.headers.cookie || '';
-  header.split(';').forEach(function(c) {
-    var parts = c.trim().split('=');
-    if (parts.length === 2) cookies[parts[0]] = parts[1];
+async function initOIDC() {
+  var issuerUrl = KEYCLOAK_URL + '/realms/' + KEYCLOAK_REALM;
+  var issuer = await Issuer.discover(issuerUrl);
+  oidcClient = new issuer.Client({
+    client_id: KEYCLOAK_CLIENT_ID,
+    client_secret: KEYCLOAK_CLIENT_SECRET,
+    redirect_uris: [APP_URL + '/auth/callback'],
+    response_types: ['code']
   });
-  return cookies;
-}
-
-function isAuthenticated(req) {
-  var cookies = parseCookies(req);
-  var token = cookies.session;
-  return token && validTokens[token];
+  console.log('OIDC client initialised for issuer:', issuer.issuer);
 }
 
 // Block search engines
@@ -43,49 +61,76 @@ app.get('/robots.txt', function(req, res) {
   res.send('User-agent: *\nDisallow: /\n');
 });
 
-// Login page
-var LOGIN_HTML = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="robots" content="noindex, nofollow, noarchive, nosnippet">' +
-  '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
-  '<title>FTE Dashboard - Login</title>' +
-  '<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f0f2f5;display:flex;justify-content:center;align-items:center;min-height:100vh}' +
-  '.login-box{background:#fff;border-radius:12px;padding:40px;box-shadow:0 4px 12px rgba(0,0,0,0.1);width:100%;max-width:400px;text-align:center}' +
-  'h1{font-size:22px;margin-bottom:8px;color:#1a1a2e}p{color:#666;font-size:14px;margin-bottom:24px}' +
-  'input[type=password]{width:100%;padding:12px 16px;border:2px solid #e5e7eb;border-radius:8px;font-size:16px;outline:none;transition:border-color 0.2s}' +
-  'input[type=password]:focus{border-color:#2563eb}' +
-  'button{width:100%;padding:12px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;margin-top:16px;transition:background 0.2s}' +
-  'button:hover{background:#1d4ed8}' +
-  '.error{color:#dc2626;font-size:13px;margin-top:12px}</style></head><body>' +
-  '<div class="login-box"><h1>FTE Hires Dashboard</h1><p>Enter password to access</p>' +
-  '<form method="POST" action="/login"><input type="password" name="password" placeholder="Password" autofocus required>' +
-  '<button type="submit">Login</button>' +
-  '<ERRORMSG></form></div></body></html>';
-
+// Redirect legacy /login to /auth/login
 app.get('/login', function(req, res) {
-  if (isAuthenticated(req)) return res.redirect('/');
-  res.send(LOGIN_HTML.replace('<ERRORMSG>', ''));
+  res.redirect('/auth/login');
 });
 
-app.post('/login', function(req, res) {
-  if (req.body.password === APP_PASSWORD) {
-    var token = generateToken();
-    validTokens[token] = { created: Date.now() };
-    res.setHeader('Set-Cookie', 'session=' + token + '; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400');
-    return res.redirect('/');
+// Redirect to Keycloak login
+app.get('/auth/login', function(req, res) {
+  if (req.session.user) return res.redirect('/');
+  var state = generators.state();
+  var nonce = generators.nonce();
+  req.session.oidcState = state;
+  req.session.oidcNonce = nonce;
+  var url = oidcClient.authorizationUrl({
+    scope: 'openid profile email',
+    state: state,
+    nonce: nonce
+  });
+  res.redirect(url);
+});
+
+// Keycloak callback — exchange code for tokens
+app.get('/auth/callback', async function(req, res) {
+  try {
+    var params = oidcClient.callbackParams(req);
+    var tokenSet = await oidcClient.callback(
+      APP_URL + '/auth/callback',
+      params,
+      { state: req.session.oidcState, nonce: req.session.oidcNonce }
+    );
+    var claims = tokenSet.claims();
+    req.session.user = {
+      sub: claims.sub,
+      name: claims.name || claims.preferred_username,
+      email: claims.email
+    };
+    req.session.idToken = tokenSet.id_token;
+    delete req.session.oidcState;
+    delete req.session.oidcNonce;
+    res.redirect('/');
+  } catch (err) {
+    console.error('OIDC callback error:', err.message);
+    res.redirect('/auth/login?error=auth_failed');
   }
-  res.send(LOGIN_HTML.replace('<ERRORMSG>', '<div class="error">Incorrect password</div>'));
 });
 
+// Logout — destroy session and redirect to Keycloak end-session
 app.get('/logout', function(req, res) {
-  var cookies = parseCookies(req);
-  if (cookies.session) delete validTokens[cookies.session];
-  res.setHeader('Set-Cookie', 'session=; Path=/; HttpOnly; Max-Age=0');
-  res.redirect('/login');
+  var idToken = req.session.idToken;
+  req.session.destroy(function() {
+    res.clearCookie('connect.sid');
+    try {
+      var logoutUrl = oidcClient.endSessionUrl({
+        post_logout_redirect_uri: APP_URL,
+        id_token_hint: idToken
+      });
+      res.redirect(logoutUrl);
+    } catch (e) {
+      res.redirect(APP_URL);
+    }
+  });
 });
 
-// Auth middleware - protect everything except login and robots.txt
+// Auth middleware - protect everything except auth routes and robots.txt
+var PUBLIC_PATHS = ['/auth/login', '/auth/callback', '/login', '/robots.txt'];
 app.use(function(req, res, next) {
-  if (req.path === '/login' || req.path === '/robots.txt') return next();
-  if (!isAuthenticated(req)) return res.redirect('/login');
+  if (PUBLIC_PATHS.indexOf(req.path) !== -1) return next();
+  if (!req.session.user) {
+    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Unauthorized' });
+    return res.redirect('/auth/login');
+  }
   next();
 });
 
@@ -193,7 +238,12 @@ app.get('/api/tickets', async function(req, res) {
   }
 });
 
-app.listen(PORT, function() {
-  console.log('FTE Dashboard server running at http://localhost:' + PORT);
+initOIDC().then(function() {
+  app.listen(PORT, function() {
+    console.log('FTE Dashboard server running at http://localhost:' + PORT);
+  });
+}).catch(function(err) {
+  console.error('Failed to initialise OIDC:', err.message);
+  process.exit(1);
 });
 // deployed Mon Mar 23 08:33:54 MPST 2026

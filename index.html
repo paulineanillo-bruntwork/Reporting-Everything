@@ -401,9 +401,14 @@
 <body>
 
 <div class="header">
-  <h1>FTE Hires Dashboard</h1>
-  <p class="subtitle">FTE counts from HubSpot ticket pipelines</p>
-  <p class="timestamp" id="timestampLine">Connecting to HubSpot...</p>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start">
+    <div>
+      <h1>FTE Hires Dashboard</h1>
+      <p class="subtitle">FTE counts from HubSpot ticket pipelines</p>
+      <p class="timestamp" id="timestampLine">Connecting to HubSpot...</p>
+    </div>
+    <a href="/logout" style="display:inline-block;padding:8px 16px;background:rgba(255,255,255,0.1);color:#cbd5e1;border:1px solid rgba(255,255,255,0.2);border-radius:6px;font-size:13px;font-weight:500;text-decoration:none;white-space:nowrap" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">Log out</a>
+  </div>
 </div>
 
 <div class="nav-bar">
