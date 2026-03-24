@@ -51,10 +51,6 @@ function httpRequest(url, options, body) {
     }, options);
 
     var req = mod.request(opts, function(res) {
-      // Handle redirects
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return httpRequest(res.headers.location, options, body).then(resolve).catch(reject);
-      }
       var data = '';
       res.on('data', function(chunk) { data += chunk; });
       res.on('end', function() { resolve({ status: res.statusCode, body: data, headers: res.headers }); });
@@ -76,9 +72,9 @@ async function login() {
     }
   }, loginBody);
 
-  // Extract session cookie from Set-Cookie header
+  // Extract session cookie from Set-Cookie header (302 redirect means success)
   var cookies = res.headers['set-cookie'];
-  if (!cookies) throw new Error('No session cookie received. Login failed.');
+  if (!cookies) throw new Error('No session cookie received. Login may have failed (status ' + res.status + ')');
   var sessionCookie = '';
   (Array.isArray(cookies) ? cookies : [cookies]).forEach(function(c) {
     var match = c.match(/session=([^;]+)/);
