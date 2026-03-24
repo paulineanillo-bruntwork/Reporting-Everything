@@ -108,7 +108,13 @@ app.get('/auth/callback', async function(req, res) {
     req.session.idToken = tokenSet.id_token;
     delete req.session.oidcState;
     delete req.session.oidcNonce;
-    res.redirect('/');
+    req.session.save(function(err) {
+      if (err) {
+        console.error('Session save error:', err);
+        return res.status(500).send('Session error');
+      }
+      res.redirect('/');
+    });
   } catch (err) {
     console.error('OIDC callback error:', err.message);
     res.redirect('/auth/login?error=auth_failed');
