@@ -1,0 +1,33 @@
+name: Dashboard Screenshot to Google Chat
+
+on:
+  schedule:
+    # Every 4 hours at minutes :17 (offset to avoid peak)
+    # 5AM, 9AM, 1PM, 5PM, 9PM, 1AM GMT+8 = 21:17, 01:17, 05:17, 09:17, 13:17, 17:17 UTC
+    - cron: '17 21,1,5,9,13,17 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  screenshot-and-post:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Puppeteer browser
+        run: npx puppeteer browsers install chrome
+
+      - name: Take screenshot and post to Google Chat
+        env:
+          DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          GCHAT_WEBHOOK: ${{ secrets.GCHAT_WEBHOOK }}
+        run: node screenshot-gchat.js
