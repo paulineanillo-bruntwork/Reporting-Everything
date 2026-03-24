@@ -78,7 +78,13 @@ app.get('/auth/login', function(req, res) {
     state: state,
     nonce: nonce
   });
-  res.redirect(url);
+  req.session.save(function(err) {
+    if (err) {
+      console.error('Session save error:', err);
+      return res.status(500).send('Session error');
+    }
+    res.redirect(url);
+  });
 });
 
 // Keycloak callback — exchange code for tokens
