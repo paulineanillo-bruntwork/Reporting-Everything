@@ -1,22 +1,27 @@
 /**
- * Fetches Running Update data from the dashboard API and posts a
- * formatted text card to Google Chat. No screenshot/Puppeteer needed.
+ * Fetches Running Update data directly from HubSpot API and posts a
+ * formatted text card to Google Chat.
  *
  * Env vars required:
- *   DASHBOARD_URL  - e.g. https://fte-dashboard-production.up.railway.app
- *   APP_PASSWORD   - dashboard login password
+ *   HUBSPOT_TOKEN  - HubSpot API key (hapikey or pat- token)
  *   GCHAT_WEBHOOK  - Google Chat space webhook URL
+ *   DASHBOARD_URL  - (optional) link to dashboard for the button
  */
 
 var https = require('https');
-var http = require('http');
 
-var DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://fte-dashboard-production.up.railway.app';
-var APP_PASSWORD = process.env.APP_PASSWORD || '1234';
+var HUBSPOT_TOKEN = process.env.HUBSPOT_TOKEN;
 var GCHAT_WEBHOOK = process.env.GCHAT_WEBHOOK;
+var DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://fte-dashboard-production.up.railway.app';
+var HUBSPOT_API = 'https://api.hubapi.com/crm/v3/objects/tickets/search';
+var PIPELINES = ['4483329', '3857063', '20565603'];
 
 if (!GCHAT_WEBHOOK) {
   console.error('ERROR: GCHAT_WEBHOOK env var is required');
+  process.exit(1);
+}
+if (!HUBSPOT_TOKEN) {
+  console.error('ERROR: HUBSPOT_TOKEN env var is required');
   process.exit(1);
 }
 
@@ -39,81 +44,83 @@ function getMonthKey(dateStr) {
   return gmt8.getUTCFullYear() + '-' + String(gmt8.getUTCMonth() + 1).padStart(2, '0');
 }
 
-function httpRequest(url, options, body) {
+function hubspotFetch(body) {
   return new Promise(function(resolve, reject) {
-    var urlObj = new URL(url);
-    var mod = urlObj.protocol === 'https:' ? https : http;
-    var opts = Object.assign({
-      hostname: urlObj.hostname,
-      port: urlObj.port,
-      path: urlObj.pathname + urlObj.search,
-      method: 'GET'
-    }, options);
+    var url = new URL(HUBSPOT_API);
+    var headers = { 'Content-Type': 'application/json' };
 
-    var req = mod.request(opts, function(res) {
+    if (HUBSPOT_TOKEN.startsWith('pat-')) {
+      headers['Authorization'] = 'Bearer ' + HUBSPOT_TOKEN;
+    } else {
+      url.searchParams.set('hapikey', HUBSPOT_TOKEN);
+    }
+
+    var bodyStr = JSON.stringify(body);
+    headers['Content-Length'] = Buffer.byteLength(bodyStr);
+
+    var req = https.request({
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: headers
+    }, function(res) {
       var data = '';
       res.on('data', function(chunk) { data += chunk; });
-      res.on('end', function() { resolve({ status: res.statusCode, body: data, headers: res.headers }); });
+      res.on('end', function() {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(JSON.parse(data));
+        } else {
+          reject(new Error('HubSpot API error ' + res.statusCode + ': ' + data.substring(0, 300)));
+        }
+      });
     });
     req.on('error', reject);
-    if (body) req.write(body);
+    req.write(bodyStr);
     req.end();
   });
 }
 
-async function login() {
-  // POST login to get session cookie
-  var loginBody = 'password=' + encodeURIComponent(APP_PASSWORD);
-  var res = await httpRequest(DASHBOARD_URL + '/login', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Content-Length': Buffer.byteLength(loginBody)
+async function fetchAllPages(baseBody) {
+  var results = [];
+  var after = undefined;
+  var hasMore = true;
+  while (hasMore) {
+    var body = Object.assign({}, baseBody, { limit: 200 });
+    if (after) body.after = after;
+    var data = await hubspotFetch(body);
+    results = results.concat(data.results || []);
+    if (data.paging && data.paging.next && data.paging.next.after) {
+      after = data.paging.next.after;
+    } else {
+      hasMore = false;
     }
-  }, loginBody);
-
-  // Extract session cookie from Set-Cookie header (302 redirect means success)
-  var cookies = res.headers['set-cookie'];
-  if (!cookies) throw new Error('No session cookie received. Login may have failed (status ' + res.status + ')');
-  var sessionCookie = '';
-  (Array.isArray(cookies) ? cookies : [cookies]).forEach(function(c) {
-    var match = c.match(/session=([^;]+)/);
-    if (match) sessionCookie = 'session=' + match[1];
-  });
-  if (!sessionCookie) throw new Error('Session cookie not found in response');
-  console.log('Logged in successfully');
-  return sessionCookie;
+  }
+  return results;
 }
 
-async function fetchTicketData(cookie) {
-  var res = await httpRequest(DASHBOARD_URL + '/api/tickets', {
-    headers: { 'Cookie': cookie }
-  });
-  if (res.status !== 200) throw new Error('API returned ' + res.status + ': ' + res.body.substring(0, 200));
-  return JSON.parse(res.body);
-}
-
-function buildMonthSummary(data, monthKey) {
+function buildMonthSummary(raw, offboard, monthKey) {
   var types = ['Full-Time', 'Part-Time', 'Part-Time-Under-20-Hours', 'Output-Based', 'Project-Based', 'Trial'];
   var counts = { hire: {}, churn: {} };
   types.forEach(function(t) { counts.hire[t] = 0; counts.churn[t] = 0; });
   counts.hire._total = 0; counts.churn._total = 0;
   counts.hire._fte = 0; counts.churn._fte = 0;
 
-  data.raw.forEach(function(r) {
-    var k = getMonthKey(r.d);
+  raw.forEach(function(r) {
+    var k = getMonthKey(r.properties.createdate);
     if (k !== monthKey) return;
-    var type = r.t || 'Unknown';
+    var type = r.properties.assignment_type || 'Unknown';
     if (counts.hire[type] === undefined) counts.hire[type] = 0;
     counts.hire[type]++;
     counts.hire._total++;
     counts.hire._fte += getFTEWeight(type);
   });
 
-  data.offboard.forEach(function(r) {
-    var k = getMonthKey(r.o + 'T00:00:00Z');
+  offboard.forEach(function(r) {
+    var oDate = r.properties.offboarding_date;
+    if (!oDate) return;
+    var k = getMonthKey(oDate + 'T00:00:00Z');
     if (k !== monthKey) return;
-    var type = r.t || 'Unknown';
+    var type = r.properties.assignment_type || 'Unknown';
     if (counts.churn[type] === undefined) counts.churn[type] = 0;
     counts.churn[type]++;
     counts.churn._total++;
@@ -153,12 +160,35 @@ function postToGoogleChat(message) {
 async function main() {
   try {
     console.log('=== FTE Dashboard → Google Chat ===');
-    console.log('Dashboard: ' + DASHBOARD_URL);
 
-    // Login and fetch data
-    var cookie = await login();
-    var data = await fetchTicketData(cookie);
-    console.log('Fetched: ' + data.counts.created + ' created, ' + data.counts.offboarded + ' offboarded');
+    // Fetch data directly from HubSpot
+    var cutoff = Date.now() - (120 * 24 * 60 * 60 * 1000);
+    var cutoffStr = String(cutoff);
+
+    console.log('Fetching created tickets from HubSpot...');
+    var createdResults = await fetchAllPages({
+      filterGroups: [{
+        filters: [
+          { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+          { propertyName: 'createdate', operator: 'GTE', value: cutoffStr }
+        ]
+      }],
+      properties: ['createdate', 'assignment_type', 'hs_pipeline'],
+      sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }]
+    });
+
+    console.log('Fetching offboarded tickets from HubSpot...');
+    var offboardResults = await fetchAllPages({
+      filterGroups: [{
+        filters: [
+          { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+          { propertyName: 'offboarding_date', operator: 'GTE', value: cutoffStr }
+        ]
+      }],
+      properties: ['offboarding_date', 'assignment_type', 'hs_pipeline']
+    });
+
+    console.log('Fetched: ' + createdResults.length + ' created, ' + offboardResults.length + ' offboarded');
 
     // Build current month summary
     var now = new Date();
@@ -167,7 +197,7 @@ async function main() {
     var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     var monthLabel = monthNames[gmt8.getUTCMonth()] + ' ' + gmt8.getUTCFullYear();
 
-    var c = buildMonthSummary(data, curMonthKey);
+    var c = buildMonthSummary(createdResults, offboardResults, curMonthKey);
     var netFTE = Math.round((c.hire._fte - c.churn._fte) * 100) / 100;
 
     // Format time
@@ -176,7 +206,7 @@ async function main() {
     var h12 = h % 12 || 12;
     var timeStr = monthNames[gmt8.getUTCMonth()] + ' ' + gmt8.getUTCDate() + ', ' + gmt8.getUTCFullYear() + ' ' + h12 + ':' + String(gmt8.getUTCMinutes()).padStart(2, '0') + ' ' + ampm + ' (GMT+8)';
 
-    // Build contract type breakdown lines
+    // Build contract type breakdown
     var types = ['Full-Time', 'Part-Time', 'Part-Time-Under-20-Hours', 'Output-Based', 'Project-Based', 'Trial'];
     var typeLabels = {
       'Full-Time': 'Full Time',
@@ -187,27 +217,18 @@ async function main() {
       'Trial': 'Trial'
     };
 
-    var breakdownLines = [];
-    types.forEach(function(t) {
-      var hc = c.hire[t] || 0;
-      var ch = c.churn[t] || 0;
-      if (hc === 0 && ch === 0) return;
-      var label = typeLabels[t] || t;
-      breakdownLines.push('    ' + label + ':  ' + hc + '  |  ' + ch);
-    });
-
     // Net FTE color indicator
     var netPrefix = netFTE >= 0 ? '+' : '';
-    var netEmoji = netFTE > 0 ? '📈' : (netFTE < 0 ? '📉' : '➖');
+    var netEmoji = netFTE > 0 ? '\u{1F4C8}' : (netFTE < 0 ? '\u{1F4C9}' : '\u{2796}');
 
-    // Build Google Chat card (Cards V2 format for better formatting)
+    // Build Google Chat card (Cards V2 format)
     var message = {
       cardsV2: [{
         cardId: 'fte-update',
         card: {
           header: {
             title: 'FTE Running Update',
-            subtitle: 'Current Month — ' + monthLabel,
+            subtitle: 'Current Month \u2014 ' + monthLabel,
             imageUrl: 'https://fonts.gstatic.com/s/i/short-term/release/googlesymbols/analytics/default/48px.svg',
             imageType: 'CIRCLE'
           },
@@ -217,15 +238,15 @@ async function main() {
               widgets: [
                 {
                   decoratedText: {
-                    topLabel: 'NEW HIRES (Headcount → FTE)',
-                    text: '<b>' + c.hire._total + ' HC  →  ' + fmtFTE(Math.round(c.hire._fte * 100) / 100) + ' FTE</b>',
+                    topLabel: 'NEW HIRES (Headcount \u2192 FTE)',
+                    text: '<b>' + c.hire._total + ' HC  \u2192  ' + fmtFTE(Math.round(c.hire._fte * 100) / 100) + ' FTE</b>',
                     startIcon: { knownIcon: 'PERSON' }
                   }
                 },
                 {
                   decoratedText: {
-                    topLabel: 'CHURN (Headcount → FTE)',
-                    text: '<b>' + c.churn._total + ' HC  →  ' + fmtFTE(Math.round(c.churn._fte * 100) / 100) + ' FTE</b>',
+                    topLabel: 'CHURN (Headcount \u2192 FTE)',
+                    text: '<b>' + c.churn._total + ' HC  \u2192  ' + fmtFTE(Math.round(c.churn._fte * 100) / 100) + ' FTE</b>',
                     startIcon: { knownIcon: 'MEMBERSHIP' }
                   }
                 },

@@ -21,7 +21,7 @@ jobs:
 
       - name: Post Running Update to Google Chat
         env:
-          DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
-          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
           GCHAT_WEBHOOK: ${{ secrets.GCHAT_WEBHOOK }}
+          DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
         run: node screenshot-gchat.js
