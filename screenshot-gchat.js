@@ -80,20 +80,38 @@ function hubspotFetch(body) {
   });
 }
 
+function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+
 async function fetchAllPages(baseBody) {
   var results = [];
   var after = undefined;
   var hasMore = true;
+  var page = 0;
   while (hasMore) {
     var body = Object.assign({}, baseBody, { limit: 200 });
     if (after) body.after = after;
-    var data = await hubspotFetch(body);
+    // Rate limit: wait 300ms between pages to avoid HubSpot 429 errors
+    if (page > 0) await sleep(300);
+    var data;
+    try {
+      data = await hubspotFetch(body);
+    } catch (err) {
+      // Retry once on rate limit
+      if (err.message && err.message.indexOf('429') !== -1) {
+        console.log('Rate limited, waiting 2s and retrying...');
+        await sleep(2000);
+        data = await hubspotFetch(body);
+      } else {
+        throw err;
+      }
+    }
     results = results.concat(data.results || []);
     if (data.paging && data.paging.next && data.paging.next.after) {
       after = data.paging.next.after;
     } else {
       hasMore = false;
     }
+    page++;
   }
   return results;
 }
