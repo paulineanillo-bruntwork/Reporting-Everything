@@ -23,6 +23,9 @@ if (!KEYCLOAK_URL || !KEYCLOAK_REALM || !KEYCLOAK_CLIENT_ID) {
   process.exit(1);
 }
 
+// Trust Railway's reverse proxy so secure cookies work over HTTPS
+app.set('trust proxy', 1);
+
 // Parse form data and JSON
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
