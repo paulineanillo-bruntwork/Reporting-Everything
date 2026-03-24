@@ -8,7 +8,7 @@ on:
   workflow_dispatch: # Allow manual trigger
 
 jobs:
-  screenshot-and-post:
+  post-update:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -19,10 +19,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
-        run: npm ci && npm install puppeteer
-
-      - name: Take screenshot and post to Google Chat
+      - name: Post Running Update to Google Chat
         env:
           DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}

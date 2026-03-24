@@ -1,6 +1,6 @@
 /**
- * Takes a screenshot of the Running Update section and posts it to Google Chat.
- * Runs via GitHub Actions every 4 hours (or manually).
+ * Fetches Running Update data from the dashboard API and posts a
+ * formatted text card to Google Chat. No screenshot/Puppeteer needed.
  *
  * Env vars required:
  *   DASHBOARD_URL  - e.g. https://fte-dashboard-production.up.railway.app
@@ -8,181 +8,143 @@
  *   GCHAT_WEBHOOK  - Google Chat space webhook URL
  */
 
-const puppeteer = require('puppeteer');
-const https = require('https');
-const http = require('http');
+var https = require('https');
+var http = require('http');
 
-const DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://fte-dashboard-production.up.railway.app';
-const APP_PASSWORD = process.env.APP_PASSWORD || '1234';
-const GCHAT_WEBHOOK = process.env.GCHAT_WEBHOOK;
+var DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://fte-dashboard-production.up.railway.app';
+var APP_PASSWORD = process.env.APP_PASSWORD || '1234';
+var GCHAT_WEBHOOK = process.env.GCHAT_WEBHOOK;
 
 if (!GCHAT_WEBHOOK) {
   console.error('ERROR: GCHAT_WEBHOOK env var is required');
   process.exit(1);
 }
 
-async function takeScreenshot() {
-  console.log('Launching browser...');
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-  });
-
-  try {
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1400, height: 900 });
-
-    // Navigate to login
-    console.log('Navigating to dashboard...');
-    await page.goto(DASHBOARD_URL + '/login', { waitUntil: 'networkidle2', timeout: 30000 });
-
-    // Login
-    console.log('Logging in...');
-    await page.type('input[type="password"]', APP_PASSWORD);
-    await page.click('button[type="submit"]');
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 });
-
-    // Wait for live data to load (the loading overlay disappears)
-    console.log('Waiting for data to load...');
-    await page.waitForFunction(function() {
-      var overlay = document.getElementById('loadingOverlay');
-      return !overlay || overlay.style.display === 'none';
-    }, { timeout: 90000 });
-
-    // Extra wait for charts to render
-    await new Promise(function(r) { setTimeout(r, 3000); });
-
-    // Screenshot the running update section
-    console.log('Taking screenshot of Running Update...');
-    var runningSection = await page.$('#runningUpdateSection');
-    if (!runningSection) {
-      // Fallback: try the whole running update area
-      runningSection = await page.$('.running-update');
-    }
-
-    var screenshotBuffer;
-    if (runningSection) {
-      screenshotBuffer = await runningSection.screenshot({ type: 'png' });
-    } else {
-      // Fallback: screenshot the visible page
-      console.log('Running update section not found, taking full page screenshot...');
-      screenshotBuffer = await page.screenshot({ type: 'png', fullPage: false });
-    }
-
-    console.log('Screenshot taken (' + screenshotBuffer.length + ' bytes)');
-    return screenshotBuffer;
-  } finally {
-    await browser.close();
-  }
+// FTE weight logic (must match app.js)
+function getFTEWeight(type) {
+  if (type === 'Full-Time') return 1;
+  if (type === 'Part-Time-Under-20-Hours') return 0.25;
+  return 0.5;
 }
 
-function postToGoogleChat(imageBuffer) {
-  return new Promise(function(resolve, reject) {
-    // Google Chat webhooks support cards with images, but images must be hosted URLs.
-    // Since we don't have image hosting, we'll upload to a free image host first,
-    // or post a text card with the data. Let's use the simpler text-card approach
-    // combined with uploading the image via multipart.
-
-    // Actually, Google Chat webhook supports simple messages and cards.
-    // For images, we need a public URL. Let's use imgbb or similar free host.
-    // Alternatively, we can post a text summary + a thread with the image.
-
-    // Simplest approach: upload image to imgur (anonymous), then post the URL to GChat.
-    uploadToImgur(imageBuffer).then(function(imageUrl) {
-      var now = new Date();
-      var gmt8 = new Date(now.getTime() + (8 * 60 * 60 * 1000));
-      var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-      var h = gmt8.getUTCHours();
-      var ampm = h >= 12 ? 'PM' : 'AM';
-      var h12 = h % 12 || 12;
-      var timeStr = months[gmt8.getUTCMonth()] + ' ' + gmt8.getUTCDate() + ', ' + gmt8.getUTCFullYear() + ' ' + h12 + ':' + String(gmt8.getUTCMinutes()).padStart(2, '0') + ' ' + ampm + ' (GMT+8)';
-
-      var message = {
-        cards: [{
-          header: {
-            title: 'FTE Dashboard - Running Update',
-            subtitle: timeStr,
-            imageUrl: 'https://fonts.gstatic.com/s/i/short-term/release/googlesymbols/analytics/default/48px.svg'
-          },
-          sections: [{
-            widgets: [{
-              image: { imageUrl: imageUrl }
-            }]
-          }, {
-            widgets: [{
-              buttons: [{
-                textButton: {
-                  text: 'OPEN DASHBOARD',
-                  onClick: { openLink: { url: DASHBOARD_URL } }
-                }
-              }]
-            }]
-          }]
-        }]
-      };
-
-      var body = JSON.stringify(message);
-      var urlObj = new URL(GCHAT_WEBHOOK);
-
-      var options = {
-        hostname: urlObj.hostname,
-        path: urlObj.pathname + urlObj.search,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body)
-        }
-      };
-
-      var req = https.request(options, function(res) {
-        var data = '';
-        res.on('data', function(chunk) { data += chunk; });
-        res.on('end', function() {
-          if (res.statusCode >= 200 && res.statusCode < 300) {
-            console.log('Posted to Google Chat successfully!');
-            resolve(data);
-          } else {
-            reject(new Error('Google Chat error ' + res.statusCode + ': ' + data));
-          }
-        });
-      });
-      req.on('error', reject);
-      req.write(body);
-      req.end();
-    }).catch(reject);
-  });
+function fmtFTE(val) {
+  if (val % 1 === 0) return val.toFixed(0);
+  if ((val * 4) % 1 === 0 && val % 0.5 !== 0) return val.toFixed(2);
+  return val.toFixed(1);
 }
 
-function uploadToImgur(imageBuffer) {
-  return new Promise(function(resolve, reject) {
-    var base64 = imageBuffer.toString('base64');
-    var body = JSON.stringify({ image: base64, type: 'base64' });
+function getMonthKey(dateStr) {
+  var d = new Date(dateStr);
+  var gmt8 = new Date(d.getTime() + (8 * 60 * 60 * 1000));
+  return gmt8.getUTCFullYear() + '-' + String(gmt8.getUTCMonth() + 1).padStart(2, '0');
+}
 
-    var options = {
-      hostname: 'api.imgur.com',
-      path: '/3/image',
-      method: 'POST',
-      headers: {
-        'Authorization': 'Client-ID 546c25a59c58ad7',
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body)
+function httpRequest(url, options, body) {
+  return new Promise(function(resolve, reject) {
+    var urlObj = new URL(url);
+    var mod = urlObj.protocol === 'https:' ? https : http;
+    var opts = Object.assign({
+      hostname: urlObj.hostname,
+      port: urlObj.port,
+      path: urlObj.pathname + urlObj.search,
+      method: 'GET'
+    }, options);
+
+    var req = mod.request(opts, function(res) {
+      // Handle redirects
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return httpRequest(res.headers.location, options, body).then(resolve).catch(reject);
       }
-    };
+      var data = '';
+      res.on('data', function(chunk) { data += chunk; });
+      res.on('end', function() { resolve({ status: res.statusCode, body: data, headers: res.headers }); });
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
 
-    var req = https.request(options, function(res) {
+async function login() {
+  // POST login to get session cookie
+  var loginBody = 'password=' + encodeURIComponent(APP_PASSWORD);
+  var res = await httpRequest(DASHBOARD_URL + '/login', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Length': Buffer.byteLength(loginBody)
+    }
+  }, loginBody);
+
+  // Extract session cookie from Set-Cookie header
+  var cookies = res.headers['set-cookie'];
+  if (!cookies) throw new Error('No session cookie received. Login failed.');
+  var sessionCookie = '';
+  (Array.isArray(cookies) ? cookies : [cookies]).forEach(function(c) {
+    var match = c.match(/session=([^;]+)/);
+    if (match) sessionCookie = 'session=' + match[1];
+  });
+  if (!sessionCookie) throw new Error('Session cookie not found in response');
+  console.log('Logged in successfully');
+  return sessionCookie;
+}
+
+async function fetchTicketData(cookie) {
+  var res = await httpRequest(DASHBOARD_URL + '/api/tickets', {
+    headers: { 'Cookie': cookie }
+  });
+  if (res.status !== 200) throw new Error('API returned ' + res.status + ': ' + res.body.substring(0, 200));
+  return JSON.parse(res.body);
+}
+
+function buildMonthSummary(data, monthKey) {
+  var types = ['Full-Time', 'Part-Time', 'Part-Time-Under-20-Hours', 'Output-Based', 'Project-Based', 'Trial'];
+  var counts = { hire: {}, churn: {} };
+  types.forEach(function(t) { counts.hire[t] = 0; counts.churn[t] = 0; });
+  counts.hire._total = 0; counts.churn._total = 0;
+  counts.hire._fte = 0; counts.churn._fte = 0;
+
+  data.raw.forEach(function(r) {
+    var k = getMonthKey(r.d);
+    if (k !== monthKey) return;
+    var type = r.t || 'Unknown';
+    if (counts.hire[type] === undefined) counts.hire[type] = 0;
+    counts.hire[type]++;
+    counts.hire._total++;
+    counts.hire._fte += getFTEWeight(type);
+  });
+
+  data.offboard.forEach(function(r) {
+    var k = getMonthKey(r.o + 'T00:00:00Z');
+    if (k !== monthKey) return;
+    var type = r.t || 'Unknown';
+    if (counts.churn[type] === undefined) counts.churn[type] = 0;
+    counts.churn[type]++;
+    counts.churn._total++;
+    counts.churn._fte += getFTEWeight(type);
+  });
+
+  return counts;
+}
+
+function postToGoogleChat(message) {
+  return new Promise(function(resolve, reject) {
+    var body = JSON.stringify(message);
+    var urlObj = new URL(GCHAT_WEBHOOK);
+    var req = https.request({
+      hostname: urlObj.hostname,
+      path: urlObj.pathname + urlObj.search,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+    }, function(res) {
       var data = '';
       res.on('data', function(chunk) { data += chunk; });
       res.on('end', function() {
-        try {
-          var json = JSON.parse(data);
-          if (json.success && json.data && json.data.link) {
-            console.log('Image uploaded to: ' + json.data.link);
-            resolve(json.data.link);
-          } else {
-            reject(new Error('Imgur upload failed: ' + data));
-          }
-        } catch (e) {
-          reject(new Error('Imgur parse error: ' + data));
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          console.log('Posted to Google Chat successfully!');
+          resolve(data);
+        } else {
+          reject(new Error('Google Chat error ' + res.statusCode + ': ' + data));
         }
       });
     });
@@ -194,13 +156,138 @@ function uploadToImgur(imageBuffer) {
 
 async function main() {
   try {
-    console.log('=== FTE Dashboard Screenshot → Google Chat ===');
+    console.log('=== FTE Dashboard → Google Chat ===');
     console.log('Dashboard: ' + DASHBOARD_URL);
-    console.log('Time: ' + new Date().toISOString());
 
-    var screenshot = await takeScreenshot();
-    await postToGoogleChat(screenshot);
+    // Login and fetch data
+    var cookie = await login();
+    var data = await fetchTicketData(cookie);
+    console.log('Fetched: ' + data.counts.created + ' created, ' + data.counts.offboarded + ' offboarded');
 
+    // Build current month summary
+    var now = new Date();
+    var gmt8 = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+    var curMonthKey = gmt8.getUTCFullYear() + '-' + String(gmt8.getUTCMonth() + 1).padStart(2, '0');
+    var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var monthLabel = monthNames[gmt8.getUTCMonth()] + ' ' + gmt8.getUTCFullYear();
+
+    var c = buildMonthSummary(data, curMonthKey);
+    var netFTE = Math.round((c.hire._fte - c.churn._fte) * 100) / 100;
+
+    // Format time
+    var h = gmt8.getUTCHours();
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    var h12 = h % 12 || 12;
+    var timeStr = monthNames[gmt8.getUTCMonth()] + ' ' + gmt8.getUTCDate() + ', ' + gmt8.getUTCFullYear() + ' ' + h12 + ':' + String(gmt8.getUTCMinutes()).padStart(2, '0') + ' ' + ampm + ' (GMT+8)';
+
+    // Build contract type breakdown lines
+    var types = ['Full-Time', 'Part-Time', 'Part-Time-Under-20-Hours', 'Output-Based', 'Project-Based', 'Trial'];
+    var typeLabels = {
+      'Full-Time': 'Full Time',
+      'Part-Time': 'Part Time',
+      'Part-Time-Under-20-Hours': 'PT Under 20hrs',
+      'Output-Based': 'Output-Based',
+      'Project-Based': 'Project-Based',
+      'Trial': 'Trial'
+    };
+
+    var breakdownLines = [];
+    types.forEach(function(t) {
+      var hc = c.hire[t] || 0;
+      var ch = c.churn[t] || 0;
+      if (hc === 0 && ch === 0) return;
+      var label = typeLabels[t] || t;
+      breakdownLines.push('    ' + label + ':  ' + hc + '  |  ' + ch);
+    });
+
+    // Net FTE color indicator
+    var netPrefix = netFTE >= 0 ? '+' : '';
+    var netEmoji = netFTE > 0 ? '📈' : (netFTE < 0 ? '📉' : '➖');
+
+    // Build Google Chat card (Cards V2 format for better formatting)
+    var message = {
+      cardsV2: [{
+        cardId: 'fte-update',
+        card: {
+          header: {
+            title: 'FTE Running Update',
+            subtitle: 'Current Month — ' + monthLabel,
+            imageUrl: 'https://fonts.gstatic.com/s/i/short-term/release/googlesymbols/analytics/default/48px.svg',
+            imageType: 'CIRCLE'
+          },
+          sections: [
+            {
+              header: '<b>SUMMARY</b>',
+              widgets: [
+                {
+                  decoratedText: {
+                    topLabel: 'NEW HIRES (Headcount → FTE)',
+                    text: '<b>' + c.hire._total + ' HC  →  ' + fmtFTE(Math.round(c.hire._fte * 100) / 100) + ' FTE</b>',
+                    startIcon: { knownIcon: 'PERSON' }
+                  }
+                },
+                {
+                  decoratedText: {
+                    topLabel: 'CHURN (Headcount → FTE)',
+                    text: '<b>' + c.churn._total + ' HC  →  ' + fmtFTE(Math.round(c.churn._fte * 100) / 100) + ' FTE</b>',
+                    startIcon: { knownIcon: 'MEMBERSHIP' }
+                  }
+                },
+                {
+                  decoratedText: {
+                    topLabel: 'NET FTE ' + netEmoji,
+                    text: '<b><font color="' + (netFTE >= 0 ? '#16a34a' : '#dc2626') + '">' + netPrefix + fmtFTE(netFTE) + '</font></b>',
+                    startIcon: { knownIcon: 'BOOKMARK' }
+                  }
+                }
+              ]
+            },
+            {
+              header: '<b>BY CONTRACT TYPE</b>  (Hires | Churn)',
+              widgets: (function() {
+                var widgets = [];
+                types.forEach(function(t) {
+                  var hc = c.hire[t] || 0;
+                  var ch = c.churn[t] || 0;
+                  if (hc === 0 && ch === 0) return;
+                  widgets.push({
+                    decoratedText: {
+                      topLabel: (typeLabels[t] || t).toUpperCase(),
+                      text: '<b>' + hc + '</b>  |  <b>' + ch + '</b>'
+                    }
+                  });
+                });
+                if (widgets.length === 0) {
+                  widgets.push({ decoratedText: { text: 'No data for this month yet' } });
+                }
+                return widgets;
+              })()
+            },
+            {
+              widgets: [
+                {
+                  decoratedText: {
+                    topLabel: 'Data as of',
+                    text: timeStr
+                  }
+                },
+                {
+                  buttonList: {
+                    buttons: [{
+                      text: 'OPEN DASHBOARD',
+                      onClick: { openLink: { url: DASHBOARD_URL } },
+                      color: { red: 0.15, green: 0.39, blue: 0.92, alpha: 1 }
+                    }]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }]
+    };
+
+    await postToGoogleChat(message);
     console.log('Done!');
     process.exit(0);
   } catch (err) {
