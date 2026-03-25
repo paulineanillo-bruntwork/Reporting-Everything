@@ -253,12 +253,274 @@ app.get('/api/tickets', async function(req, res) {
   }
 });
 
+// ===== Google Chat scheduled posting =====
+var GCHAT_WEBHOOK = process.env.GCHAT_WEBHOOK;
+var DASHBOARD_URL = process.env.DASHBOARD_URL || process.env.APP_URL || ('http://localhost:' + PORT);
+
+function getFTEWeight(type) {
+  if (type === 'Full-Time') return 1;
+  if (type === 'Part-Time-Under-20-Hours') return 0.25;
+  return 0.5;
+}
+
+function fmtFTE(val) {
+  if (val % 1 === 0) return val.toFixed(0);
+  if ((val * 4) % 1 === 0 && val % 0.5 !== 0) return val.toFixed(2);
+  return val.toFixed(1);
+}
+
+function getMonthKey(dateStr) {
+  var d = new Date(dateStr);
+  var gmt8 = new Date(d.getTime() + (8 * 60 * 60 * 1000));
+  return gmt8.getUTCFullYear() + '-' + String(gmt8.getUTCMonth() + 1).padStart(2, '0');
+}
+
+function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+
+async function fetchAllPagesWithRetry(baseBody) {
+  var results = [];
+  var after = undefined;
+  var hasMore = true;
+  var page = 0;
+  while (hasMore) {
+    var body = Object.assign({}, baseBody, { limit: 200 });
+    if (after) body.after = after;
+    if (page > 0) await sleep(400);
+    var data;
+    try {
+      data = await hubspotSearch(body);
+    } catch (err) {
+      if (err.message && err.message.indexOf('429') !== -1) {
+        console.log('Rate limited, waiting 3s and retrying...');
+        await sleep(3000);
+        data = await hubspotSearch(body);
+      } else {
+        throw err;
+      }
+    }
+    results = results.concat(data.results || []);
+    if (data.paging && data.paging.next && data.paging.next.after) {
+      after = data.paging.next.after;
+    } else {
+      hasMore = false;
+    }
+    page++;
+  }
+  return results;
+}
+
+async function postGChatUpdate() {
+  if (!GCHAT_WEBHOOK) {
+    console.log('GCHAT_WEBHOOK not set, skipping Google Chat post');
+    return;
+  }
+
+  try {
+    console.log('[GChat] Fetching data from HubSpot...');
+    var cutoff = Date.now() - (120 * 24 * 60 * 60 * 1000);
+    var cutoffStr = String(cutoff);
+
+    var createdResults = await fetchAllPagesWithRetry({
+      filterGroups: [{
+        filters: [
+          { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+          { propertyName: 'createdate', operator: 'GTE', value: cutoffStr }
+        ]
+      }],
+      properties: ['createdate', 'assignment_type', 'hs_pipeline'],
+      sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }]
+    });
+
+    var offboardResults = await fetchAllPagesWithRetry({
+      filterGroups: [{
+        filters: [
+          { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+          { propertyName: 'offboarding_date', operator: 'GTE', value: cutoffStr }
+        ]
+      }],
+      properties: ['offboarding_date', 'assignment_type', 'hs_pipeline']
+    });
+
+    console.log('[GChat] Fetched: ' + createdResults.length + ' created, ' + offboardResults.length + ' offboarded');
+
+    // Build current month summary
+    var now = new Date();
+    var gmt8 = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+    var curMonthKey = gmt8.getUTCFullYear() + '-' + String(gmt8.getUTCMonth() + 1).padStart(2, '0');
+    var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var monthLabel = monthNames[gmt8.getUTCMonth()] + ' ' + gmt8.getUTCFullYear();
+
+    // Count by type
+    var types = ['Full-Time', 'Part-Time', 'Part-Time-Under-20-Hours', 'Output-Based', 'Project-Based', 'Trial'];
+    var hire = {}, churn = {};
+    types.forEach(function(t) { hire[t] = 0; churn[t] = 0; });
+    hire._total = 0; churn._total = 0; hire._fte = 0; churn._fte = 0;
+
+    createdResults.forEach(function(r) {
+      var k = getMonthKey(r.properties.createdate);
+      if (k !== curMonthKey) return;
+      var type = r.properties.assignment_type || 'Unknown';
+      if (hire[type] === undefined) hire[type] = 0;
+      hire[type]++;
+      hire._total++;
+      hire._fte += getFTEWeight(type);
+    });
+
+    offboardResults.forEach(function(r) {
+      var oDate = r.properties.offboarding_date;
+      if (!oDate) return;
+      var k = getMonthKey(oDate + 'T00:00:00Z');
+      if (k !== curMonthKey) return;
+      var type = r.properties.assignment_type || 'Unknown';
+      if (churn[type] === undefined) churn[type] = 0;
+      churn[type]++;
+      churn._total++;
+      churn._fte += getFTEWeight(type);
+    });
+
+    var netFTE = Math.round((hire._fte - churn._fte) * 100) / 100;
+    var netPrefix = netFTE >= 0 ? '+' : '';
+    var netEmoji = netFTE > 0 ? '\u{1F4C8}' : (netFTE < 0 ? '\u{1F4C9}' : '\u{2796}');
+
+    var h = gmt8.getUTCHours();
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    var h12 = h % 12 || 12;
+    var timeStr = monthNames[gmt8.getUTCMonth()] + ' ' + gmt8.getUTCDate() + ', ' + gmt8.getUTCFullYear() + ' ' + h12 + ':' + String(gmt8.getUTCMinutes()).padStart(2, '0') + ' ' + ampm + ' (GMT+8)';
+
+    var typeLabels = {
+      'Full-Time': 'Full Time', 'Part-Time': 'Part Time',
+      'Part-Time-Under-20-Hours': 'PT Under 20hrs',
+      'Output-Based': 'Output-Based', 'Project-Based': 'Project-Based', 'Trial': 'Trial'
+    };
+
+    var message = {
+      cardsV2: [{
+        cardId: 'fte-update',
+        card: {
+          header: {
+            title: 'FTE Running Update',
+            subtitle: 'Current Month \u2014 ' + monthLabel,
+            imageUrl: 'https://fonts.gstatic.com/s/i/short-term/release/googlesymbols/analytics/default/48px.svg',
+            imageType: 'CIRCLE'
+          },
+          sections: [
+            {
+              header: '<b>SUMMARY</b>',
+              widgets: [
+                { decoratedText: { topLabel: 'NEW HIRES (Headcount \u2192 FTE)', text: '<b>' + hire._total + ' HC  \u2192  ' + fmtFTE(Math.round(hire._fte * 100) / 100) + ' FTE</b>', startIcon: { knownIcon: 'PERSON' } } },
+                { decoratedText: { topLabel: 'CHURN (Headcount \u2192 FTE)', text: '<b>' + churn._total + ' HC  \u2192  ' + fmtFTE(Math.round(churn._fte * 100) / 100) + ' FTE</b>', startIcon: { knownIcon: 'MEMBERSHIP' } } },
+                { decoratedText: { topLabel: 'NET FTE ' + netEmoji, text: '<b><font color="' + (netFTE >= 0 ? '#16a34a' : '#dc2626') + '">' + netPrefix + fmtFTE(netFTE) + '</font></b>', startIcon: { knownIcon: 'BOOKMARK' } } }
+              ]
+            },
+            {
+              header: '<b>BY CONTRACT TYPE</b>  (Hires | Churn)',
+              widgets: (function() {
+                var widgets = [];
+                types.forEach(function(t) {
+                  var hc = hire[t] || 0;
+                  var ch = churn[t] || 0;
+                  if (hc === 0 && ch === 0) return;
+                  widgets.push({ decoratedText: { topLabel: (typeLabels[t] || t).toUpperCase(), text: '<b>' + hc + '</b>  |  <b>' + ch + '</b>' } });
+                });
+                if (widgets.length === 0) widgets.push({ decoratedText: { text: 'No data for this month yet' } });
+                return widgets;
+              })()
+            },
+            {
+              widgets: [
+                { decoratedText: { topLabel: 'Data as of', text: timeStr } },
+                { buttonList: { buttons: [{ text: 'OPEN DASHBOARD', onClick: { openLink: { url: DASHBOARD_URL } }, color: { red: 0.15, green: 0.39, blue: 0.92, alpha: 1 } }] } }
+              ]
+            }
+          ]
+        }
+      }]
+    };
+
+    // Post to Google Chat
+    var body = JSON.stringify(message);
+    var urlObj = new URL(GCHAT_WEBHOOK);
+    await new Promise(function(resolve, reject) {
+      var https = require('https');
+      var req = https.request({
+        hostname: urlObj.hostname,
+        path: urlObj.pathname + urlObj.search,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+      }, function(res) {
+        var data = '';
+        res.on('data', function(chunk) { data += chunk; });
+        res.on('end', function() {
+          if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);
+          else reject(new Error('Google Chat error ' + res.statusCode + ': ' + data));
+        });
+      });
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
+
+    console.log('[GChat] Posted successfully at ' + timeStr);
+  } catch (err) {
+    console.error('[GChat] FAILED:', err.message);
+  }
+}
+
+// Schedule Google Chat posts every 4 hours starting midnight GMT+8
+// GMT+8 midnight = 16:00 UTC, then 20:00, 0:00, 4:00, 8:00, 12:00 UTC
+function scheduleGChatPosts() {
+  if (!GCHAT_WEBHOOK) {
+    console.log('No GCHAT_WEBHOOK set, skipping scheduler');
+    return;
+  }
+
+  function msUntilNextSlot() {
+    var now = new Date();
+    var utcH = now.getUTCHours();
+    var utcM = now.getUTCMinutes();
+    var utcS = now.getUTCSeconds();
+    // Target hours in UTC: 16, 20, 0, 4, 8, 12
+    var slots = [0, 4, 8, 12, 16, 20];
+    var currentMins = utcH * 60 + utcM;
+    var nextMins = null;
+    for (var i = 0; i < slots.length; i++) {
+      var slotMins = slots[i] * 60;
+      if (slotMins > currentMins) { nextMins = slotMins; break; }
+    }
+    if (nextMins === null) nextMins = slots[0] * 60 + 24 * 60; // next day midnight UTC
+    var diffMs = (nextMins - currentMins) * 60 * 1000 - utcS * 1000;
+    return diffMs;
+  }
+
+  function scheduleNext() {
+    var ms = msUntilNextSlot();
+    var nextTime = new Date(Date.now() + ms);
+    var gmt8 = new Date(nextTime.getTime() + (8 * 60 * 60 * 1000));
+    console.log('[GChat] Next post scheduled in ' + Math.round(ms / 60000) + ' minutes (at ' + gmt8.toISOString().substring(0, 16) + ' GMT+8)');
+    setTimeout(function() {
+      postGChatUpdate().then(function() {
+        scheduleNext();
+      }).catch(function() {
+        scheduleNext();
+      });
+    }, ms);
+  }
+
+  // Post immediately on startup, then schedule
+  console.log('[GChat] Posting initial update...');
+  postGChatUpdate().then(function() {
+    scheduleNext();
+  }).catch(function() {
+    scheduleNext();
+  });
+}
+
 initOIDC().then(function() {
   app.listen(PORT, function() {
     console.log('FTE Dashboard server running at http://localhost:' + PORT);
+    scheduleGChatPosts();
   });
 }).catch(function(err) {
   console.error('Failed to initialise OIDC:', err.message);
   process.exit(1);
 });
-// deployed Mon Mar 23 08:33:54 MPST 2026
