@@ -466,8 +466,8 @@ async function postGChatUpdate() {
   }
 }
 
-// Schedule Google Chat posts every 4 hours starting midnight GMT+8
-// GMT+8 midnight = 16:00 UTC, then 20:00, 0:00, 4:00, 8:00, 12:00 UTC
+// Schedule Google Chat posts at 8AM and 8PM GMT+8
+// 8AM GMT+8 = 0:00 UTC, 8PM GMT+8 = 12:00 UTC
 function scheduleGChatPosts() {
   if (!GCHAT_WEBHOOK) {
     console.log('No GCHAT_WEBHOOK set, skipping scheduler');
@@ -479,15 +479,15 @@ function scheduleGChatPosts() {
     var utcH = now.getUTCHours();
     var utcM = now.getUTCMinutes();
     var utcS = now.getUTCSeconds();
-    // Target hours in UTC: 16, 20, 0, 4, 8, 12
-    var slots = [0, 4, 8, 12, 16, 20];
+    // Target hours in UTC: 0 (8AM GMT+8) and 12 (8PM GMT+8)
+    var slots = [0, 12];
     var currentMins = utcH * 60 + utcM;
     var nextMins = null;
     for (var i = 0; i < slots.length; i++) {
       var slotMins = slots[i] * 60;
       if (slotMins > currentMins) { nextMins = slotMins; break; }
     }
-    if (nextMins === null) nextMins = slots[0] * 60 + 24 * 60; // next day midnight UTC
+    if (nextMins === null) nextMins = slots[0] * 60 + 24 * 60; // next day 0:00 UTC
     var diffMs = (nextMins - currentMins) * 60 * 1000 - utcS * 1000;
     return diffMs;
   }
@@ -507,7 +507,7 @@ function scheduleGChatPosts() {
   }
 
   // Only post at scheduled times — do NOT post on startup/redeploy
-  console.log('[GChat] Scheduler started (posts at 12AM, 4AM, 8AM, 12PM, 4PM, 8PM GMT+8 only)');
+  console.log('[GChat] Scheduler started (posts at 8AM and 8PM GMT+8 only)');
   scheduleNext();
 }
 
