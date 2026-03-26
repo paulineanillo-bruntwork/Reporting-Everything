@@ -506,13 +506,9 @@ function scheduleGChatPosts() {
     }, ms);
   }
 
-  // Post immediately on startup, then schedule
-  console.log('[GChat] Posting initial update...');
-  postGChatUpdate().then(function() {
-    scheduleNext();
-  }).catch(function() {
-    scheduleNext();
-  });
+  // Only post at scheduled times — do NOT post on startup/redeploy
+  console.log('[GChat] Scheduler started (posts at 12AM, 4AM, 8AM, 12PM, 4PM, 8PM GMT+8 only)');
+  scheduleNext();
 }
 
 initOIDC().then(function() {
