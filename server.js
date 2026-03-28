@@ -520,3 +520,174 @@ initOIDC().then(function() {
   console.error('Failed to initialise OIDC:', err.message);
   process.exit(1);
 });
+
+// ===== Google Ads Spend API =====
+var ADS_SHEET_ID = '13vyeLZXZnw4jPjlVS6Q2z2299ZT_76D1ne0jVknh2kc';
+var ADS_SHEET_GID = '243603327';
+var ADS_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + ADS_SHEET_ID + '/export?format=csv&gid=' + ADS_SHEET_GID;
+var adsCache = { data: null, ts: 0 };
+var ADS_CACHE_TTL = 5 * 60 * 1000;
+
+function fetchAdsCsv(url) {
+  return new Promise(function(resolve, reject) {
+    var https = require('https');
+    var get = function(u) {
+      https.get(u, function(res) {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          get(res.headers.location);
+          return;
+        }
+        if (res.statusCode !== 200) { reject(new Error('HTTP ' + res.statusCode)); return; }
+        var body = '';
+        res.on('data', function(chunk) { body += chunk; });
+        res.on('end', function() { resolve(body); });
+        res.on('error', reject);
+      }).on('error', reject);
+    };
+    get(url);
+  });
+}
+
+function parseAdsCsv(text) {
+  var lines = [];
+  var current = '';
+  var inQuotes = false;
+  for (var i = 0; i < text.length; i++) {
+    var ch = text[i];
+    if (ch === '"') {
+      if (inQuotes && text[i + 1] === '"') { current += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === '\n' && !inQuotes) { lines.push(current); current = ''; }
+    else if (ch === '\r' && !inQuotes) { /* skip */ }
+    else current += ch;
+  }
+  if (current) lines.push(current);
+  var rows = [];
+  for (var li = 0; li < lines.length; li++) {
+    var line = lines[li];
+    if (!line.trim()) continue;
+    var fields = []; var field = ''; var q = false;
+    for (var j = 0; j < line.length; j++) {
+      var c = line[j];
+      if (c === '"') { if (q && line[j + 1] === '"') { field += '"'; j++; } else q = !q; }
+      else if (c === ',' && !q) { fields.push(field); field = ''; }
+      else field += c;
+    }
+    fields.push(field);
+    rows.push(fields);
+  }
+  return rows;
+}
+
+function processAdsData(rows) {
+  var campaignHeaderIdx = -1;
+  var accountTotalIdx = -1;
+  var firstHeaderIdx = -1;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][0] === 'Day') {
+      if (firstHeaderIdx === -1) firstHeaderIdx = i;
+      else { campaignHeaderIdx = i; break; }
+    }
+    if (rows[i][0] === '' && rows[i][1] === 'Total: Account') accountTotalIdx = i;
+  }
+  var accountTotal = null;
+  if (accountTotalIdx >= 0 && firstHeaderIdx >= 0) {
+    var aHeaders = rows[firstHeaderIdx]; var aValues = rows[accountTotalIdx];
+    accountTotal = {};
+    for (var ai = 0; ai < aHeaders.length; ai++) accountTotal[aHeaders[ai]] = aValues[ai] || '';
+  }
+  var campaigns = [];
+  if (campaignHeaderIdx >= 0) {
+    var cHeaders = rows[campaignHeaderIdx];
+    for (var ci = campaignHeaderIdx + 1; ci < rows.length; ci++) {
+      var row = rows[ci];
+      if (!row[0] || row[0] === '') continue;
+      var obj = {};
+      for (var cj = 0; cj < cHeaders.length; cj++) obj[cHeaders[cj]] = row[cj] || '';
+      campaigns.push(obj);
+    }
+  }
+  var dailyMap = {};
+  for (var di = 0; di < campaigns.length; di++) {
+    var camp = campaigns[di];
+    var day = camp['Day'];
+    if (!day) continue;
+    if (!dailyMap[day]) dailyMap[day] = { day: day, clicks: 0, impressions: 0, cost: 0, conversions: 0 };
+    dailyMap[day].clicks += parseFloat(camp['Clicks']) || 0;
+    dailyMap[day].impressions += parseFloat(camp['Impr.']) || 0;
+    dailyMap[day].cost += parseFloat(camp['Cost']) || 0;
+    dailyMap[day].conversions += parseFloat(camp['Conversions']) || 0;
+  }
+  var timeseries = Object.values(dailyMap).sort(function(a, b) { return a.day.localeCompare(b.day); });
+  for (var ti = 0; ti < timeseries.length; ti++) {
+    var d = timeseries[ti];
+    d.ctr = d.impressions > 0 ? (d.clicks / d.impressions) : 0;
+    d.avg_cpc = d.clicks > 0 ? (d.cost / d.clicks) : 0;
+    d.cost = Math.round(d.cost * 100) / 100;
+    d.conversions = Math.round(d.conversions * 100) / 100;
+    d.ctr = Math.round(d.ctr * 10000) / 100;
+    d.avg_cpc = Math.round(d.avg_cpc * 100) / 100;
+  }
+  var campaignMap = {};
+  for (var si = 0; si < campaigns.length; si++) {
+    var c2 = campaigns[si]; var name = c2['Campaign'];
+    if (!name) continue;
+    if (!campaignMap[name]) campaignMap[name] = { campaign: name, status: c2['Campaign status'], clicks: 0, impressions: 0, cost: 0, conversions: 0 };
+    campaignMap[name].clicks += parseFloat(c2['Clicks']) || 0;
+    campaignMap[name].impressions += parseFloat(c2['Impr.']) || 0;
+    campaignMap[name].cost += parseFloat(c2['Cost']) || 0;
+    campaignMap[name].conversions += parseFloat(c2['Conversions']) || 0;
+  }
+  var campaignSummary = Object.values(campaignMap).map(function(c3) {
+    return {
+      campaign: c3.campaign, status: c3.status,
+      clicks: c3.clicks, impressions: c3.impressions,
+      cost: Math.round(c3.cost * 100) / 100, conversions: Math.round(c3.conversions * 100) / 100,
+      ctr: c3.impressions > 0 ? Math.round((c3.clicks / c3.impressions) * 10000) / 100 : 0,
+      avg_cpc: c3.clicks > 0 ? Math.round((c3.cost / c3.clicks) * 100) / 100 : 0
+    };
+  }).sort(function(a, b) { return b.cost - a.cost; });
+  var totalClicks = 0, totalImpressions = 0, totalCost = 0, totalConversions = 0;
+  for (var xi = 0; xi < timeseries.length; xi++) {
+    totalClicks += timeseries[xi].clicks;
+    totalImpressions += timeseries[xi].impressions;
+    totalCost += timeseries[xi].cost;
+    totalConversions += timeseries[xi].conversions;
+  }
+  return {
+    summary: {
+      total_clicks: totalClicks, total_impressions: totalImpressions,
+      total_cost: Math.round(totalCost * 100) / 100,
+      total_conversions: Math.round(totalConversions * 100) / 100,
+      avg_ctr: totalImpressions > 0 ? Math.round((totalClicks / totalImpressions) * 10000) / 100 : 0,
+      avg_cpc: totalClicks > 0 ? Math.round((totalCost / totalClicks) * 100) / 100 : 0,
+      cost_per_conversion: totalConversions > 0 ? Math.round((totalCost / totalConversions) * 100) / 100 : 0,
+      date_range: { start: timeseries.length ? timeseries[0].day : null, end: timeseries.length ? timeseries[timeseries.length - 1].day : null },
+      total_campaigns: campaignSummary.length, total_days: timeseries.length
+    },
+    campaigns: campaignSummary, timeseries: timeseries, raw_rows: campaigns.length
+  };
+}
+
+app.get('/api/ads', async function(req, res) {
+  try {
+    var now = Date.now();
+    if (adsCache.data && (now - adsCache.ts) < ADS_CACHE_TTL) {
+      return res.json(Object.assign({}, adsCache.data, { cached: true }));
+    }
+    var csv = await fetchAdsCsv(ADS_CSV_URL);
+    var rows = parseAdsCsv(csv);
+    var result = processAdsData(rows);
+    adsCache = { data: result, ts: now };
+    res.json(Object.assign({}, result, { cached: false }));
+  } catch (err) {
+    console.error('Ads API error:', err.message);
+    if (adsCache.data) return res.json(Object.assign({}, adsCache.data, { cached: true, stale: true }));
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Serve /adspend as a clean URL
+app.get('/adspend', function(req, res) {
+  res.sendFile(path.join(__dirname, 'adspend.html'));
+});
