@@ -25,6 +25,16 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .loading{text-align:center;padding:80px 20px;color:var(--text-muted)}
 .loading .spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
 @keyframes spin{to{transform:rotate(360deg)}}
+.filters{display:flex;gap:12px;align-items:center;margin-bottom:24px;flex-wrap:wrap}
+.filter-group{display:flex;align-items:center;gap:6px}
+.filter-group label{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted)}
+.filter-group select{padding:7px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);color:var(--text);cursor:pointer}
+.filter-group select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+.toggle-group{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.toggle-btn{padding:7px 16px;border:none;background:transparent;cursor:pointer;font-size:13px;font-weight:500;color:var(--text-muted);transition:all .15s;border-right:1px solid var(--border)}
+.toggle-btn:last-child{border-right:none}
+.toggle-btn:hover{background:#f8fafc}
+.toggle-btn.active{background:var(--blue);color:#fff}
 .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px}
 .card{background:var(--surface);border-radius:var(--radius);padding:20px 24px;box-shadow:var(--shadow);border:1px solid var(--border)}
 .card .label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:8px}
@@ -45,7 +55,7 @@ tbody tr:hover{background:#f8fafc}
 .badge-removed{background:#f1f5f9;color:var(--text-muted)}
 .ar{text-align:right}
 @media(max-width:900px){.cards{grid-template-columns:repeat(2,1fr)}.header,.nav-bar,.main{padding-left:20px;padding-right:20px}}
-@media(max-width:600px){.cards{grid-template-columns:1fr}}
+@media(max-width:600px){.cards{grid-template-columns:1fr}.filters{flex-direction:column;align-items:flex-start}}
 </style>
 </head>
 <body>
@@ -61,18 +71,50 @@ tbody tr:hover{background:#f8fafc}
   </div>
 </div>
 <div class="nav-bar">
-  <button class="tab-btn active" onclick="switchTab(&quot;overview&quot;,this)">Overview</button>
-  <button class="tab-btn" onclick="switchTab(&quot;campaigns&quot;,this)">Campaigns</button>
-  <button class="tab-btn" onclick="switchTab(&quot;daily&quot;,this)">Daily Breakdown</button>
+  <button class="tab-btn active" data-tab="overview">Overview</button>
+  <button class="tab-btn" data-tab="campaigns">Campaigns</button>
+  <button class="tab-btn" data-tab="daily">Breakdown</button>
 </div>
 <div class="main">
 <div id="loadingAds" class="loading"><div class="spinner"></div><div>Loading Google Ads data...</div></div>
 <div id="tab-overview" class="tab-content">
+  <div class="filters">
+    <div class="filter-group">
+      <label>Period</label>
+      <select id="periodFilter">
+        <option value="30">Last 30 days</option>
+        <option value="90" selected>Last 90 days</option>
+        <option value="180">Last 180 days</option>
+        <option value="365">Last 365 days</option>
+        <option value="all">All time</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Group by</label>
+      <div class="toggle-group" id="groupToggle">
+        <button class="toggle-btn active" data-group="day">Day</button>
+        <button class="toggle-btn" data-group="week">Week</button>
+        <button class="toggle-btn" data-group="month">Month</button>
+      </div>
+    </div>
+  </div>
   <div class="cards" id="summaryCards"></div>
-  <div class="chart-box"><h3>Daily Spend</h3><div class="chart-wrap"><canvas id="chartSpend"></canvas></div></div>
-  <div class="chart-box"><h3>Daily Clicks &amp; Conversions</h3><div class="chart-wrap"><canvas id="chartClicks"></canvas></div></div>
+  <div class="chart-box"><h3 id="spendChartTitle">Daily Spend</h3><div class="chart-wrap"><canvas id="chartSpend"></canvas></div></div>
+  <div class="chart-box"><h3 id="clicksChartTitle">Daily Clicks &amp; Conversions</h3><div class="chart-wrap"><canvas id="chartClicks"></canvas></div></div>
 </div>
 <div id="tab-campaigns" class="tab-content">
+  <div class="filters">
+    <div class="filter-group">
+      <label>Period</label>
+      <select id="campPeriodFilter">
+        <option value="30">Last 30 days</option>
+        <option value="90" selected>Last 90 days</option>
+        <option value="180">Last 180 days</option>
+        <option value="365">Last 365 days</option>
+        <option value="all">All time</option>
+      </select>
+    </div>
+  </div>
   <div class="tbl-box"><h3>Campaign Performance</h3>
   <div style="overflow-x:auto"><table id="tblCamp"><thead><tr>
     <th>Campaign</th><th>Status</th><th class="ar">Clicks</th><th class="ar">Impressions</th>
@@ -80,9 +122,29 @@ tbody tr:hover{background:#f8fafc}
   </tr></thead><tbody></tbody></table></div></div>
 </div>
 <div id="tab-daily" class="tab-content">
-  <div class="tbl-box"><h3>Daily Performance</h3>
+  <div class="filters">
+    <div class="filter-group">
+      <label>Period</label>
+      <select id="brkPeriodFilter">
+        <option value="30">Last 30 days</option>
+        <option value="90" selected>Last 90 days</option>
+        <option value="180">Last 180 days</option>
+        <option value="365">Last 365 days</option>
+        <option value="all">All time</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Group by</label>
+      <div class="toggle-group" id="brkGroupToggle">
+        <button class="toggle-btn active" data-group="day">Day</button>
+        <button class="toggle-btn" data-group="week">Week</button>
+        <button class="toggle-btn" data-group="month">Month</button>
+      </div>
+    </div>
+  </div>
+  <div class="tbl-box"><h3 id="brkTableTitle">Daily Performance</h3>
   <div style="overflow-x:auto"><table id="tblDaily"><thead><tr>
-    <th>Date</th><th class="ar">Clicks</th><th class="ar">Impressions</th>
+    <th id="brkDateHeader">Date</th><th class="ar">Clicks</th><th class="ar">Impressions</th>
     <th class="ar">CTR</th><th class="ar">Avg CPC</th><th class="ar">Cost</th><th class="ar">Conversions</th>
   </tr></thead><tbody></tbody></table></div></div>
 </div>

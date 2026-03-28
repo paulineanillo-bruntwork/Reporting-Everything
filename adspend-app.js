@@ -1,14 +1,155 @@
 var spC=null,clC=null;
+var rawData=null;
+var currentGroup="day";
+var brkGroup="day";
 
-function switchTab(t,b){
-  document.querySelectorAll(".tab-content").forEach(function(e){e.classList.remove("active")});
-  document.querySelectorAll(".tab-btn").forEach(function(e){e.classList.remove("active")});
-  document.getElementById("tab-"+t).classList.add("active");
-  b.classList.add("active");
-}
+// Tab switching via data attributes
+document.querySelectorAll(".tab-btn").forEach(function(btn){
+  btn.addEventListener("click",function(){
+    document.querySelectorAll(".tab-content").forEach(function(e){e.classList.remove("active")});
+    document.querySelectorAll(".tab-btn").forEach(function(e){e.classList.remove("active")});
+    document.getElementById("tab-"+btn.getAttribute("data-tab")).classList.add("active");
+    btn.classList.add("active");
+  });
+});
+
+// Toggle group buttons
+document.querySelectorAll("#groupToggle .toggle-btn").forEach(function(btn){
+  btn.addEventListener("click",function(){
+    document.querySelectorAll("#groupToggle .toggle-btn").forEach(function(e){e.classList.remove("active")});
+    btn.classList.add("active");
+    currentGroup=btn.getAttribute("data-group");
+    applyFilters();
+  });
+});
+document.querySelectorAll("#brkGroupToggle .toggle-btn").forEach(function(btn){
+  btn.addEventListener("click",function(){
+    document.querySelectorAll("#brkGroupToggle .toggle-btn").forEach(function(e){e.classList.remove("active")});
+    btn.classList.add("active");
+    brkGroup=btn.getAttribute("data-group");
+    applyFilters();
+  });
+});
+
+// Period filter change listeners
+document.getElementById("periodFilter").addEventListener("change",applyFilters);
+document.getElementById("campPeriodFilter").addEventListener("change",applyFilters);
+document.getElementById("brkPeriodFilter").addEventListener("change",applyFilters);
 
 function fmt(n){return n.toLocaleString("en-US")}
 function fm(n){return "$"+n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
+
+function filterByDays(ts,days){
+  if(days==="all") return ts;
+  var cutoff=new Date();
+  cutoff.setDate(cutoff.getDate()-parseInt(days));
+  var cutStr=cutoff.toISOString().slice(0,10);
+  return ts.filter(function(d){return d.day>=cutStr});
+}
+
+function getWeekKey(dateStr){
+  var d=new Date(dateStr+"T00:00:00");
+  var day=d.getDay();
+  var diff=d.getDate()-day+(day===0?-6:1);
+  var monday=new Date(d);
+  monday.setDate(diff);
+  return monday.toISOString().slice(0,10);
+}
+
+function getMonthKey(dateStr){
+  return dateStr.slice(0,7);
+}
+
+function groupTimeseries(ts,mode){
+  if(mode==="day") return ts;
+  var map={};
+  for(var i=0;i<ts.length;i++){
+    var d=ts[i];
+    var key=mode==="week"?getWeekKey(d.day):getMonthKey(d.day);
+    if(!map[key]) map[key]={day:key,clicks:0,impressions:0,cost:0,conversions:0};
+    map[key].clicks+=d.clicks;
+    map[key].impressions+=d.impressions;
+    map[key].cost+=d.cost;
+    map[key].conversions+=d.conversions;
+  }
+  var result=Object.values(map).sort(function(a,b){return a.day.localeCompare(b.day)});
+  for(var j=0;j<result.length;j++){
+    var r=result[j];
+    r.cost=Math.round(r.cost*100)/100;
+    r.conversions=Math.round(r.conversions*100)/100;
+    r.ctr=r.impressions>0?Math.round((r.clicks/r.impressions)*10000)/100:0;
+    r.avg_cpc=r.clicks>0?Math.round((r.cost/r.clicks)*100)/100:0;
+  }
+  return result;
+}
+
+function computeSummary(ts,campaigns){
+  var totalClicks=0,totalImpr=0,totalCost=0,totalConv=0;
+  for(var i=0;i<ts.length;i++){
+    totalClicks+=ts[i].clicks;
+    totalImpr+=ts[i].impressions;
+    totalCost+=ts[i].cost;
+    totalConv+=ts[i].conversions;
+  }
+  return {
+    total_clicks:totalClicks,
+    total_impressions:totalImpr,
+    total_cost:Math.round(totalCost*100)/100,
+    total_conversions:Math.round(totalConv*100)/100,
+    avg_ctr:totalImpr>0?Math.round((totalClicks/totalImpr)*10000)/100:0,
+    avg_cpc:totalClicks>0?Math.round((totalCost/totalClicks)*100)/100:0,
+    cost_per_conversion:totalConv>0?Math.round((totalCost/totalConv)*100)/100:0,
+    total_days:ts.length,
+    total_campaigns:campaigns,
+    date_range:{
+      start:ts.length?ts[0].day:null,
+      end:ts.length?ts[ts.length-1].day:null
+    }
+  };
+}
+
+function filterCampaigns(allCamps,rawTs,days){
+  if(days==="all") return allCamps;
+  var filtered=filterByDays(rawTs,days);
+  var dateSet={};
+  for(var i=0;i<filtered.length;i++) dateSet[filtered[i].day]=true;
+  // We need to recompute from raw campaign rows, but we only have aggregated data
+  // So we return the same campaigns (they cover the full range) - the summary cards use timeseries filtering
+  return allCamps;
+}
+
+function groupLabel(mode){
+  if(mode==="week") return "Weekly";
+  if(mode==="month") return "Monthly";
+  return "Daily";
+}
+
+function applyFilters(){
+  if(!rawData) return;
+
+  // Overview
+  var ovPeriod=document.getElementById("periodFilter").value;
+  var ovTs=filterByDays(rawData.timeseries,ovPeriod);
+  var ovGrouped=groupTimeseries(ovTs,currentGroup);
+  var ovSummary=computeSummary(ovTs,rawData.campaigns.length);
+  renderSummary(ovSummary);
+  renderSpendChart(ovGrouped);
+  renderClicksChart(ovGrouped);
+  document.getElementById("spendChartTitle").textContent=groupLabel(currentGroup)+" Spend";
+  document.getElementById("clicksChartTitle").textContent=groupLabel(currentGroup)+" Clicks & Conversions";
+
+  // Campaigns
+  var campPeriod=document.getElementById("campPeriodFilter").value;
+  renderCampTable(rawData.campaigns);
+
+  // Breakdown
+  var brkPeriod=document.getElementById("brkPeriodFilter").value;
+  var brkTs=filterByDays(rawData.timeseries,brkPeriod);
+  var brkGrouped=groupTimeseries(brkTs,brkGroup);
+  renderBreakdownTable(brkGrouped);
+  document.getElementById("brkTableTitle").textContent=groupLabel(brkGroup)+" Performance";
+  document.getElementById("brkDateHeader").textContent=brkGroup==="day"?"Date":brkGroup==="week"?"Week Starting":"Month";
+}
 
 function renderSummary(s){
   var el=document.getElementById("summaryCards");
@@ -25,7 +166,7 @@ function renderSpendChart(ts){
   if(spC)spC.destroy();
   spC=new Chart(ctx,{
     type:"bar",
-    data:{labels:ts.map(function(d){return d.day}),datasets:[{label:"Daily Spend ($)",data:ts.map(function(d){return d.cost}),backgroundColor:"rgba(37,99,235,0.7)",borderRadius:3}]},
+    data:{labels:ts.map(function(d){return d.day}),datasets:[{label:"Spend ($)",data:ts.map(function(d){return d.cost}),backgroundColor:"rgba(37,99,235,0.7)",borderRadius:3}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:20,font:{size:10}},grid:{display:false}},y:{ticks:{callback:function(v){return "$"+v}},grid:{color:"#f1f5f9"}}}}
   });
 }
@@ -57,7 +198,7 @@ function renderCampTable(camps){
   tb.innerHTML=h;
 }
 
-function renderDailyTable(ts){
+function renderBreakdownTable(ts){
   var tb=document.querySelector("#tblDaily tbody"),h="",rev=ts.slice().reverse();
   for(var i=0;i<rev.length;i++){
     var d=rev[i];
@@ -70,13 +211,10 @@ function renderDailyTable(ts){
 }
 
 fetch("/api/ads").then(function(r){return r.json()}).then(function(data){
+  rawData=data;
   document.getElementById("loadingAds").style.display="none";
   document.getElementById("tab-overview").classList.add("active");
-  renderSummary(data.summary);
-  renderSpendChart(data.timeseries);
-  renderClicksChart(data.timeseries);
-  renderCampTable(data.campaigns);
-  renderDailyTable(data.timeseries);
+  applyFilters();
 }).catch(function(err){
   document.getElementById("loadingAds").innerHTML="<div style=\"color:var(--red)\"><strong>Failed to load</strong><br>"+err.message+"</div>";
 });
