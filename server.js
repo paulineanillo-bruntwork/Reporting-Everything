@@ -1875,6 +1875,40 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     // Delay to avoid HubSpot rate limits
     await sleep(1000);
 
+    // ===== Col 24: Endorsements (Active Applications count) =====
+    try {
+      var excludedStages = [
+        '1087877968',  // Applied
+        '1171138702',  // AI Recommended
+        '1077294127',  // Auto Invite to Recruiter Interview
+        '1077964094',  // Failed Screening
+        '1106108050',  // Waiting For Candidate Reply
+        '978051968'    // Preparing Endorsement
+      ];
+      var allEndorsements = await fetchAllPagesObject('2-38227027', {
+        filterGroups: [{
+          filters: [
+            { propertyName: 'hs_pipeline', operator: 'EQ', value: '666493306' },
+            { propertyName: 'hs_pipeline_stage', operator: 'NOT_IN', values: excludedStages }
+          ]
+        }],
+        properties: ['hs_pipeline_stage', 'client__cloned_']
+      });
+      // Exclude endorsements where client contains "bruntwork"
+      var filteredEndorsements = allEndorsements.filter(function(e) {
+        var client = (e.properties.client__cloned_ || '').toLowerCase();
+        return client.indexOf('bruntwork') === -1;
+      });
+      console.log('[KPI Generate] Endorsements: ' + filteredEndorsements.length + ' (total before client filter: ' + allEndorsements.length + ')');
+      updates['Endorsements'] = { col: 24, value: filteredEndorsements.length };
+    } catch (endErr) {
+      console.error('[KPI Generate] Endorsements fetch failed:', endErr.message);
+      errors.push('Endorsements: ' + endErr.message);
+    }
+
+    // Delay to avoid HubSpot rate limits
+    await sleep(1000);
+
     // ===== Computed metrics (derived from fetched data) =====
     // Gather values for calculations (use updates map or defaults)
     var _adsSpend = updates['Google Ads Spend'] ? updates['Google Ads Spend'].value : 0;
@@ -1940,7 +1974,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     }
 
     // Col 25: Endorsements Per Recruitment HC
-    var endorsements = parseSheetNum(dataRows[targetRowIdx][24]) || 0;
+    var endorsements = updates['Endorsements'] ? updates['Endorsements'].value : (parseSheetNum(dataRows[targetRowIdx][24]) || 0);
     var recruitmentHC = updates['Recruitment Team HC'] ? updates['Recruitment Team HC'].value : (parseSheetNum(dataRows[targetRowIdx][23]) || 0);
     if (recruitmentHC > 0 && endorsements > 0) {
       updates['Endorsements Per Recruitment HC'] = { col: 25, value: Math.round((endorsements / recruitmentHC) * 100) / 100 };
