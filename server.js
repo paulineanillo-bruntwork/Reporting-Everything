@@ -195,16 +195,30 @@ async function fetchAllPagesObject(objectType, baseBody) {
   var results = [];
   var after = undefined;
   var hasMore = true;
+  var page = 0;
   while (hasMore) {
     var body = Object.assign({}, baseBody, { limit: 200 });
     if (after) body.after = after;
-    var data = await hubspotSearchObject(objectType, body);
+    if (page > 0) await sleep(400);
+    var data;
+    try {
+      data = await hubspotSearchObject(objectType, body);
+    } catch (err) {
+      if (err.message && err.message.indexOf('429') !== -1) {
+        console.log('Rate limited on ' + objectType + ', waiting 3s and retrying...');
+        await sleep(3000);
+        data = await hubspotSearchObject(objectType, body);
+      } else {
+        throw err;
+      }
+    }
     results = results.concat(data.results || []);
     if (data.paging && data.paging.next && data.paging.next.after) {
       after = data.paging.next.after;
     } else {
       hasMore = false;
     }
+    page++;
   }
   return results;
 }
@@ -1525,6 +1539,9 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       console.error('[KPI Generate] Hires fetch failed:', hireErr.message);
     }
 
+    // Delay to avoid HubSpot rate limits between major API calls
+    await sleep(1000);
+
     // ===== HubSpot: Offboardings (offboarding_date in month) =====
     console.log('[KPI Generate] Fetching HubSpot offboardings for ' + month + '...');
     var lostFTEs = 0;
@@ -1564,6 +1581,9 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     } catch (offErr) {
       console.error('[KPI Generate] Offboardings fetch failed:', offErr.message);
     }
+
+    // Delay to avoid HubSpot rate limits between major API calls
+    await sleep(1000);
 
     // ===== HubSpot Contacts: MQLs (became MQL in month) — Col 6 =====
     console.log('[KPI Generate] Fetching MQL contacts for ' + month + '...');
