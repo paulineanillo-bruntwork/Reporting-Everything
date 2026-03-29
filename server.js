@@ -1216,6 +1216,81 @@ app.get('/report', function(req, res) {
   res.sendFile(path.join(__dirname, 'report.html'));
 });
 
+// ===== KPI History (reads from "Monthly KPI Tracker - Detailed" spreadsheet) =====
+var KPI_SOURCE_SHEET_ID = '1u_v1atm_TtgrStgEZCaMBVMvaVV7nUiuNIwIz36SVp4';
+var KPI_SOURCE_TAB = 'Monthly';
+var kpiHistoryCache = { data: null, ts: 0 };
+var KPI_HISTORY_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+app.get('/api/kpi-history', async function(req, res) {
+  try {
+    if (!GOOGLE_SA_KEY) {
+      return res.status(500).json({ error: 'Google service account key not configured' });
+    }
+    var now = Date.now();
+    if (kpiHistoryCache.data && (now - kpiHistoryCache.ts) < KPI_HISTORY_CACHE_TTL) {
+      return res.json(Object.assign({}, kpiHistoryCache.data, { cached: true }));
+    }
+    // Read all data from the Monthly tab
+    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, KPI_SOURCE_TAB + '!A1:AZ');
+    var rows = data.values || [];
+    if (rows.length < 4) {
+      return res.json({ error: 'Not enough data in source sheet', headers: [], months: [] });
+    }
+    // Row 0 = team grouping, Row 1 = data location, Row 2 = column names, Row 3+ = data
+    var teamRow = rows[0];
+    var locationRow = rows[1];
+    var headerRow = rows[2];
+    var dataRows = rows.slice(3);
+
+    // Build column metadata
+    var columns = [];
+    var currentTeam = '';
+    for (var i = 0; i < headerRow.length; i++) {
+      if (teamRow[i] && teamRow[i].trim()) currentTeam = teamRow[i].trim();
+      columns.push({
+        key: i,
+        name: (headerRow[i] || '').trim(),
+        team: currentTeam,
+        source: (locationRow[i] || '').trim()
+      });
+    }
+
+    // Filter to last 24 months of data (non-empty rows with a month value)
+    var monthRows = [];
+    for (var j = 0; j < dataRows.length; j++) {
+      var row = dataRows[j];
+      if (row && row[0] && row[0].trim()) {
+        monthRows.push(row);
+      }
+    }
+    // Take last 24
+    var last24 = monthRows.slice(-24);
+
+    // Build response
+    var months = [];
+    for (var k = 0; k < last24.length; k++) {
+      var r = last24[k];
+      var values = [];
+      for (var m = 0; m < columns.length; m++) {
+        values.push(r[m] !== undefined ? r[m] : '');
+      }
+      months.push(values);
+    }
+
+    var result = { columns: columns, months: months };
+    kpiHistoryCache = { data: result, ts: now };
+    res.json(Object.assign({}, result, { cached: false }));
+  } catch (err) {
+    console.error('KPI History API error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/kpi', function(req, res) {
+  res.sendFile(path.join(__dirname, 'kpi-history.html'));
+});
+
 initOIDC().then(function() {
   app.listen(PORT, function() {
     console.log('FTE Dashboard server running at http://localhost:' + PORT);
