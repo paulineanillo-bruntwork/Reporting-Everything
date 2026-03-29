@@ -261,6 +261,25 @@ async function getJobsObjectTypeId() {
   throw new Error('Could not find "jobs" custom object in HubSpot schemas');
 }
 
+// Diagnostic endpoint to list all custom object schemas
+app.get('/api/debug/schemas', async function(req, res) {
+  try {
+    var schemas = await hubspotGet('https://api.hubapi.com/crm/v3/schemas');
+    var results = schemas.results || schemas;
+    var summary = results.map(function(s) {
+      return {
+        objectTypeId: s.objectTypeId,
+        name: s.name,
+        labels: s.labels,
+        fullyQualifiedName: s.fullyQualifiedName
+      };
+    });
+    res.json({ count: summary.length, schemas: summary });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 async function fetchAllPages(baseBody) {
   var results = [];
   var after = undefined;
@@ -1752,29 +1771,35 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     // Delay to avoid HubSpot rate limits between major API calls
     await sleep(1000);
 
-    // ===== HubSpot Tickets: New Client Jobs Opened (Col 9) =====
-    // Tickets in outsource pipelines, created in month, job_source="New", client not containing "BruntWork"
+    // ===== HubSpot Custom Object: Jobs — New Client Jobs Opened (Col 9) =====
     console.log('[KPI Generate] Fetching new client jobs opened for ' + month + '...');
     try {
+      var jobsObjectType = await getJobsObjectTypeId();
+      // Log properties on first run to discover correct field names
+      if (!getJobsObjectTypeId._propsDiscovered) {
+        var jobsProps = await hubspotGet('https://api.hubapi.com/crm/v3/properties/' + jobsObjectType);
+        var propNames = (jobsProps.results || []).map(function(p) { return p.name + ' (' + p.label + ')'; });
+        console.log('[KPI Generate] Jobs object properties: ' + propNames.join(', '));
+        getJobsObjectTypeId._propsDiscovered = true;
+      }
       var jobStartMs = String(new Date(parsed.start + 'T00:00:00Z').getTime());
       var jobEndMs = String(new Date(parsed.end + 'T23:59:59Z').getTime());
-      var jobResults = await fetchAllPagesWithRetry({
+      var jobResults = await fetchAllPagesObject(jobsObjectType, {
         filterGroups: [{
           filters: [
-            { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
             { propertyName: 'createdate', operator: 'GTE', value: jobStartMs },
             { propertyName: 'createdate', operator: 'LTE', value: jobEndMs },
-            { propertyName: 'job_source', operator: 'EQ', value: 'New' }
+            { propertyName: 'job_source', operator: 'EQ', value: 'New Client' }
           ]
         }],
-        properties: ['createdate', 'job_source', 'client']
+        properties: ['createdate', 'job_source', 'client_billing_name']
       });
-      // Exclude tickets where client contains "BruntWork"
+      // Filter out where client_billing_name contains "BruntWork"
       var newClientJobs = jobResults.filter(function(j) {
-        var clientName = (j.properties.client || '').toLowerCase();
-        return clientName.indexOf('bruntwork') === -1;
+        var billing = (j.properties.client_billing_name || '').toLowerCase();
+        return billing.indexOf('bruntwork') === -1;
       });
-      console.log('[KPI Generate] New Client Jobs: ' + newClientJobs.length + ' (total job_source=New: ' + jobResults.length + ', excluded BruntWork: ' + (jobResults.length - newClientJobs.length) + ')');
+      console.log('[KPI Generate] New Client Jobs: ' + newClientJobs.length + ' (total: ' + jobResults.length + ', excluded BruntWork: ' + (jobResults.length - newClientJobs.length) + ')');
       updates['New Client Jobs Opened'] = { col: 9, value: newClientJobs.length };
     } catch (jobsErr) {
       console.error('[KPI Generate] Jobs fetch failed:', jobsErr.message);
