@@ -1738,7 +1738,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
             { propertyName: 'createdate', operator: 'LTE', value: hireEndMs }
           ]
         }],
-        properties: ['createdate', 'assignment_type', 'type_of_recruitment', 'hs_pipeline'],
+        properties: ['createdate', 'assignment_type', 'type_of_recruitment', 'job_source', 'hs_pipeline'],
         sorts: [{ propertyName: 'createdate', direction: 'ASCENDING' }]
       });
       console.log('[KPI Generate] Hires found: ' + hireResults.length);
@@ -1750,10 +1750,10 @@ app.post('/api/kpi-history/generate', async function(req, res) {
         var hp = hireResults[hi].properties;
         var w = fteWeight(hp.assignment_type || 'Unknown');
         totalFTEHires += w;
-        var recLower = (hp.type_of_recruitment || '').toLowerCase();
-        if (recLower.indexOf('backfill') !== -1 || recLower.indexOf('back-fill') !== -1 || recLower.indexOf('replacement') !== -1) {
+        var jobSrcLower = (hp.job_source || '').toLowerCase();
+        if (jobSrcLower.indexOf('backfill') !== -1 || jobSrcLower === 'back up') {
           backfillFTEHires += w;
-        } else if (recLower.indexOf('new client') !== -1 || recLower.indexOf('new_client') !== -1) {
+        } else if (jobSrcLower.indexOf('new') !== -1) {
           newClientFTEHires += w;
         } else {
           existingClientFTEHires += w;
