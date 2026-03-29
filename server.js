@@ -2009,31 +2009,32 @@ app.post('/api/kpi-history/generate', async function(req, res) {
 
     // ===== Col 24: Endorsements (Active Applications count) =====
     try {
-      var excludedStages = {
-        '1087877968': true,  // Applied
-        '1171138702': true,  // AI Recommended
-        '1077294127': true,  // Auto Invite to Recruiter Interview
-        '1077964094': true,  // Failed Screening
-        '1106108050': true,  // Waiting For Candidate Reply
-        '978051968': true    // Preparing Endorsement
-      };
-      // Fetch all applications in the pipeline, then filter client-side
+      // Use IN with included stages (much smaller set than fetching all 260K+ records)
+      var includedStages = [
+        '978051969',   // Endorsed to Job Owner
+        '977990485',   // Client Interview Scheduled
+        '977990486',   // Candidate Rejected by Client
+        '977990487',   // Candidate Withdrew
+        '1075896997',  // To Be Offered
+        '977990488',   // BruntWork Offer Sent
+        '977990489',   // Hired
+        '1015966551'   // Hired - OEF Created
+      ];
       var allEndorsements = await fetchAllPagesObject('2-38227027', {
         filterGroups: [{
           filters: [
-            { propertyName: 'hs_pipeline', operator: 'EQ', value: '666493306' }
+            { propertyName: 'hs_pipeline', operator: 'EQ', value: '666493306' },
+            { propertyName: 'hs_pipeline_stage', operator: 'IN', values: includedStages }
           ]
         }],
         properties: ['hs_pipeline_stage', 'client__cloned_']
       });
-      // Exclude early stages and bruntwork clients
+      // Exclude bruntwork clients
       var filteredEndorsements = allEndorsements.filter(function(e) {
-        var stage = e.properties.hs_pipeline_stage || '';
-        if (excludedStages[stage]) return false;
         var client = (e.properties.client__cloned_ || '').toLowerCase();
         return client.indexOf('bruntwork') === -1;
       });
-      console.log('[KPI Generate] Endorsements: ' + filteredEndorsements.length + ' (total in pipeline: ' + allEndorsements.length + ')');
+      console.log('[KPI Generate] Endorsements: ' + filteredEndorsements.length + ' (total matching stages: ' + allEndorsements.length + ')');
       updates['Endorsements'] = { col: 24, value: filteredEndorsements.length };
     } catch (endErr) {
       console.error('[KPI Generate] Endorsements fetch failed:', endErr.message);
