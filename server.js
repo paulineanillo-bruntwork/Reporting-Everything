@@ -274,20 +274,18 @@ app.get('/api/debug/schemas', async function(req, res) {
         fullyQualifiedName: s.fullyQualifiedName
       };
     });
-    res.json({ count: summary.length, schemas: summary });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/debug/jobs-properties', async function(req, res) {
-  try {
-    var jobsObjectType = await getJobsObjectTypeId();
-    var props = await hubspotGet('https://api.hubapi.com/crm/v3/properties/' + jobsObjectType);
-    var summary = (props.results || []).map(function(p) {
-      return { name: p.name, label: p.label, type: p.type, description: (p.description || '').substring(0, 100) };
-    });
-    res.json({ objectTypeId: jobsObjectType, count: summary.length, properties: summary });
+    // Also fetch jobs properties if jobs schema found
+    var jobsSchema = results.find(function(s) { return s.name === 'jobs'; });
+    var jobsProps = null;
+    if (jobsSchema) {
+      try {
+        var propsData = await hubspotGet('https://api.hubapi.com/crm/v3/properties/' + jobsSchema.objectTypeId);
+        jobsProps = (propsData.results || []).map(function(p) {
+          return { name: p.name, label: p.label, type: p.type };
+        });
+      } catch (pe) { jobsProps = { error: pe.message }; }
+    }
+    res.json({ count: summary.length, schemas: summary, jobsProperties: jobsProps });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
