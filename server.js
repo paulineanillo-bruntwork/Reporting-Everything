@@ -1677,27 +1677,36 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     // Delay to avoid HubSpot rate limits between major API calls
     await sleep(1000);
 
-    // ===== HubSpot Tickets: BW Admin Staff — onboarded in month, excl. Digital Team (Col 5) =====
-    console.log('[KPI Generate] Fetching BW Admin Staff onboarded for ' + month + '...');
+    // ===== HubSpot Tickets: BW Admin Staff — total active at end of month, excl. Digital Team (Col 5) =====
+    console.log('[KPI Generate] Fetching total active BW Admin Staff at end of ' + month + '...');
     try {
-      var bwStartMs = String(new Date(parsed.start + 'T00:00:00Z').getTime());
       var bwEndMs = String(new Date(parsed.end + 'T23:59:59Z').getTime());
+      // Active = onboarded by end of month AND (never offboarded OR offboarded after month end)
+      // Two filter groups (OR): group 1 = no offboarding, group 2 = offboarded after month end
       var bwResults = await fetchAllPagesWithRetry({
-        filterGroups: [{
-          filters: [
-            { propertyName: 'hs_pipeline', operator: 'EQ', value: '16984077' },
-            { propertyName: 'onboarding_date', operator: 'GTE', value: bwStartMs },
-            { propertyName: 'onboarding_date', operator: 'LTE', value: bwEndMs }
-          ]
-        }],
-        properties: ['onboarding_date', 'bw_internal_secondary_team'],
-        sorts: [{ propertyName: 'onboarding_date', direction: 'ASCENDING' }]
+        filterGroups: [
+          {
+            filters: [
+              { propertyName: 'hs_pipeline', operator: 'EQ', value: '16984077' },
+              { propertyName: 'onboarding_date', operator: 'LTE', value: bwEndMs },
+              { propertyName: 'offboarding_date', operator: 'NOT_HAS_PROPERTY' }
+            ]
+          },
+          {
+            filters: [
+              { propertyName: 'hs_pipeline', operator: 'EQ', value: '16984077' },
+              { propertyName: 'onboarding_date', operator: 'LTE', value: bwEndMs },
+              { propertyName: 'offboarding_date', operator: 'GT', value: bwEndMs }
+            ]
+          }
+        ],
+        properties: ['onboarding_date', 'offboarding_date', 'bw_internal_secondary_team']
       });
       // Exclude Digital Team
       var bwAdminStaff = bwResults.filter(function(t) {
         return (t.properties.bw_internal_secondary_team || '').toLowerCase() !== 'digital';
       });
-      console.log('[KPI Generate] BW Admin Staff onboarded: ' + bwAdminStaff.length + ' (total: ' + bwResults.length + ', Digital excluded: ' + (bwResults.length - bwAdminStaff.length) + ')');
+      console.log('[KPI Generate] BW Admin Staff (active at end of month): ' + bwAdminStaff.length + ' (total incl Digital: ' + bwResults.length + ', Digital excluded: ' + (bwResults.length - bwAdminStaff.length) + ')');
       updates['BW Admin Staff'] = { col: 5, value: bwAdminStaff.length };
     } catch (bwErr) {
       console.error('[KPI Generate] BW Admin Staff fetch failed:', bwErr.message);
