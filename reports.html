@@ -110,6 +110,32 @@ function fmtD(n) {
   return Number(n).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
+// Parse month label into {year, month (0-indexed)}
+function parseMonth(label) {
+  if (!label) return null;
+  var s = label.trim();
+  var fullM = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var shortM = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var parts = s.split(/\s+/);
+  if (parts.length === 2) {
+    var mi = fullM.indexOf(parts[0]);
+    if (mi === -1) mi = shortM.indexOf(parts[0]);
+    var yr = parseInt(parts[1]);
+    if (mi >= 0 && !isNaN(yr)) return { year: yr, month: mi };
+  }
+  var dp = s.split('-');
+  if (dp.length === 2) {
+    var mi2 = shortM.indexOf(dp[0]);
+    if (mi2 === -1) mi2 = fullM.indexOf(dp[0]);
+    var yr2 = parseInt(dp[1]);
+    if (mi2 >= 0 && !isNaN(yr2)) {
+      if (yr2 < 100) yr2 += yr2 < 50 ? 2000 : 1900;
+      return { year: yr2, month: mi2 };
+    }
+  }
+  return null;
+}
+
 // Parse number from sheet value (strip commas etc)
 function pn(v) {
   if (v === undefined || v === null || v === '') return null;
@@ -208,8 +234,35 @@ Promise.all([
   // === Build trend charts from KPI history ===
   if (kpiData && !kpiData.error && kpiData.months && kpiData.months.length > 0) {
     var allMonths = kpiData.months;
-    var last13 = allMonths.slice(-13);
-    var labels = last13.map(function(m) { return shortMonth(m[0]); });
+
+    // Find current month index in the data
+    var nowD = new Date();
+    var gmt8 = new Date(nowD.getTime() + (8 * 60 * 60 * 1000));
+    var curYear = gmt8.getUTCFullYear();
+    var curMonthIdx = gmt8.getUTCMonth(); // 0-indexed
+    var fullMonthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+    // Find the row index for current month
+    var currentRowIdx = -1;
+    for (var si = 0; si < allMonths.length; si++) {
+      var pm = parseMonth(allMonths[si][0]);
+      if (pm && pm.year === curYear && pm.month === curMonthIdx) {
+        currentRowIdx = si;
+        break;
+      }
+    }
+
+    // Slice for current month charts (13 months ending at current month inclusive)
+    var endCurrent = currentRowIdx >= 0 ? currentRowIdx + 1 : allMonths.length;
+    var startCurrent = Math.max(0, endCurrent - 13);
+    var currentSlice = allMonths.slice(startCurrent, endCurrent);
+    var currentLabels = currentSlice.map(function(m) { return shortMonth(m[0]); });
+
+    // Slice for Active Staff FTE chart (13 months ending at month AFTER current)
+    var endFTE = currentRowIdx >= 0 ? currentRowIdx + 2 : allMonths.length;
+    var startFTE = Math.max(0, endFTE - 13);
+    var fteSlice = allMonths.slice(startFTE, endFTE);
+    var fteLabels = fteSlice.map(function(m) { return shortMonth(m[0]); });
 
     // Column indices (0-based from sheet):
     // Col 4 = index 4: Active Staff FTE
@@ -218,16 +271,16 @@ Promise.all([
     // Col 6 = index 6: MQLs
     // Col 9 = index 9: New Client Jobs Opened
 
-    var activeFTE = last13.map(function(m) { return pn(m[4]); });
-    var adminStaff = last13.map(function(m) { return pn(m[5]); });
-    var perAdmin = last13.map(function(m) { return pn(m[2]); });
-    var mqls = last13.map(function(m) { return pn(m[6]); });
-    var newJobs = last13.map(function(m) { return pn(m[9]); });
+    var activeFTE = fteSlice.map(function(m) { return pn(m[4]); });
+    var adminStaff = currentSlice.map(function(m) { return pn(m[5]); });
+    var perAdmin = currentSlice.map(function(m) { return pn(m[2]); });
+    var mqls = currentSlice.map(function(m) { return pn(m[6]); });
+    var newJobs = currentSlice.map(function(m) { return pn(m[9]); });
 
     document.getElementById('trendsSection').style.display = 'block';
 
-    // Chart 1: Active Staff FTE (single line)
-    makeChart('chartActiveFTE', labels, [{
+    // Chart 1: Active Staff FTE (ends at month after current)
+    makeChart('chartActiveFTE', fteLabels, [{
       label: 'Active Staff FTE',
       data: activeFTE,
       borderColor: '#2563eb',
@@ -235,8 +288,8 @@ Promise.all([
       fill: true
     }]);
 
-    // Chart 2: BW Admin Staff + Active Staff Per Admin (dual axis)
-    makeDualAxisChart('chartAdminStaff', labels, [
+    // Chart 2: BW Admin Staff + Active Staff Per Admin (ends at current month)
+    makeDualAxisChart('chartAdminStaff', currentLabels, [
       {
         label: 'BW Admin Staff',
         data: adminStaff,
@@ -256,8 +309,8 @@ Promise.all([
       }
     ], 'Admin Staff', 'Staff Per Admin');
 
-    // Chart 3: MQLs + New Client Jobs (dual axis)
-    makeDualAxisChart('chartMQLsJobs', labels, [
+    // Chart 3: MQLs + New Client Jobs (ends at current month)
+    makeDualAxisChart('chartMQLsJobs', currentLabels, [
       {
         label: 'Discovery Calls (MQLs)',
         data: mqls,
