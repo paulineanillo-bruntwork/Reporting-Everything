@@ -76,7 +76,7 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
       <canvas id="chartMQLsJobs"></canvas>
     </div>
     <div class="chart-card">
-      <h3>Google Ads Spend &amp; Cost Per MQL</h3>
+      <h3>Google Ads Spend &amp; Cost Per Discovery Call (CPL from May)</h3>
       <canvas id="chartAdsSpend"></canvas>
     </div>
   </div>
@@ -347,7 +347,7 @@ Promise.all([
         yAxisID: 'y'
       },
       {
-        label: 'Cost Per MQL ($)',
+        label: 'Cost Per Discovery Call ($)',
         data: costPerMQL,
         borderColor: '#e11d48',
         backgroundColor: 'rgba(225,29,72,0.08)',
@@ -355,7 +355,7 @@ Promise.all([
         fill: false,
         yAxisID: 'y1'
       }
-    ], 'Ads Spend ($)', 'Cost Per MQL ($)');
+    ], 'Ads Spend ($)', 'Cost Per Discovery Call ($)');
   }
 
   // === Build report cards ===
