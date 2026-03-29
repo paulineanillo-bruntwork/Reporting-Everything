@@ -1573,11 +1573,11 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       var mqlResults = await fetchAllPagesObject('contacts', {
         filterGroups: [{
           filters: [
-            { propertyName: 'hs_lifecyclestage_marketingqualifiedlead_date', operator: 'GTE', value: mqlStartMs },
-            { propertyName: 'hs_lifecyclestage_marketingqualifiedlead_date', operator: 'LTE', value: mqlEndMs }
+            { propertyName: 'hs_v2_date_entered_marketingqualifiedlead', operator: 'GTE', value: mqlStartMs },
+            { propertyName: 'hs_v2_date_entered_marketingqualifiedlead', operator: 'LTE', value: mqlEndMs }
           ]
         }],
-        properties: ['hs_lifecyclestage_marketingqualifiedlead_date']
+        properties: ['hs_v2_date_entered_marketingqualifiedlead']
       });
       var mqlCount = mqlResults.length;
       console.log('[KPI Generate] MQLs found: ' + mqlCount);
