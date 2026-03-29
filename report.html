@@ -244,13 +244,16 @@ var C = {
   totalHires47:47, newClientHires:48, newClientFTEConv:49
 };
 
+var MIN_MONTH = '2026-02';
 var currentMonth = getMonthParam();
+if (currentMonth < MIN_MONTH) { window.location.href = '/report?month='+MIN_MONTH; }
 document.getElementById('reportSubtitle').textContent = monthLabel(currentMonth);
 
 // Month nav
 var nav = document.getElementById('monthNav');
 var pm = prevMonthKey(currentMonth), nm = nextMonthKey(currentMonth);
-nav.innerHTML = '<a href="/report?month='+pm+'">&larr; '+monthLabel(pm)+'</a><a class="current">'+monthLabel(currentMonth)+'</a><a href="/report?month='+nm+'">'+monthLabel(nm)+' &rarr;</a>';
+var prevLink = pm >= MIN_MONTH ? '<a href="/report?month='+pm+'">&larr; '+monthLabel(pm)+'</a>' : '<a style="opacity:0.3;pointer-events:none">&larr; '+monthLabel(pm)+'</a>';
+nav.innerHTML = prevLink+'<a class="current">'+monthLabel(currentMonth)+'</a><a href="/report?month='+nm+'">'+monthLabel(nm)+' &rarr;</a>';
 
 // Fetch KPI data
 fetch('/api/kpi-history').then(function(r){return r.json();}).then(function(data){
