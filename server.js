@@ -1767,7 +1767,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     }
 
     // Col 35: Role Churn Rate = Churned Staff FTE / Active FTE (col 4 current month)
-    var currentActiveFTE = updates['Active Staff FTE'] ? updates['Active Staff FTE'].value : (parseFloat(dataRows[targetRowIdx][4]) || 0);
+    var currentActiveFTE = parseFloat(dataRows[targetRowIdx][4]) || 0;
     if (currentActiveFTE > 0) {
       updates['Role Churn Rate'] = { col: 35, value: Math.round((_lostFTEs / currentActiveFTE) * 10000) / 10000 };
     }
@@ -1863,14 +1863,20 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       updates['New Client FTE Conv Rate'] = { col: 49, value: Math.round((newClientHires / prevMQLs) * 10000) / 10000 };
     }
 
-    // ===== Active FTE: Col 4 = previous month Col 4 + this month's net FTE =====
-    console.log('[KPI Generate] Computing Active FTE for ' + month + '...');
+    // ===== Active FTE: Col 4 for NEXT month = current month Col 4 + this month's net FTE =====
+    // e.g. Get for March writes to April's Col 4: March value (5565) + March net FTE (+130.25)
+    console.log('[KPI Generate] Computing Active FTE for next month after ' + month + '...');
     try {
-      var prevCol4 = parseFloat(prevRow[4]) || 0;
+      var currentCol4 = parseFloat(dataRows[targetRowIdx][4]) || 0;
       var netFTE = _totalFTEHires - _lostFTEs;
-      var activeFTE = Math.round((prevCol4 + netFTE) * 100) / 100;
-      updates['Active Staff FTE'] = { col: 4, value: activeFTE };
-      console.log('[KPI Generate] Active FTE: ' + activeFTE + ' (prev ' + prevCol4 + ' + net ' + netFTE + ')');
+      var nextActiveFTE = Math.round((currentCol4 + netFTE) * 100) / 100;
+      var nextRowIdx = targetRowIdx + 1;
+      if (nextRowIdx < dataRows.length) {
+        var nextSheetRow = nextRowIdx + 4;
+        var nextCell = KPI_SOURCE_TAB + '!' + colLetter(4) + nextSheetRow;
+        await sheetsUpdate(KPI_SOURCE_SHEET_ID, nextCell, [[nextActiveFTE]]);
+        console.log('[KPI Generate] Wrote Active FTE ' + nextActiveFTE + ' to next month row ' + nextSheetRow + ' (' + currentCol4 + ' + net ' + netFTE + ')');
+      }
     } catch (activErr) {
       console.error('[KPI Generate] Active FTE calc failed:', activErr.message);
     }
