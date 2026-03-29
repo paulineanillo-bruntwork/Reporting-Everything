@@ -160,29 +160,56 @@ function showToast(msg, type) {
   setTimeout(function() { t.className = 'status-toast'; }, 3000);
 }
 
+// Parse a month label into {year, month} for comparison
+// Handles "March 2026", "Mar-26", "Mar-2026" etc.
+function parseMonth(label) {
+  if (!label) return null;
+  var s = label.trim();
+  var fullMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var shortMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // Try "March 2026" format
+  var parts = s.split(/\s+/);
+  if (parts.length === 2) {
+    var mi = fullMonths.indexOf(parts[0]);
+    if (mi === -1) mi = shortMonths.indexOf(parts[0]);
+    var yr = parseInt(parts[1]);
+    if (mi >= 0 && !isNaN(yr)) return { year: yr, month: mi };
+  }
+  // Try "Mar-26" format
+  var dashParts = s.split('-');
+  if (dashParts.length === 2) {
+    var mi2 = shortMonths.indexOf(dashParts[0]);
+    if (mi2 === -1) mi2 = fullMonths.indexOf(dashParts[0]);
+    var yr2 = parseInt(dashParts[1]);
+    if (mi2 >= 0 && !isNaN(yr2)) {
+      if (yr2 < 100) yr2 += yr2 < 50 ? 2000 : 1900;
+      return { year: yr2, month: mi2 };
+    }
+  }
+  return null;
+}
+
 // Determine which months should show Get button
 // Current month always gets a Get button.
 // Previous month also gets one if we're before the 4th of the current month.
 function shouldShowGet(monthLabel) {
+  var parsed = parseMonth(monthLabel);
+  if (!parsed) return false;
+
   var now = new Date();
   var gmt8 = new Date(now.getTime() + (8 * 60 * 60 * 1000));
-  var shortMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  var curMonth = shortMonths[gmt8.getUTCMonth()];
-  var curYear = String(gmt8.getUTCFullYear()).slice(-2);
-  var curLabel = curMonth + '-' + curYear;
-  var trimmed = monthLabel.trim();
+  var curYear = gmt8.getUTCFullYear();
+  var curMonth = gmt8.getUTCMonth(); // 0-indexed
+  var dayOfMonth = gmt8.getUTCDate();
 
   // Always show for current month
-  if (trimmed === curLabel) return true;
+  if (parsed.year === curYear && parsed.month === curMonth) return true;
 
   // Before the 4th, also show for previous month
-  var dayOfMonth = gmt8.getUTCDate();
   if (dayOfMonth < 4) {
-    var prevDate = new Date(Date.UTC(gmt8.getUTCFullYear(), gmt8.getUTCMonth() - 1, 1));
-    var prevMonth = shortMonths[prevDate.getUTCMonth()];
-    var prevYear = String(prevDate.getUTCFullYear()).slice(-2);
-    var prevLabel = prevMonth + '-' + prevYear;
-    if (trimmed === prevLabel) return true;
+    var prevDate = new Date(Date.UTC(curYear, curMonth - 1, 1));
+    if (parsed.year === prevDate.getUTCFullYear() && parsed.month === prevDate.getUTCMonth()) return true;
   }
 
   return false;
