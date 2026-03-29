@@ -26,16 +26,18 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .loading .spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-/* KPI Cards */
-.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px}
-.kpi-card{background:var(--surface);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);border:1px solid var(--border)}
-.kpi-card .label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px}
-.kpi-card .value{font-size:28px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
-.kpi-card .change{font-size:12px;font-weight:600;margin-top:4px}
-.kpi-card .change.pos{color:var(--green)}
-.kpi-card .change.neg{color:var(--red)}
-.kpi-card .change.neutral{color:var(--text-muted)}
-.kpi-card .prev{font-size:11px;color:var(--text-muted);margin-top:2px}
+/* Highlight Panels */
+.highlight-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px}
+.highlight-panel{background:var(--surface);border-radius:var(--radius);padding:24px 28px;box-shadow:var(--shadow);border:1px solid var(--border);position:relative;overflow:hidden}
+.highlight-panel .accent{position:absolute;top:0;left:0;width:4px;height:100%;border-radius:4px 0 0 4px}
+.highlight-panel .label{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:8px}
+.highlight-panel .value{font-size:32px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.1}
+.highlight-panel .meta{display:flex;gap:12px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.highlight-panel .change{font-size:12px;font-weight:600;padding:2px 8px;border-radius:4px}
+.highlight-panel .change.pos{color:var(--green);background:var(--green-light)}
+.highlight-panel .change.neg{color:var(--red);background:var(--red-light)}
+.highlight-panel .change.neutral{color:var(--text-muted);background:#f1f5f9}
+.highlight-panel .prev-val{font-size:11px;color:var(--text-muted)}
 
 /* Section */
 .section{margin-bottom:32px}
@@ -60,8 +62,8 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .chart-card canvas{width:100%!important;height:260px!important}
 .chart-card.full-width{grid-column:1/-1}
 
-@media(max-width:1100px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:900px){.chart-grid{grid-template-columns:1fr}.header,.main{padding-left:20px;padding-right:20px}.kpi-grid{grid-template-columns:1fr}}
+@media(max-width:1100px){.highlight-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:900px){.chart-grid{grid-template-columns:1fr}.header,.main{padding-left:20px;padding-right:20px}.highlight-grid{grid-template-columns:1fr}}
 @media print{.header{background:#1e293b!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.nav-links,.month-nav{display:none!important}.main{padding:16px}}
 </style>
 </head>
@@ -86,8 +88,8 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 <div id="loading" class="loading"><div class="spinner"></div><div>Loading report data...</div></div>
 <div id="content" style="display:none">
 
-<!-- Top KPI Cards -->
-<div class="kpi-grid" id="topCards"></div>
+<!-- Highlight Panels -->
+<div class="highlight-grid" id="highlightPanels"></div>
 
 <!-- Acquisition Section -->
 <div class="section">
@@ -286,39 +288,45 @@ fetch('/api/kpi-history').then(function(r){return r.json();}).then(function(data
   document.getElementById('hdrCur').textContent = monthLabel(currentMonth);
   document.getElementById('hdrPrev').textContent = monthLabel(prevMonthKey(currentMonth));
 
-  // === Top KPI Cards ===
-  var topMetrics = [
-    { label:'Active Staff FTE', value:cv(C.activeFTE), prev:pv(C.activeFTE), format:'num' },
-    { label:'Total FTE Hires', value:cv(C.totalHires), prev:pv(C.totalHires), format:'dec' },
-    { label:'Churned Staff (FTE)', value:cv(C.churnedFTE), prev:pv(C.churnedFTE), format:'dec', invert:true },
-    { label:'Discovery Calls (MQLs)', value:cv(C.mqls), prev:pv(C.mqls), format:'num' },
-    { label:'New Client Jobs', value:cv(C.newClientJobs), prev:pv(C.newClientJobs), format:'num' },
-    { label:'Google Ads Spend', value:cv(C.adsSpend), prev:pv(C.adsSpend), format:'money' },
-    { label:'Role Churn Rate', value:cv(C.churnRate), prev:pv(C.churnRate), format:'pct', invert:true },
-    { label:'Recruitment Team HC', value:cv(C.recruitHC), prev:pv(C.recruitHC), format:'num' }
+  // === Highlight Panels ===
+  var activeFTE = cv(C.activeFTE);
+  var hiredFTE = cv(C.totalHires);
+  var lostFTE = cv(C.churnedFTE);
+  var netFTE = (hiredFTE!==null && lostFTE!==null) ? Math.round((hiredFTE - lostFTE)*100)/100 : null;
+
+  var prevActiveFTE = pv(C.activeFTE);
+  var prevHiredFTE = pv(C.totalHires);
+  var prevLostFTE = pv(C.churnedFTE);
+  var prevNetFTE = (prevHiredFTE!==null && prevLostFTE!==null) ? Math.round((prevHiredFTE - prevLostFTE)*100)/100 : null;
+
+  var highlights = [
+    { label:'Total Active FTE Headcount (Outsource)', value:activeFTE, prev:prevActiveFTE, format:'num', color:'var(--blue)' },
+    { label:'FTEs Hired', value:hiredFTE, prev:prevHiredFTE, format:'dec', color:'var(--green)' },
+    { label:'Lost FTEs', value:lostFTE, prev:prevLostFTE, format:'dec', color:'var(--red)', invert:true },
+    { label:'Net FTE Gain/Loss', value:netFTE, prev:prevNetFTE, format:'dec', color:'var(--purple)' }
   ];
 
-  var cardsHtml = '';
-  for (var t=0;t<topMetrics.length;t++) {
-    var m = topMetrics[t];
+  var hHtml = '';
+  for (var t=0;t<highlights.length;t++) {
+    var h = highlights[t];
     var valStr = '—';
-    if (m.value!==null) {
-      if (m.format==='money') valStr = fmtM(m.value);
-      else if (m.format==='pct') valStr = fmtPct(m.value);
-      else if (m.format==='dec') valStr = fmtD(m.value);
-      else valStr = fmt(m.value);
+    if (h.value!==null) {
+      if (h.format==='dec') valStr = fmtD(h.value);
+      else valStr = fmt(h.value);
+      // Add +/- prefix for Net FTE
+      if (h.label.indexOf('Net')===0 && h.value>0) valStr = '+'+valStr;
     }
-    var changeStr = '';
-    if (m.value!==null && m.prev!==null && m.prev!==0) {
-      var diff = m.value - m.prev;
-      var pctC = (diff/Math.abs(m.prev))*100;
-      var cls = diff===0?'neutral': (m.invert ? (diff>0?'neg':'pos') : (diff>0?'pos':'neg'));
-      changeStr = '<div class="change '+cls+'">'+(pctC>=0?'+':'')+pctC.toFixed(1)+'% vs prev</div>';
+    var changeBadge = '';
+    if (h.value!==null && h.prev!==null && h.prev!==0) {
+      var diff = h.value - h.prev;
+      var pctC = (diff/Math.abs(h.prev))*100;
+      var cls = diff===0?'neutral': (h.invert ? (diff>0?'neg':'pos') : (diff>0?'pos':'neg'));
+      changeBadge = '<span class="change '+cls+'">'+(pctC>=0?'+':'')+pctC.toFixed(1)+'%</span>';
     }
-    var prevStr = m.prev!==null ? '<div class="prev">Prev: '+(m.format==='money'?fmtM(m.prev):m.format==='pct'?fmtPct(m.prev):m.format==='dec'?fmtD(m.prev):fmt(m.prev))+'</div>' : '';
-    cardsHtml += '<div class="kpi-card"><div class="label">'+m.label+'</div><div class="value">'+valStr+'</div>'+changeStr+prevStr+'</div>';
+    var prevStr = h.prev!==null ? '<span class="prev-val">Prev: '+(h.format==='dec'?fmtD(h.prev):fmt(h.prev))+'</span>' : '';
+    hHtml += '<div class="highlight-panel"><div class="accent" style="background:'+h.color+'"></div><div class="label">'+h.label+'</div><div class="value">'+valStr+'</div><div class="meta">'+changeBadge+prevStr+'</div></div>';
   }
-  document.getElementById('topCards').innerHTML = cardsHtml;
+  document.getElementById('highlightPanels').innerHTML = hHtml;
 
   // === Acquisition Table ===
   var acqRows = [
