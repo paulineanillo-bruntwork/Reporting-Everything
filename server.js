@@ -1549,12 +1549,14 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     var lostFTEs = 0;
     var under30FTE = 0;
     try {
+      var offStartMs = String(new Date(parsed.start + 'T00:00:00Z').getTime());
+      var offEndMs = String(new Date(parsed.end + 'T23:59:59Z').getTime());
       var offResults = await fetchAllPagesWithRetry({
         filterGroups: [{
           filters: [
             { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-            { propertyName: 'offboarding_date', operator: 'GTE', value: parsed.start },
-            { propertyName: 'offboarding_date', operator: 'LTE', value: parsed.end }
+            { propertyName: 'offboarding_date', operator: 'GTE', value: offStartMs },
+            { propertyName: 'offboarding_date', operator: 'LTE', value: offEndMs }
           ]
         }],
         properties: ['offboarding_date', 'assignment_type', 'onboarding_date', 'days_between_onboarding_offboarding', 'type_of_recruitment'],
