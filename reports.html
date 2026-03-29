@@ -6,6 +6,7 @@
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <title>Monthly KPI Reports</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <style>
 :root{--bg:#f4f6fb;--surface:#fff;--border:#e2e8f0;--text:#1e293b;--text-muted:#64748b;--blue:#2563eb;--blue-dark:#1e40af;--green:#059669;--green-light:#d1fae5;--red:#dc2626;--red-light:#fee2e2;--orange:#d97706;--purple:#7c3aed;--radius:16px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -168,6 +169,10 @@ function shortMonth(label) {
   }
   return s;
 }
+
+// Register datalabels plugin but disable globally
+if (typeof ChartDataLabels !== 'undefined') Chart.register(ChartDataLabels);
+Chart.defaults.plugins.datalabels = { display: false };
 
 // Chart defaults
 Chart.defaults.font.family = 'Inter,-apple-system,BlinkMacSystemFont,sans-serif';
@@ -334,45 +339,94 @@ Promise.all([
       }
     ], 'Admin Staff', 'Staff Per Admin');
 
-    // Chart 3: MQLs + New Client Jobs (ends at current month) — same axis
-    makeChart('chartMQLsJobs', currentLabels, [
-      {
-        label: 'Discovery Calls (MQLs)',
-        data: mqls,
-        borderColor: '#7c3aed',
-        backgroundColor: 'rgba(124,58,237,0.08)',
-        fill: false
-      },
-      {
-        label: 'New Client Jobs Opened',
-        data: newJobs,
-        borderColor: '#dc2626',
-        backgroundColor: 'rgba(220,38,38,0.08)',
-        borderDash: [5, 3],
-        fill: false
+    // Chart 3: MQLs (bar) + New Client Jobs (line) — same axis, with data labels
+    var ctxMQLs = document.getElementById('chartMQLsJobs').getContext('2d');
+    new Chart(ctxMQLs, {
+      type: 'bar',
+      data: { labels: currentLabels, datasets: [
+        {
+          type: 'bar',
+          label: 'Discovery Calls (MQLs)',
+          data: mqls,
+          backgroundColor: 'rgba(124,58,237,0.65)',
+          borderColor: '#7c3aed',
+          borderWidth: 1,
+          borderRadius: 3,
+          datalabels: { display: true, anchor: 'end', align: 'end', color: '#7c3aed', font: { size: 9, weight: 'bold' }, formatter: function(v) { return v != null ? v.toLocaleString() : ''; } }
+        },
+        {
+          type: 'line',
+          label: 'New Client Jobs Opened',
+          data: newJobs,
+          borderColor: '#dc2626',
+          backgroundColor: 'rgba(220,38,38,0.08)',
+          borderDash: [5, 3],
+          fill: false,
+          tension: 0.3,
+          borderWidth: 2.5,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          datalabels: { display: true, anchor: 'end', align: 'end', color: '#dc2626', font: { size: 9, weight: 'bold' }, formatter: function(v) { return v != null ? v.toLocaleString() : ''; } }
+        }
+      ] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'bottom', labels: { usePointStyle: true, padding: 16, font: { size: 11 } } }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+          y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 } } }
+        }
       }
-    ]);
+    });
 
-    // Chart 4: Google Ads Spend + Cost Per MQL (dual axis — different scales)
-    makeDualAxisChart('chartAdsSpend', currentLabels, [
-      {
-        label: 'Google Ads Spend ($)',
-        data: adsSpend,
-        borderColor: '#0891b2',
-        backgroundColor: 'rgba(8,145,178,0.08)',
-        fill: false,
-        yAxisID: 'y'
-      },
-      {
-        label: 'Cost Per Discovery Call ($)',
-        data: costPerMQL,
-        borderColor: '#e11d48',
-        backgroundColor: 'rgba(225,29,72,0.08)',
-        borderDash: [5, 3],
-        fill: false,
-        yAxisID: 'y1'
+    // Chart 4: Google Ads Spend (bar) + Cost Per Discovery Call (line) — dual axis
+    var ctxAds = document.getElementById('chartAdsSpend').getContext('2d');
+    new Chart(ctxAds, {
+      type: 'bar',
+      data: { labels: currentLabels, datasets: [
+        {
+          type: 'bar',
+          label: 'Google Ads Spend ($)',
+          data: adsSpend,
+          backgroundColor: 'rgba(8,145,178,0.65)',
+          borderColor: '#0891b2',
+          borderWidth: 1,
+          borderRadius: 3,
+          yAxisID: 'y'
+        },
+        {
+          type: 'line',
+          label: 'Cost Per Discovery Call ($)',
+          data: costPerMQL,
+          borderColor: '#e11d48',
+          backgroundColor: 'rgba(225,29,72,0.08)',
+          borderDash: [5, 3],
+          fill: false,
+          tension: 0.3,
+          borderWidth: 2.5,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          yAxisID: 'y1'
+        }
+      ] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'bottom', labels: { usePointStyle: true, padding: 16, font: { size: 11 } } }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+          y: { beginAtZero: true, position: 'left', title: { display: true, text: 'Ads Spend ($)', font: { size: 10 } }, grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 } } },
+          y1: { beginAtZero: true, position: 'right', title: { display: true, text: 'Cost Per Discovery Call ($)', font: { size: 10 } }, grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } } }
+        }
       }
-    ], 'Ads Spend ($)', 'Cost Per Discovery Call ($)');
+    });
   }
 
   // === Build report cards ===
