@@ -1525,6 +1525,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
 
     var sheetRow = targetRowIdx + 4; // 1-indexed, accounting for 3 header rows
     var updates = {}; // colName -> { col, value }
+    var errors = []; // collect non-fatal errors for response
 
     // ===== Google Ads: Monthly spend + conversions =====
     console.log('[KPI Generate] Fetching Google Ads data for ' + month + ' (' + parsed.start + ' to ' + parsed.end + ')');
@@ -1799,11 +1800,11 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       var allJobResults = await fetchAllPagesObject(jobsObjectType, {
         filterGroups: [{
           filters: [
-            { propertyName: 'hs_createdate', operator: 'GTE', value: jobStartMs },
-            { propertyName: 'hs_createdate', operator: 'LTE', value: jobEndMs }
+            { propertyName: 'createdate', operator: 'GTE', value: jobStartMs },
+            { propertyName: 'createdate', operator: 'LTE', value: jobEndMs }
           ]
         }],
-        properties: ['hs_createdate', 'job_source', 'client_billing_name']
+        properties: ['createdate', 'job_source', 'client_billing_name']
       });
       // Log unique job_source values to discover correct filter value
       var jobSourceValues = {};
@@ -1822,6 +1823,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       updates['New Client Jobs Opened'] = { col: 9, value: newClientJobs.length };
     } catch (jobsErr) {
       console.error('[KPI Generate] Jobs fetch failed:', jobsErr.message);
+      errors.push('Jobs: ' + jobsErr.message);
     }
 
     // Delay to avoid HubSpot rate limits
@@ -1985,8 +1987,9 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       month: month,
       sheetRow: sheetRow,
       updated: written,
+      errors: errors.length > 0 ? errors : undefined,
       message: written.length > 0
-        ? 'Updated ' + written.length + ' field(s)'
+        ? 'Updated ' + written.length + ' field(s)' + (errors.length > 0 ? ' (' + errors.length + ' error(s))' : '')
         : 'No matching columns found in sheet headers'
     });
   } catch (err) {
