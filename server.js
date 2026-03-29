@@ -223,6 +223,44 @@ async function fetchAllPagesObject(objectType, baseBody) {
   return results;
 }
 
+// HubSpot GET request helper (for schemas, properties, etc.)
+async function hubspotGet(url) {
+  var headers = {};
+  if (HUBSPOT_KEY && HUBSPOT_KEY.startsWith('pat-')) {
+    headers['Authorization'] = 'Bearer ' + HUBSPOT_KEY;
+  } else {
+    url += (url.indexOf('?') >= 0 ? '&' : '?') + 'hapikey=' + HUBSPOT_KEY;
+  }
+  var res = await fetch(url, { headers: headers });
+  if (!res.ok) {
+    var text = await res.text();
+    throw new Error('HubSpot GET error ' + res.status + ': ' + text);
+  }
+  return res.json();
+}
+
+// Discover custom object type ID for "jobs" (cached)
+var _jobsObjectTypeId = null;
+async function getJobsObjectTypeId() {
+  if (_jobsObjectTypeId) return _jobsObjectTypeId;
+  var schemas = await hubspotGet('https://api.hubapi.com/crm/v3/schemas');
+  var results = schemas.results || schemas;
+  for (var i = 0; i < results.length; i++) {
+    var s = results[i];
+    var name = (s.name || '').toLowerCase();
+    var label = (s.labels && s.labels.singular || '').toLowerCase();
+    if (name === 'job' || name === 'jobs' || label === 'job' || label === 'jobs' ||
+        name.indexOf('_job') !== -1 || name.indexOf('jobs') !== -1) {
+      _jobsObjectTypeId = s.objectTypeId;
+      console.log('[HubSpot] Found jobs custom object: objectTypeId=' + s.objectTypeId + ', name=' + s.name);
+      return _jobsObjectTypeId;
+    }
+  }
+  // Log all schemas to help debug
+  console.log('[HubSpot] Custom object schemas found: ' + results.map(function(s) { return s.name + ' (' + s.objectTypeId + ')'; }).join(', '));
+  throw new Error('Could not find "jobs" custom object in HubSpot schemas');
+}
+
 async function fetchAllPages(baseBody) {
   var results = [];
   var after = undefined;
@@ -1609,6 +1647,48 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       console.error('[KPI Generate] MQL fetch failed:', mqlErr.message);
     }
 
+    // Delay to avoid HubSpot rate limits between major API calls
+    await sleep(1000);
+
+    // ===== HubSpot Custom Object: Jobs — New Client Jobs Opened (Col 9) =====
+    console.log('[KPI Generate] Fetching new client jobs opened for ' + month + '...');
+    try {
+      var jobsObjectType = await getJobsObjectTypeId();
+      // First, discover property names on the jobs object (cached after first call)
+      if (!getJobsObjectTypeId._propsDiscovered) {
+        var jobsProps = await hubspotGet('https://api.hubapi.com/crm/v3/properties/' + jobsObjectType);
+        var propNames = (jobsProps.results || []).map(function(p) { return p.name + ' (' + p.label + ')'; });
+        console.log('[KPI Generate] Jobs object properties: ' + propNames.join(', '));
+        getJobsObjectTypeId._propsDiscovered = true;
+      }
+      var jobStartMs = String(new Date(parsed.start + 'T00:00:00Z').getTime());
+      var jobEndMs = String(new Date(parsed.end + 'T23:59:59Z').getTime());
+      // Search for jobs created in the month with Job Source = New Client, excluding BruntWork billing
+      var jobResults = await fetchAllPagesObject(jobsObjectType, {
+        filterGroups: [{
+          filters: [
+            { propertyName: 'createdate', operator: 'GTE', value: jobStartMs },
+            { propertyName: 'createdate', operator: 'LTE', value: jobEndMs },
+            { propertyName: 'job_source', operator: 'EQ', value: 'New Client' }
+          ]
+        }],
+        properties: ['createdate', 'job_source', 'client_billing_name']
+      });
+      // Filter out jobs where client_billing_name contains "BruntWork"
+      var newClientJobs = jobResults.filter(function(j) {
+        var billing = (j.properties.client_billing_name || '').toLowerCase();
+        return billing.indexOf('bruntwork') === -1;
+      });
+      console.log('[KPI Generate] New Client Jobs: ' + newClientJobs.length + ' (total matching: ' + jobResults.length + ', excluded BruntWork: ' + (jobResults.length - newClientJobs.length) + ')');
+      updates['New Client Jobs Opened'] = { col: 9, value: newClientJobs.length };
+    } catch (jobsErr) {
+      console.error('[KPI Generate] Jobs fetch failed:', jobsErr.message);
+      // Log the error but don't fail the whole generate
+    }
+
+    // Delay to avoid HubSpot rate limits
+    await sleep(1000);
+
     // ===== Computed metrics (derived from fetched data) =====
     // Gather values for calculations (use updates map or defaults)
     var _adsSpend = updates['Google Ads Spend'] ? updates['Google Ads Spend'].value : 0;
@@ -1653,9 +1733,9 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     }
 
     // Col 10: New Client Jobs vs Discovery Calls = New Client Jobs / Fabius Calls
-    var newClientJobs = parseFloat(dataRows[targetRowIdx][9]) || 0;
-    if (fabiusCalls > 0 && newClientJobs > 0) {
-      updates['New Client Jobs vs Discovery Calls'] = { col: 10, value: Math.round((newClientJobs / fabiusCalls) * 10000) / 10000 };
+    var _newClientJobs = updates['New Client Jobs Opened'] ? updates['New Client Jobs Opened'].value : (parseFloat(dataRows[targetRowIdx][9]) || 0);
+    if (fabiusCalls > 0 && _newClientJobs > 0) {
+      updates['New Client Jobs vs Discovery Calls'] = { col: 10, value: Math.round((_newClientJobs / fabiusCalls) * 10000) / 10000 };
     }
 
     // Col 13: FTE Close Rate (1 month window) = Total FTE Hires / prev month MQLs
@@ -1669,8 +1749,8 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     }
 
     // Col 17: Sales Conversion Rate = New Client Jobs / MQLs
-    if (_mqlCount > 0 && newClientJobs > 0) {
-      updates['Sales Conversion Rate'] = { col: 17, value: Math.round((newClientJobs / _mqlCount) * 10000) / 10000 };
+    if (_mqlCount > 0 && _newClientJobs > 0) {
+      updates['Sales Conversion Rate'] = { col: 17, value: Math.round((_newClientJobs / _mqlCount) * 10000) / 10000 };
     }
 
     // Col 25: Endorsements Per Recruitment HC
