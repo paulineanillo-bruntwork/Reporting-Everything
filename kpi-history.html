@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <title>Monthly KPI Tracker</title>
 <style>
-:root{--bg:#f4f6fb;--surface:#fff;--border:#e2e8f0;--text:#1e293b;--text-muted:#64748b;--blue:#2563eb;--blue-dark:#1e40af;--green:#059669;--green-light:#d1fae5;--red:#dc2626;--red-light:#fee2e2;--radius:16px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)}
+:root{--bg:#f4f6fb;--surface:#fff;--border:#e2e8f0;--text:#1e293b;--text-muted:#64748b;--blue:#2563eb;--blue-dark:#1e40af;--green:#059669;--green-light:#d1fae5;--red:#dc2626;--red-light:#fee2e2;--orange:#d97706;--orange-light:#fef3c7;--radius:16px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
 .header{background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:28px 40px 20px;display:flex;justify-content:space-between;align-items:flex-start}
@@ -51,6 +51,14 @@ tbody tr:hover td:first-child{background:#f0f4f8}
 .status-toast.show{opacity:1}
 .status-toast.success{background:var(--green)}
 .status-toast.error{background:var(--red)}
+.edit-toggle{width:22px;height:22px;border:1px solid var(--border);background:var(--surface);border-radius:4px;cursor:pointer;font-size:11px;line-height:22px;text-align:center;transition:all .15s;color:var(--text-muted);display:inline-block;vertical-align:middle;margin-right:4px}
+.edit-toggle:hover{border-color:var(--blue);color:var(--blue)}
+.edit-toggle.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+td.editable{cursor:text;position:relative}
+td.editable:hover{background:#eff6ff !important}
+td.editing{padding:2px 4px}
+td.editing input{width:80px;padding:3px 6px;border:1px solid var(--blue);border-radius:3px;font-size:12px;text-align:right;outline:none;font-family:inherit}
+td.override-cell{background:var(--orange-light) !important;border-bottom-color:var(--orange) !important}
 @media(max-width:900px){.header,.main{padding-left:16px;padding-right:16px}}
 </style>
 </head>
@@ -135,6 +143,11 @@ tbody tr:hover td:first-child{background:#f0f4f8}
 </div>
 <div id="toast" class="status-toast"></div>
 <script>
+var editingRows = {}; // colIndex -> true when row is in edit mode
+var overrides = {};   // "col|month" -> value
+var monthLabels = []; // month labels from data
+var columnsData = []; // columns metadata
+
 function formatCell(val) {
   if (val === undefined || val === null || val === '') return '<span class="empty-cell">-</span>';
   return escHtml(String(val));
@@ -145,6 +158,22 @@ function showToast(msg, type) {
   t.textContent = msg;
   t.className = 'status-toast show ' + type;
   setTimeout(function() { t.className = 'status-toast'; }, 3000);
+}
+
+// Determine which months should show Get button
+// Only current month, and only if before 4th day
+function shouldShowGet(monthLabel) {
+  var now = new Date();
+  // Use GMT+8 like the rest of the app
+  var gmt8 = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+  var dayOfMonth = gmt8.getUTCDate();
+  if (dayOfMonth >= 4) return false;
+
+  var shortMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var curMonth = shortMonths[gmt8.getUTCMonth()];
+  var curYear = String(gmt8.getUTCFullYear()).slice(-2);
+  var curLabel = curMonth + '-' + curYear;
+  return monthLabel.trim() === curLabel;
 }
 
 function generateMonth(month, btnId) {
@@ -165,8 +194,9 @@ function generateMonth(month, btnId) {
     } else {
       btn.textContent = 'Done';
       btn.className = 'get-btn done-btn';
-      showToast('Generated data for ' + month, 'success');
-      // Reload table after short delay
+      var msg = 'Generated data for ' + month;
+      if (data.skipped && data.skipped.length > 0) msg += ' (' + data.skipped.length + ' manual override(s) preserved)';
+      showToast(msg, 'success');
       setTimeout(function() { location.reload(); }, 1500);
     }
   })
@@ -177,78 +207,193 @@ function generateMonth(month, btnId) {
   });
 }
 
-fetch('/api/kpi-history')
+function toggleEdit(ci) {
+  editingRows[ci] = !editingRows[ci];
+  var btn = document.getElementById('edit-btn-' + ci);
+  if (editingRows[ci]) {
+    btn.className = 'edit-toggle active';
+    btn.title = 'Click to exit edit mode';
+  } else {
+    btn.className = 'edit-toggle';
+    btn.title = 'Click to edit this row';
+  }
+  // Update all cells in this row
+  var row = document.getElementById('row-' + ci);
+  if (!row) return;
+  var cells = row.querySelectorAll('td[data-mj]');
+  for (var i = 0; i < cells.length; i++) {
+    var td = cells[i];
+    if (editingRows[ci]) {
+      td.classList.add('editable');
+    } else {
+      td.classList.remove('editable');
+      // If there's an active input, save it first
+      var inp = td.querySelector('input');
+      if (inp) saveCell(td, ci, parseInt(td.getAttribute('data-mj')), inp.value);
+    }
+  }
+}
+
+function startEditCell(td, ci, mj) {
+  if (!editingRows[ci]) return;
+  if (td.querySelector('input')) return; // already editing
+  var currentVal = td.getAttribute('data-raw') || '';
+  td.classList.add('editing');
+  var inp = document.createElement('input');
+  inp.type = 'text';
+  inp.value = currentVal;
+  td.textContent = '';
+  td.appendChild(inp);
+  inp.focus();
+  inp.select();
+  inp.addEventListener('blur', function() {
+    saveCell(td, ci, mj, inp.value);
+  });
+  inp.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { inp.blur(); }
+    if (e.key === 'Escape') {
+      td.classList.remove('editing');
+      td.innerHTML = formatCell(currentVal);
+      td.setAttribute('data-raw', currentVal);
+    }
+  });
+}
+
+function saveCell(td, ci, mj, newVal) {
+  td.classList.remove('editing');
+  var month = monthLabels[mj];
+  var oldRaw = td.getAttribute('data-raw') || '';
+  newVal = newVal.trim();
+
+  if (newVal === oldRaw) {
+    td.innerHTML = formatCell(oldRaw);
+    return;
+  }
+
+  td.innerHTML = formatCell(newVal);
+  td.setAttribute('data-raw', newVal);
+
+  // Mark as override
+  var key = ci + '|' + month;
+  overrides[key] = newVal;
+  td.classList.add('override-cell');
+
+  // Save to server
+  fetch('/api/kpi-history/override', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ col: ci, month: month, value: newVal })
+  })
   .then(function(r) { return r.json(); })
   .then(function(data) {
-    document.getElementById('loading').style.display = 'none';
-
     if (data.error) {
-      document.getElementById('errorMsg').style.display = 'block';
-      document.getElementById('errorText').textContent = data.error;
-      return;
+      showToast('Save failed: ' + data.error, 'error');
+    } else {
+      showToast('Saved override for ' + month, 'success');
     }
-
-    var columns = data.columns || [];
-    var months = data.months || [];
-
-    if (months.length === 0) {
-      document.getElementById('errorMsg').style.display = 'block';
-      document.getElementById('errorText').textContent = 'No data found in the source spreadsheet.';
-      return;
-    }
-
-    document.getElementById('content').style.display = 'block';
-    document.getElementById('infoText').textContent = months.length + ' months of data, ' + columns.length + ' metrics';
-    if (data.cached) document.getElementById('cacheInfo').textContent = 'Cached';
-
-    var h = '<thead>';
-
-    // Row 1: Get buttons
-    h += '<tr class="btn-row"><th style="min-width:200px"></th>';
-    for (var bi = 0; bi < months.length; bi++) {
-      var monthLabel = months[bi][0] || '';
-      var btnId = 'get-btn-' + bi;
-      h += '<th><button class="get-btn" id="' + btnId + '" onclick="generateMonth(\'' + escAttr(monthLabel) + '\',\'' + btnId + '\')">Get</button></th>';
-    }
-    h += '</tr>';
-
-    // Row 2: Month headers
-    h += '<tr class="team-row"><th class="team-default" style="min-width:200px">Metric</th>';
-    for (var mi = 0; mi < months.length; mi++) {
-      h += '<th class="team-default">' + formatCell(months[mi][0]) + '</th>';
-    }
-    h += '</tr>';
-    h += '</thead><tbody>';
-
-    // Each column (except col 0 = month) becomes a row
-    var currentTeam = '';
-    for (var ci = 1; ci < columns.length; ci++) {
-      var col = columns[ci];
-      if (!col.name) continue;
-
-      if (col.team && col.team !== currentTeam) {
-        currentTeam = col.team;
-        h += '<tr><td colspan="' + (months.length + 1) + '" style="padding:8px 10px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;background:' + getTeamBg(currentTeam) + ';color:' + getTeamColor(currentTeam) + ';border-bottom:2px solid ' + getTeamColor(currentTeam) + '">' + escHtml(currentTeam) + '</td></tr>';
-      }
-
-      h += '<tr><td title="' + escAttr(col.source) + '">' + escHtml(col.name) + '</td>';
-      for (var mj = 0; mj < months.length; mj++) {
-        h += '<td>' + formatCell(months[mj][ci]) + '</td>';
-      }
-      h += '</tr>';
-    }
-
-    h += '</tbody>';
-    document.getElementById('kpiTable').innerHTML = h;
-
-    var scroll = document.getElementById('tblScroll');
-    scroll.scrollLeft = scroll.scrollWidth;
   })
   .catch(function(err) {
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('errorMsg').style.display = 'block';
-    document.getElementById('errorText').textContent = err.message;
+    showToast('Save failed: ' + err.message, 'error');
   });
+}
+
+// Load overrides then table data
+Promise.all([
+  fetch('/api/kpi-history/overrides').then(function(r) { return r.json(); }),
+  fetch('/api/kpi-history').then(function(r) { return r.json(); })
+])
+.then(function(results) {
+  var ovData = results[0];
+  var data = results[1];
+
+  overrides = ovData.overrides || {};
+  document.getElementById('loading').style.display = 'none';
+
+  if (data.error) {
+    document.getElementById('errorMsg').style.display = 'block';
+    document.getElementById('errorText').textContent = data.error;
+    return;
+  }
+
+  var columns = data.columns || [];
+  var months = data.months || [];
+  columnsData = columns;
+
+  if (months.length === 0) {
+    document.getElementById('errorMsg').style.display = 'block';
+    document.getElementById('errorText').textContent = 'No data found in the source spreadsheet.';
+    return;
+  }
+
+  // Store month labels
+  monthLabels = [];
+  for (var mi = 0; mi < months.length; mi++) {
+    monthLabels.push(months[mi][0] || '');
+  }
+
+  document.getElementById('content').style.display = 'block';
+  document.getElementById('infoText').textContent = months.length + ' months of data, ' + columns.length + ' metrics';
+  if (data.cached) document.getElementById('cacheInfo').textContent = 'Cached';
+
+  var h = '<thead>';
+
+  // Row 1: Get buttons (only for eligible months)
+  h += '<tr class="btn-row"><th style="min-width:220px"></th>';
+  for (var bi = 0; bi < months.length; bi++) {
+    var monthLabel = months[bi][0] || '';
+    var btnId = 'get-btn-' + bi;
+    if (shouldShowGet(monthLabel)) {
+      h += '<th><button class="get-btn" id="' + btnId + '" onclick="generateMonth(\'' + escAttr(monthLabel) + '\',\'' + btnId + '\')">Get</button></th>';
+    } else {
+      h += '<th></th>';
+    }
+  }
+  h += '</tr>';
+
+  // Row 2: Month headers
+  h += '<tr class="team-row"><th class="team-default" style="min-width:220px">Metric</th>';
+  for (var mi = 0; mi < months.length; mi++) {
+    h += '<th class="team-default">' + formatCell(months[mi][0]) + '</th>';
+  }
+  h += '</tr>';
+  h += '</thead><tbody>';
+
+  // Each column (except col 0 = month) becomes a row
+  var currentTeam = '';
+  for (var ci = 1; ci < columns.length; ci++) {
+    var col = columns[ci];
+    if (!col.name) continue;
+
+    if (col.team && col.team !== currentTeam) {
+      currentTeam = col.team;
+      h += '<tr><td colspan="' + (months.length + 1) + '" style="padding:8px 10px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;background:' + getTeamBg(currentTeam) + ';color:' + getTeamColor(currentTeam) + ';border-bottom:2px solid ' + getTeamColor(currentTeam) + '">' + escHtml(currentTeam) + '</td></tr>';
+    }
+
+    h += '<tr id="row-' + ci + '"><td title="' + escAttr(col.source) + '"><span class="edit-toggle" id="edit-btn-' + ci + '" title="Click to edit this row" onclick="toggleEdit(' + ci + ')">&#9998;</span>' + escHtml(col.name) + '</td>';
+    for (var mj = 0; mj < months.length; mj++) {
+      var rawVal = months[mj][ci];
+      var rawStr = (rawVal === undefined || rawVal === null) ? '' : String(rawVal);
+      var overrideKey = ci + '|' + monthLabels[mj];
+      var isOverride = overrides[overrideKey] !== undefined && overrides[overrideKey] !== '';
+      h += '<td data-mj="' + mj + '" data-raw="' + escAttr(rawStr) + '"'
+        + (isOverride ? ' class="override-cell"' : '')
+        + ' onclick="startEditCell(this,' + ci + ',' + mj + ')">'
+        + formatCell(rawVal) + '</td>';
+    }
+    h += '</tr>';
+  }
+
+  h += '</tbody>';
+  document.getElementById('kpiTable').innerHTML = h;
+
+  var scroll = document.getElementById('tblScroll');
+  scroll.scrollLeft = scroll.scrollWidth;
+})
+.catch(function(err) {
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('errorMsg').style.display = 'block';
+  document.getElementById('errorText').textContent = err.message;
+});
 
 function getTeamBg(team) {
   if (team.indexOf('BW') !== -1) return '#eff6ff';

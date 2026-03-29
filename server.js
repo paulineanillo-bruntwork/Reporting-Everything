@@ -1499,6 +1499,123 @@ function colLetter(idx) {
   return s;
 }
 
+// ===== KPI Overrides (manual cell edits that persist across Get) =====
+var KPI_OVERRIDES_TAB = 'KPI Overrides';
+
+async function getKpiOverrides() {
+  try {
+    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, KPI_OVERRIDES_TAB + '!A:C');
+    var rows = data.values || [];
+    // rows[0] = header: [Col, Month, Value]
+    var overrides = {};
+    for (var i = 1; i < rows.length; i++) {
+      var col = rows[i][0], month = rows[i][1], val = rows[i][2];
+      if (col && month) overrides[col + '|' + month] = val;
+    }
+    return overrides;
+  } catch (e) {
+    // Tab may not exist yet — return empty
+    console.log('[KPI Overrides] Tab not found or error:', e.message);
+    return {};
+  }
+}
+
+async function setKpiOverride(col, month, value) {
+  var data;
+  try {
+    data = await sheetsGet(KPI_SOURCE_SHEET_ID, KPI_OVERRIDES_TAB + '!A:C');
+  } catch (e) {
+    // Create tab with header
+    await sheetsUpdate(KPI_SOURCE_SHEET_ID, KPI_OVERRIDES_TAB + '!A1:C1', [['Col', 'Month', 'Value']]);
+    data = { values: [['Col', 'Month', 'Value']] };
+  }
+  var rows = data.values || [];
+  // Find existing row
+  var foundRow = -1;
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][0] === String(col) && rows[i][1] === month) { foundRow = i; break; }
+  }
+  if (foundRow >= 0) {
+    // Update existing
+    await sheetsUpdate(KPI_SOURCE_SHEET_ID, KPI_OVERRIDES_TAB + '!C' + (foundRow + 1), [[value]]);
+  } else {
+    // Append new row
+    await sheetsAppend(KPI_SOURCE_SHEET_ID, KPI_OVERRIDES_TAB + '!A:C', [[String(col), month, value]]);
+  }
+}
+
+async function deleteKpiOverride(col, month) {
+  var data;
+  try {
+    data = await sheetsGet(KPI_SOURCE_SHEET_ID, KPI_OVERRIDES_TAB + '!A:C');
+  } catch (e) { return; }
+  var rows = data.values || [];
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][0] === String(col) && rows[i][1] === month) {
+      // Clear the row
+      await sheetsUpdate(KPI_SOURCE_SHEET_ID, KPI_OVERRIDES_TAB + '!A' + (i + 1) + ':C' + (i + 1), [['', '', '']]);
+      break;
+    }
+  }
+}
+
+// GET overrides
+app.get('/api/kpi-history/overrides', async function(req, res) {
+  try {
+    var overrides = await getKpiOverrides();
+    res.json({ overrides: overrides });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST set override
+app.post('/api/kpi-history/override', async function(req, res) {
+  try {
+    var col = req.body.col;
+    var month = req.body.month;
+    var value = req.body.value;
+    if (col === undefined || !month || value === undefined) {
+      return res.status(400).json({ error: 'col, month, value required' });
+    }
+    await setKpiOverride(col, month, value);
+    // Also write the value to the actual source sheet cell
+    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, KPI_SOURCE_TAB + '!A1:AZ');
+    var rows = data.values || [];
+    var dataRows = rows.slice(3);
+    var targetRowIdx = -1;
+    for (var i = 0; i < dataRows.length; i++) {
+      if (dataRows[i][0] && dataRows[i][0].trim() === month.trim()) { targetRowIdx = i; break; }
+    }
+    if (targetRowIdx >= 0) {
+      var sheetRow = targetRowIdx + 4;
+      var cell = KPI_SOURCE_TAB + '!' + colLetter(parseInt(col)) + sheetRow;
+      var numVal = parseFloat(value);
+      await sheetsUpdate(KPI_SOURCE_SHEET_ID, cell, [[isNaN(numVal) ? value : numVal]]);
+    }
+    kpiHistoryCache = { data: null, ts: 0 };
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE override
+app.delete('/api/kpi-history/override', async function(req, res) {
+  try {
+    var col = req.body.col;
+    var month = req.body.month;
+    if (col === undefined || !month) {
+      return res.status(400).json({ error: 'col, month required' });
+    }
+    await deleteKpiOverride(col, month);
+    kpiHistoryCache = { data: null, ts: 0 };
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Generate KPI data for a specific month from HubSpot + Google Ads
 app.post('/api/kpi-history/generate', async function(req, res) {
   try {
@@ -2049,10 +2166,20 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       console.error('[KPI Generate] Active FTE calc failed:', activErr.message);
     }
 
+    // Load overrides to skip manually edited cells
+    var overrides = await getKpiOverrides();
+    var skipped = [];
+
     // Write updates to the source sheet (current month row)
     var written = [];
     for (var key in updates) {
       var u = updates[key];
+      var overrideKey = u.col + '|' + month;
+      if (overrides[overrideKey] !== undefined && overrides[overrideKey] !== '') {
+        skipped.push(key + ' (col ' + u.col + ', manual override: ' + overrides[overrideKey] + ')');
+        console.log('[KPI Generate] Skipped ' + key + ' — manual override exists');
+        continue;
+      }
       var cell = KPI_SOURCE_TAB + '!' + colLetter(u.col) + sheetRow;
       await sheetsUpdate(KPI_SOURCE_SHEET_ID, cell, [[u.value]]);
       written.push(key + ' = ' + u.value + ' (' + cell + ')');
@@ -2067,9 +2194,10 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       month: month,
       sheetRow: sheetRow,
       updated: written,
+      skipped: skipped.length > 0 ? skipped : undefined,
       errors: errors.length > 0 ? errors : undefined,
       message: written.length > 0
-        ? 'Updated ' + written.length + ' field(s)' + (errors.length > 0 ? ' (' + errors.length + ' error(s))' : '')
+        ? 'Updated ' + written.length + ' field(s)' + (skipped.length > 0 ? ', skipped ' + skipped.length + ' manual override(s)' : '') + (errors.length > 0 ? ' (' + errors.length + ' error(s))' : '')
         : 'No matching columns found in sheet headers'
     });
   } catch (err) {
