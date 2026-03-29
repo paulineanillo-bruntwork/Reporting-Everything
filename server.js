@@ -262,6 +262,17 @@ async function getJobsObjectTypeId() {
 }
 
 // Diagnostic endpoint to list all custom object schemas
+app.get('/api/debug/months', async function(req, res) {
+  try {
+    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, KPI_SOURCE_TAB + '!A1:A50');
+    var rows = data.values || [];
+    var months = rows.slice(3).map(function(r) { return r[0] || ''; }).filter(function(m) { return m.trim(); });
+    res.json({ months: months, last5: months.slice(-5) });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 app.get('/api/debug/endorsements', async function(req, res) {
   try {
     var data = await hubspotSearchObject('2-38227027', {
