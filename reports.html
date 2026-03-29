@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
 <title>Monthly KPI Reports</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
-:root{--bg:#f4f6fb;--surface:#fff;--border:#e2e8f0;--text:#1e293b;--text-muted:#64748b;--blue:#2563eb;--blue-dark:#1e40af;--green:#059669;--green-light:#d1fae5;--red:#dc2626;--red-light:#fee2e2;--radius:16px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)}
+:root{--bg:#f4f6fb;--surface:#fff;--border:#e2e8f0;--text:#1e293b;--text-muted:#64748b;--blue:#2563eb;--blue-dark:#1e40af;--green:#059669;--green-light:#d1fae5;--red:#dc2626;--red-light:#fee2e2;--orange:#d97706;--purple:#7c3aed;--radius:16px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
 .header{background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:28px 40px 20px;display:flex;justify-content:space-between;align-items:flex-start}
@@ -19,6 +20,12 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .loading{text-align:center;padding:80px 20px;color:var(--text-muted)}
 .loading .spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
 @keyframes spin{to{transform:rotate(360deg)}}
+.trends-section{margin-bottom:32px}
+.trends-section h2{font-size:18px;font-weight:700;margin-bottom:16px}
+.chart-grid{display:grid;grid-template-columns:1fr;gap:20px}
+.chart-card{background:var(--surface);border-radius:var(--radius);padding:20px 24px;box-shadow:var(--shadow);border:1px solid var(--border)}
+.chart-card h3{font-size:14px;font-weight:600;margin-bottom:12px;color:var(--text)}
+.chart-card canvas{width:100%!important;height:260px!important}
 .report-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
 .report-card{background:var(--surface);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow);border:1px solid var(--border);text-decoration:none;color:var(--text);transition:all .15s;display:block}
 .report-card:hover{border-color:var(--blue);box-shadow:0 4px 12px rgba(37,99,235,.1);transform:translateY(-2px)}
@@ -51,6 +58,26 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 </div>
 <div class="main">
 <div id="loadingReports" class="loading"><div class="spinner"></div><div>Loading reports...</div></div>
+
+<!-- Trends section -->
+<div id="trendsSection" class="trends-section" style="display:none">
+  <h2>13-Month Trends</h2>
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h3>Active Staff Assignments - Start of Period (FTE)</h3>
+      <canvas id="chartActiveFTE"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>BW Admin Staff (excl. Digital) &amp; Active Staff Per Admin (FTE)</h3>
+      <canvas id="chartAdminStaff"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Discovery Calls (MQLs) &amp; New Client Jobs Opened</h3>
+      <canvas id="chartMQLsJobs"></canvas>
+    </div>
+  </div>
+</div>
+
 <div id="reportsContent" style="display:none">
   <div class="actions-bar">
     <div id="reportCount" style="font-size:14px;color:var(--text-muted)"></div>
@@ -83,6 +110,82 @@ function fmtD(n) {
   return Number(n).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
+// Parse number from sheet value (strip commas etc)
+function pn(v) {
+  if (v === undefined || v === null || v === '') return null;
+  var n = parseFloat(String(v).replace(/,/g, ''));
+  return isNaN(n) ? null : n;
+}
+
+// Shorten month label: "March 2026" -> "Mar 26", "Mar-26" -> "Mar 26"
+function shortMonth(label) {
+  if (!label) return '';
+  var s = label.trim();
+  var shortMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var fullMonths = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  // "March 2026"
+  var parts = s.split(/\s+/);
+  if (parts.length === 2) {
+    var mi = fullMonths.indexOf(parts[0]);
+    if (mi >= 0) return shortMonths[mi] + ' ' + parts[1].slice(-2);
+    mi = shortMonths.indexOf(parts[0]);
+    if (mi >= 0) return parts[0] + ' ' + parts[1].slice(-2);
+  }
+  // "Mar-26"
+  var dp = s.split('-');
+  if (dp.length === 2) {
+    return dp[0] + ' ' + dp[1];
+  }
+  return s;
+}
+
+// Chart defaults
+Chart.defaults.font.family = 'Inter,-apple-system,BlinkMacSystemFont,sans-serif';
+Chart.defaults.font.size = 11;
+
+function makeChart(canvasId, labels, datasets) {
+  var ctx = document.getElementById(canvasId).getContext('2d');
+  return new Chart(ctx, {
+    type: 'line',
+    data: { labels: labels, datasets: datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { usePointStyle: true, padding: 16, font: { size: 11 } } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+        y: { beginAtZero: false, grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 } } }
+      },
+      elements: { point: { radius: 3, hoverRadius: 5 }, line: { tension: 0.3, borderWidth: 2.5 } }
+    }
+  });
+}
+
+function makeDualAxisChart(canvasId, labels, datasets, y1Label, y2Label) {
+  var ctx = document.getElementById(canvasId).getContext('2d');
+  return new Chart(ctx, {
+    type: 'line',
+    data: { labels: labels, datasets: datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { usePointStyle: true, padding: 16, font: { size: 11 } } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+        y: { type: 'linear', position: 'left', beginAtZero: false, grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 } }, title: { display: true, text: y1Label, font: { size: 10 } } },
+        y1: { type: 'linear', position: 'right', beginAtZero: false, grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } }, title: { display: true, text: y2Label, font: { size: 10 } } }
+      },
+      elements: { point: { radius: 3, hoverRadius: 5 }, line: { tension: 0.3, borderWidth: 2.5 } }
+    }
+  });
+}
+
 // Set "current month" link to previous calendar month
 var now = new Date();
 var yr = now.getFullYear();
@@ -92,16 +195,97 @@ var currentMonthKey = yr + '-' + String(mo).padStart(2, '0');
 document.getElementById('newReportLink').href = '/report?month=' + currentMonthKey;
 document.getElementById('emptyNewLink').href = '/report?month=' + currentMonthKey;
 
-fetch('/api/reports').then(function(r) { return r.json(); }).then(function(data) {
+// Load KPI history for trends + reports list
+Promise.all([
+  fetch('/api/kpi-history').then(function(r) { return r.json(); }),
+  fetch('/api/reports').then(function(r) { return r.json(); })
+]).then(function(results) {
+  var kpiData = results[0];
+  var reportData = results[1];
+
   document.getElementById('loadingReports').style.display = 'none';
 
-  if (data.error) {
+  // === Build trend charts from KPI history ===
+  if (kpiData && !kpiData.error && kpiData.months && kpiData.months.length > 0) {
+    var allMonths = kpiData.months;
+    var last13 = allMonths.slice(-13);
+    var labels = last13.map(function(m) { return shortMonth(m[0]); });
+
+    // Column indices (0-based from sheet):
+    // Col 4 = index 4: Active Staff FTE
+    // Col 5 = index 5: BW Admin Staff
+    // Col 2 = index 2: Active Staff Per Admin
+    // Col 6 = index 6: MQLs
+    // Col 9 = index 9: New Client Jobs Opened
+
+    var activeFTE = last13.map(function(m) { return pn(m[4]); });
+    var adminStaff = last13.map(function(m) { return pn(m[5]); });
+    var perAdmin = last13.map(function(m) { return pn(m[2]); });
+    var mqls = last13.map(function(m) { return pn(m[6]); });
+    var newJobs = last13.map(function(m) { return pn(m[9]); });
+
+    document.getElementById('trendsSection').style.display = 'block';
+
+    // Chart 1: Active Staff FTE (single line)
+    makeChart('chartActiveFTE', labels, [{
+      label: 'Active Staff FTE',
+      data: activeFTE,
+      borderColor: '#2563eb',
+      backgroundColor: 'rgba(37,99,235,0.08)',
+      fill: true
+    }]);
+
+    // Chart 2: BW Admin Staff + Active Staff Per Admin (dual axis)
+    makeDualAxisChart('chartAdminStaff', labels, [
+      {
+        label: 'BW Admin Staff',
+        data: adminStaff,
+        borderColor: '#059669',
+        backgroundColor: 'rgba(5,150,105,0.08)',
+        fill: false,
+        yAxisID: 'y'
+      },
+      {
+        label: 'Active Staff Per Admin',
+        data: perAdmin,
+        borderColor: '#d97706',
+        backgroundColor: 'rgba(217,119,6,0.08)',
+        borderDash: [5, 3],
+        fill: false,
+        yAxisID: 'y1'
+      }
+    ], 'Admin Staff', 'Staff Per Admin');
+
+    // Chart 3: MQLs + New Client Jobs (dual axis)
+    makeDualAxisChart('chartMQLsJobs', labels, [
+      {
+        label: 'Discovery Calls (MQLs)',
+        data: mqls,
+        borderColor: '#7c3aed',
+        backgroundColor: 'rgba(124,58,237,0.08)',
+        fill: false,
+        yAxisID: 'y'
+      },
+      {
+        label: 'New Client Jobs Opened',
+        data: newJobs,
+        borderColor: '#dc2626',
+        backgroundColor: 'rgba(220,38,38,0.08)',
+        borderDash: [5, 3],
+        fill: false,
+        yAxisID: 'y1'
+      }
+    ], 'MQLs', 'Jobs Opened');
+  }
+
+  // === Build report cards ===
+  if (reportData.error) {
     document.getElementById('reportsEmpty').style.display = 'block';
-    document.querySelector('#reportsEmpty p').textContent = data.error;
+    document.querySelector('#reportsEmpty p').textContent = reportData.error;
     return;
   }
 
-  var months = data.months || [];
+  var months = reportData.months || [];
   if (months.length === 0) {
     document.getElementById('reportsEmpty').style.display = 'block';
     return;
