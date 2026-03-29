@@ -641,10 +641,74 @@ async function sheetsAppend(spreadsheetId, range, values) {
   return resp.json();
 }
 
+// Ensure required tabs exist in the report spreadsheet
+var sheetsInitialised = false;
+async function ensureSheetTabs() {
+  if (sheetsInitialised || !REPORT_SHEET_ID || !GOOGLE_SA_KEY) return;
+  try {
+    var token = await getGoogleAccessToken();
+    // Get spreadsheet metadata to check existing sheets
+    var metaResp = await fetch(
+      'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(REPORT_SHEET_ID) + '?fields=sheets.properties',
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    if (!metaResp.ok) throw new Error('Failed to read spreadsheet metadata');
+    var meta = await metaResp.json();
+    var existingSheets = (meta.sheets || []).map(function(s) { return s.properties.title; });
+
+    var requests = [];
+    // Ensure "Sheet1" exists (it should by default)
+    // Ensure "Project Updates" tab exists
+    if (existingSheets.indexOf('Project Updates') === -1) {
+      requests.push({ addSheet: { properties: { title: 'Project Updates' } } });
+    }
+    if (requests.length > 0) {
+      var batchResp = await fetch(
+        'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(REPORT_SHEET_ID) + ':batchUpdate',
+        {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requests: requests })
+        }
+      );
+      if (!batchResp.ok) {
+        var errText = await batchResp.text();
+        console.error('Failed to create sheet tabs:', errText);
+      } else {
+        console.log('[Report] Created missing sheet tabs');
+      }
+    }
+
+    // Ensure headers exist in Sheet1
+    var headerCheck = await sheetsGet(REPORT_SHEET_ID, 'Sheet1!A1:A1');
+    if (!headerCheck.values || !headerCheck.values[0] || headerCheck.values[0][0] !== 'month') {
+      await sheetsUpdate(REPORT_SHEET_ID, 'Sheet1!A1:AQ1', [REPORT_COLUMNS]);
+      console.log('[Report] Wrote KPI headers to Sheet1');
+    }
+
+    // Ensure headers exist in Project Updates
+    try {
+      var projHeaderCheck = await sheetsGet(REPORT_SHEET_ID, 'Project Updates!A1:A1');
+      if (!projHeaderCheck.values || !projHeaderCheck.values[0] || projHeaderCheck.values[0][0] !== 'month') {
+        await sheetsUpdate(REPORT_SHEET_ID, 'Project Updates!A1:E1', [PROJECT_COLUMNS]);
+        console.log('[Report] Wrote Project Updates headers');
+      }
+    } catch (e) {
+      // Tab may have just been created, try writing headers
+      await sheetsUpdate(REPORT_SHEET_ID, 'Project Updates!A1:E1', [PROJECT_COLUMNS]);
+    }
+
+    sheetsInitialised = true;
+    console.log('[Report] Sheet initialisation complete');
+  } catch (err) {
+    console.error('[Report] Sheet init error:', err.message);
+  }
+}
+
 // Read all report rows from sheet, returning array of objects keyed by column name
 async function readReportSheet() {
   if (!REPORT_SHEET_ID) throw new Error('REPORT_SHEET_ID not configured');
-  var data = await sheetsGet(REPORT_SHEET_ID, 'KPI Data!A:AQ');
+  var data = await sheetsGet(REPORT_SHEET_ID, 'Sheet1!A:AQ');
   var rows = data.values || [];
   if (rows.length < 2) return []; // no data rows
   var headers = rows[0];
@@ -685,7 +749,7 @@ async function readProjectsSheet() {
 async function writeReportRow(month, kpiData) {
   if (!REPORT_SHEET_ID) throw new Error('REPORT_SHEET_ID not configured');
   // Read existing data to find the row for this month
-  var existing = await sheetsGet(REPORT_SHEET_ID, 'KPI Data!A:A');
+  var existing = await sheetsGet(REPORT_SHEET_ID, 'Sheet1!A:A');
   var rows = existing.values || [];
   var rowIdx = -1;
   for (var i = 1; i < rows.length; i++) {
@@ -698,14 +762,14 @@ async function writeReportRow(month, kpiData) {
   });
   if (rowIdx >= 0) {
     // Update existing row
-    var range = 'KPI Data!A' + (rowIdx + 1) + ':AQ' + (rowIdx + 1);
+    var range = 'Sheet1!A' + (rowIdx + 1) + ':AQ' + (rowIdx + 1);
     await sheetsUpdate(REPORT_SHEET_ID, range, [rowValues]);
   } else {
     // Append new row (ensure headers exist first)
     if (rows.length === 0) {
-      await sheetsUpdate(REPORT_SHEET_ID, 'KPI Data!A1:AQ1', [REPORT_COLUMNS]);
+      await sheetsUpdate(REPORT_SHEET_ID, 'Sheet1!A1:AQ1', [REPORT_COLUMNS]);
     }
-    await sheetsAppend(REPORT_SHEET_ID, 'KPI Data!A:AQ', [rowValues]);
+    await sheetsAppend(REPORT_SHEET_ID, 'Sheet1!A:AQ', [rowValues]);
   }
 }
 
@@ -740,6 +804,7 @@ app.get('/api/reports', async function(req, res) {
     if (!REPORT_SHEET_ID || !GOOGLE_SA_KEY) {
       return res.json({ error: 'Reports not configured', months: [] });
     }
+    await ensureSheetTabs();
     var reports = await readReportSheet();
     var months = reports.map(function(r) {
       return {
