@@ -1287,26 +1287,46 @@ app.get('/api/kpi-history', async function(req, res) {
   }
 });
 
-// Parse "Mar-25" style month labels into { year, month, start, end }
+// Parse month labels like "March 2026" or "Mar-25" into { year, month, start, end }
+var FULL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 var SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function parseMonthLabel(label) {
   if (!label) return null;
-  var parts = label.trim().split('-');
-  if (parts.length !== 2) return null;
-  var mi = SHORT_MONTHS.indexOf(parts[0]);
-  if (mi === -1) return null;
-  var yr = parseInt(parts[1]);
-  if (isNaN(yr)) return null;
-  // Convert 2-digit year: 0-49 => 2000s, 50-99 => 1900s
-  if (yr < 100) yr += yr < 50 ? 2000 : 1900;
-  var mo = mi + 1; // 1-indexed
-  var lastDay = new Date(yr, mo, 0).getDate();
-  var moStr = String(mo).padStart(2, '0');
-  return {
-    year: yr, month: mo,
-    start: yr + '-' + moStr + '-01',
-    end: yr + '-' + moStr + '-' + String(lastDay).padStart(2, '0')
-  };
+  var trimmed = label.trim();
+  var yr, mi;
+
+  // Try "March 2026" format first
+  var spaceIdx = trimmed.lastIndexOf(' ');
+  if (spaceIdx > 0) {
+    var monthPart = trimmed.substring(0, spaceIdx).trim();
+    var yearPart = trimmed.substring(spaceIdx + 1).trim();
+    mi = FULL_MONTHS.indexOf(monthPart);
+    if (mi === -1) mi = SHORT_MONTHS.indexOf(monthPart);
+    yr = parseInt(yearPart);
+    if (mi >= 0 && !isNaN(yr)) {
+      var mo = mi + 1;
+      var lastDay = new Date(yr, mo, 0).getDate();
+      var moStr = String(mo).padStart(2, '0');
+      return { year: yr, month: mo, start: yr + '-' + moStr + '-01', end: yr + '-' + moStr + '-' + String(lastDay).padStart(2, '0') };
+    }
+  }
+
+  // Try "Mar-25" format
+  var parts = trimmed.split('-');
+  if (parts.length === 2) {
+    mi = SHORT_MONTHS.indexOf(parts[0]);
+    if (mi === -1) mi = FULL_MONTHS.indexOf(parts[0]);
+    yr = parseInt(parts[1]);
+    if (mi >= 0 && !isNaN(yr)) {
+      if (yr < 100) yr += yr < 50 ? 2000 : 1900;
+      var mo2 = mi + 1;
+      var lastDay2 = new Date(yr, mo2, 0).getDate();
+      var moStr2 = String(mo2).padStart(2, '0');
+      return { year: yr, month: mo2, start: yr + '-' + moStr2 + '-01', end: yr + '-' + moStr2 + '-' + String(lastDay2).padStart(2, '0') };
+    }
+  }
+
+  return null;
 }
 
 // Find column index by header name (case-insensitive partial match)
