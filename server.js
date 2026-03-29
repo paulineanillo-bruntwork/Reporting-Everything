@@ -264,10 +264,24 @@ async function getJobsObjectTypeId() {
 // Diagnostic endpoint to list all custom object schemas
 app.get('/api/debug/months', async function(req, res) {
   try {
-    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, KPI_SOURCE_TAB + '!A1:A50');
+    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, KPI_SOURCE_TAB + '!A1:AZ');
     var rows = data.values || [];
-    var months = rows.slice(3).map(function(r) { return r[0] || ''; }).filter(function(m) { return m.trim(); });
-    res.json({ months: months, last5: months.slice(-5) });
+    var headers = rows[2] || [];
+    var colMap = {};
+    for (var i = 0; i < Math.min(headers.length, 15); i++) {
+      colMap['col_' + i] = headers[i] || '';
+    }
+    var dataRows = rows.slice(3);
+    var months = dataRows.map(function(r) { return r[0] || ''; }).filter(function(m) { return m.trim(); });
+    // Show last 3 months with first 10 column values
+    var last3 = dataRows.slice(-3).map(function(r) {
+      var obj = {};
+      for (var j = 0; j < Math.min(r.length, 15); j++) {
+        obj['col_' + j + '_' + (headers[j] || '').substring(0, 30)] = r[j] || '';
+      }
+      return obj;
+    });
+    res.json({ headers_first15: colMap, months: months, last5: months.slice(-5), last3_data: last3 });
   } catch (e) {
     res.json({ error: e.message });
   }
