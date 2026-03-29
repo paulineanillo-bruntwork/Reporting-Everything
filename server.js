@@ -1287,6 +1287,49 @@ app.get('/api/kpi-history', async function(req, res) {
   }
 });
 
+// Parse "Mar-25" style month labels into { year, month, start, end }
+var SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function parseMonthLabel(label) {
+  if (!label) return null;
+  var parts = label.trim().split('-');
+  if (parts.length !== 2) return null;
+  var mi = SHORT_MONTHS.indexOf(parts[0]);
+  if (mi === -1) return null;
+  var yr = parseInt(parts[1]);
+  if (isNaN(yr)) return null;
+  // Convert 2-digit year: 0-49 => 2000s, 50-99 => 1900s
+  if (yr < 100) yr += yr < 50 ? 2000 : 1900;
+  var mo = mi + 1; // 1-indexed
+  var lastDay = new Date(yr, mo, 0).getDate();
+  var moStr = String(mo).padStart(2, '0');
+  return {
+    year: yr, month: mo,
+    start: yr + '-' + moStr + '-01',
+    end: yr + '-' + moStr + '-' + String(lastDay).padStart(2, '0')
+  };
+}
+
+// Find column index by header name (case-insensitive partial match)
+function findCol(headerRow, name) {
+  var lower = name.toLowerCase();
+  for (var i = 0; i < headerRow.length; i++) {
+    if ((headerRow[i] || '').toLowerCase().trim() === lower) return i;
+  }
+  return -1;
+}
+
+// Convert column index to A1 letter (0=A, 1=B, ... 25=Z, 26=AA, etc.)
+function colLetter(idx) {
+  var s = '';
+  idx++;
+  while (idx > 0) {
+    idx--;
+    s = String.fromCharCode(65 + (idx % 26)) + s;
+    idx = Math.floor(idx / 26);
+  }
+  return s;
+}
+
 // Generate KPI data for a specific month from HubSpot + Google Ads
 app.post('/api/kpi-history/generate', async function(req, res) {
   try {
@@ -1296,6 +1339,11 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     var month = req.body.month; // e.g. "Mar-25"
     if (!month) {
       return res.status(400).json({ error: 'month is required (e.g. "Mar-25")' });
+    }
+
+    var parsed = parseMonthLabel(month);
+    if (!parsed) {
+      return res.status(400).json({ error: 'Cannot parse month "' + month + '". Expected format: "Mar-25"' });
     }
 
     // Find the row in the source sheet that matches this month
@@ -1322,29 +1370,70 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     }
 
     var sheetRow = targetRowIdx + 4; // 1-indexed, accounting for 3 header rows
+    var updates = {}; // colName -> { col, value }
 
-    // TODO: Pull data from HubSpot and Google Ads here
-    // For now, return the row info so the user can define data mappings
-    var currentValues = dataRows[targetRowIdx];
-    var columns = [];
-    for (var j = 0; j < headerRow.length; j++) {
-      columns.push({
-        col: j,
-        name: (headerRow[j] || '').trim(),
-        currentValue: currentValues[j] !== undefined ? currentValues[j] : ''
+    // ===== Google Ads: Monthly spend + conversions =====
+    console.log('[KPI Generate] Fetching Google Ads data for ' + month + ' (' + parsed.start + ' to ' + parsed.end + ')');
+    try {
+      var adsCsv = await fetchAdsCsv(ADS_CSV_URL);
+      var adsRows = parseAdsCsv(adsCsv);
+      var adsResult = processAdsData(adsRows);
+      // Filter timeseries to target month
+      var monthAds = adsResult.timeseries.filter(function(d) {
+        return d.day >= parsed.start && d.day <= parsed.end;
       });
+      var adsSpend = 0, adsConversions = 0;
+      for (var ai = 0; ai < monthAds.length; ai++) {
+        adsSpend += monthAds[ai].cost;
+        adsConversions += monthAds[ai].conversions;
+      }
+      adsSpend = Math.round(adsSpend * 100) / 100;
+      adsConversions = Math.round(adsConversions * 100) / 100;
+      var costPerLead = adsConversions > 0 ? Math.round((adsSpend / adsConversions) * 100) / 100 : 0;
+
+      console.log('[KPI Generate] Ads: $' + adsSpend + ' spend, ' + adsConversions + ' conversions, $' + costPerLead + ' CPL');
+
+      // Map to sheet columns — try common header names
+      var adsSpendCol = findCol(headerRow, 'Google Ads Spend');
+      if (adsSpendCol === -1) adsSpendCol = findCol(headerRow, 'Ads Spend');
+      if (adsSpendCol === -1) adsSpendCol = findCol(headerRow, 'Ad Spend');
+      if (adsSpendCol >= 0) updates['Google Ads Spend'] = { col: adsSpendCol, value: adsSpend };
+
+      var adsConvCol = findCol(headerRow, 'Google Ads Conversions');
+      if (adsConvCol === -1) adsConvCol = findCol(headerRow, 'Conversions');
+      if (adsConvCol >= 0) updates['Google Ads Conversions'] = { col: adsConvCol, value: adsConversions };
+
+      var cplCol = findCol(headerRow, 'Cost Per Lead');
+      if (cplCol === -1) cplCol = findCol(headerRow, 'CPL');
+      if (cplCol >= 0) updates['Cost Per Lead'] = { col: cplCol, value: costPerLead };
+    } catch (adsErr) {
+      console.error('[KPI Generate] Ads data fetch failed:', adsErr.message);
     }
+
+    // TODO: Add HubSpot data pulls here
+
+    // Write updates to the source sheet
+    var written = [];
+    for (var key in updates) {
+      var u = updates[key];
+      var cell = KPI_SOURCE_TAB + '!' + colLetter(u.col) + sheetRow;
+      await sheetsUpdate(KPI_SOURCE_SHEET_ID, cell, [[u.value]]);
+      written.push(key + ' = ' + u.value + ' (' + cell + ')');
+      console.log('[KPI Generate] Wrote ' + key + ' = ' + u.value + ' to ' + cell);
+    }
+
+    // Invalidate cache so next GET reflects changes
+    kpiHistoryCache = { data: null, ts: 0 };
 
     res.json({
       success: true,
       month: month,
       sheetRow: sheetRow,
-      message: 'Generate endpoint ready — data source mappings not yet configured',
-      columns: columns
+      updated: written,
+      message: written.length > 0
+        ? 'Updated ' + written.length + ' field(s)'
+        : 'No matching columns found in sheet headers'
     });
-
-    // Invalidate cache so next GET reflects any changes
-    kpiHistoryCache = { data: null, ts: 0 };
   } catch (err) {
     console.error('KPI generate error:', err.message);
     res.status(500).json({ error: err.message });
