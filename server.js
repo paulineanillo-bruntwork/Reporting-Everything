@@ -275,7 +275,12 @@ app.get('/api/debug/months', async function(req, res) {
 
 app.get('/api/debug/endorsements', async function(req, res) {
   try {
-    var data = await hubspotSearchObject('2-38227027', {
+    var includedStages = [
+      '978051969', '977990485', '977990486', '977990487',
+      '1075896997', '977990488', '977990489', '1015966551'
+    ];
+    // Test 1: Simple pipeline-only query
+    var test1 = await hubspotSearchObject('2-38227027', {
       filterGroups: [{
         filters: [
           { propertyName: 'hs_pipeline', operator: 'EQ', value: '666493306' }
@@ -284,7 +289,39 @@ app.get('/api/debug/endorsements', async function(req, res) {
       properties: ['hs_pipeline_stage', 'client__cloned_'],
       limit: 5
     });
-    res.json({ total: data.total, count: (data.results || []).length, sample: (data.results || []).slice(0, 3).map(function(r) { return r.properties; }) });
+    // Test 2: With IN filter on stages
+    var test2err = null, test2 = null;
+    try {
+      test2 = await hubspotSearchObject('2-38227027', {
+        filterGroups: [{
+          filters: [
+            { propertyName: 'hs_pipeline', operator: 'EQ', value: '666493306' },
+            { propertyName: 'hs_pipeline_stage', operator: 'IN', values: includedStages }
+          ]
+        }],
+        properties: ['hs_pipeline_stage', 'client__cloned_'],
+        limit: 5
+      });
+    } catch (e2) { test2err = e2.message; }
+    // Test 3: Single stage EQ
+    var test3err = null, test3 = null;
+    try {
+      test3 = await hubspotSearchObject('2-38227027', {
+        filterGroups: [{
+          filters: [
+            { propertyName: 'hs_pipeline', operator: 'EQ', value: '666493306' },
+            { propertyName: 'hs_pipeline_stage', operator: 'EQ', value: '978051969' }
+          ]
+        }],
+        properties: ['hs_pipeline_stage', 'client__cloned_'],
+        limit: 5
+      });
+    } catch (e3) { test3err = e3.message; }
+    res.json({
+      test1_pipeline_only: { total: test1.total },
+      test2_IN_stages: test2err ? { error: test2err } : { total: test2.total },
+      test3_single_stage: test3err ? { error: test3err } : { total: test3.total }
+    });
   } catch (e) {
     res.json({ error: e.message });
   }
