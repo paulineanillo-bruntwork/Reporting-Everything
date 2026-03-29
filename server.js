@@ -1752,40 +1752,32 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     // Delay to avoid HubSpot rate limits between major API calls
     await sleep(1000);
 
-    // ===== HubSpot Custom Object: Jobs — New Client Jobs Opened (Col 9) =====
+    // ===== HubSpot Tickets: New Client Jobs Opened (Col 9) =====
+    // Tickets in outsource pipelines, created in month, job_source="New", client not containing "BruntWork"
     console.log('[KPI Generate] Fetching new client jobs opened for ' + month + '...');
     try {
-      var jobsObjectType = await getJobsObjectTypeId();
-      // First, discover property names on the jobs object (cached after first call)
-      if (!getJobsObjectTypeId._propsDiscovered) {
-        var jobsProps = await hubspotGet('https://api.hubapi.com/crm/v3/properties/' + jobsObjectType);
-        var propNames = (jobsProps.results || []).map(function(p) { return p.name + ' (' + p.label + ')'; });
-        console.log('[KPI Generate] Jobs object properties: ' + propNames.join(', '));
-        getJobsObjectTypeId._propsDiscovered = true;
-      }
       var jobStartMs = String(new Date(parsed.start + 'T00:00:00Z').getTime());
       var jobEndMs = String(new Date(parsed.end + 'T23:59:59Z').getTime());
-      // Search for jobs created in the month with Job Source = New Client, excluding BruntWork billing
-      var jobResults = await fetchAllPagesObject(jobsObjectType, {
+      var jobResults = await fetchAllPagesWithRetry({
         filterGroups: [{
           filters: [
+            { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
             { propertyName: 'createdate', operator: 'GTE', value: jobStartMs },
             { propertyName: 'createdate', operator: 'LTE', value: jobEndMs },
-            { propertyName: 'job_source', operator: 'EQ', value: 'New Client' }
+            { propertyName: 'job_source', operator: 'EQ', value: 'New' }
           ]
         }],
-        properties: ['createdate', 'job_source', 'client_billing_name']
+        properties: ['createdate', 'job_source', 'client']
       });
-      // Filter out jobs where client_billing_name contains "BruntWork"
+      // Exclude tickets where client contains "BruntWork"
       var newClientJobs = jobResults.filter(function(j) {
-        var billing = (j.properties.client_billing_name || '').toLowerCase();
-        return billing.indexOf('bruntwork') === -1;
+        var clientName = (j.properties.client || '').toLowerCase();
+        return clientName.indexOf('bruntwork') === -1;
       });
-      console.log('[KPI Generate] New Client Jobs: ' + newClientJobs.length + ' (total matching: ' + jobResults.length + ', excluded BruntWork: ' + (jobResults.length - newClientJobs.length) + ')');
+      console.log('[KPI Generate] New Client Jobs: ' + newClientJobs.length + ' (total job_source=New: ' + jobResults.length + ', excluded BruntWork: ' + (jobResults.length - newClientJobs.length) + ')');
       updates['New Client Jobs Opened'] = { col: 9, value: newClientJobs.length };
     } catch (jobsErr) {
       console.error('[KPI Generate] Jobs fetch failed:', jobsErr.message);
-      // Log the error but don't fail the whole generate
     }
 
     // Delay to avoid HubSpot rate limits
