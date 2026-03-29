@@ -1783,6 +1783,37 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     // Delay to avoid HubSpot rate limits between major API calls
     await sleep(1000);
 
+    // ===== HubSpot Tickets: Recruitment Team HC — Active in BW Internal, secondary team = Recruiting OR Sourcing (Col 23) =====
+    console.log('[KPI Generate] Fetching Recruitment Team HC...');
+    try {
+      var recruitResults = await fetchAllPagesWithRetry({
+        filterGroups: [
+          {
+            filters: [
+              { propertyName: 'hs_pipeline', operator: 'EQ', value: '16984077' },
+              { propertyName: 'staff_status', operator: 'EQ', value: 'Active' },
+              { propertyName: 'bw_internal_secondary_team', operator: 'EQ', value: 'Recruiting' }
+            ]
+          },
+          {
+            filters: [
+              { propertyName: 'hs_pipeline', operator: 'EQ', value: '16984077' },
+              { propertyName: 'staff_status', operator: 'EQ', value: 'Active' },
+              { propertyName: 'bw_internal_secondary_team', operator: 'EQ', value: 'Sourcing' }
+            ]
+          }
+        ],
+        properties: ['staff_status', 'bw_internal_secondary_team']
+      });
+      console.log('[KPI Generate] Recruitment Team HC: ' + recruitResults.length);
+      updates['Recruitment Team HC'] = { col: 23, value: recruitResults.length };
+    } catch (recruitErr) {
+      console.error('[KPI Generate] Recruitment Team HC fetch failed:', recruitErr.message);
+    }
+
+    // Delay to avoid HubSpot rate limits between major API calls
+    await sleep(1000);
+
     // ===== HubSpot Custom Object: Jobs — New Client Jobs Opened (Col 9) =====
     console.log('[KPI Generate] Fetching new client jobs opened for ' + month + '...');
     try {
@@ -1895,7 +1926,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
 
     // Col 25: Endorsements Per Recruitment HC
     var endorsements = parseSheetNum(dataRows[targetRowIdx][24]) || 0;
-    var recruitmentHC = parseSheetNum(dataRows[targetRowIdx][23]) || 0;
+    var recruitmentHC = updates['Recruitment Team HC'] ? updates['Recruitment Team HC'].value : (parseSheetNum(dataRows[targetRowIdx][23]) || 0);
     if (recruitmentHC > 0 && endorsements > 0) {
       updates['Endorsements Per Recruitment HC'] = { col: 25, value: Math.round((endorsements / recruitmentHC) * 100) / 100 };
     }
