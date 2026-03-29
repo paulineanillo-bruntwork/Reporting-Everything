@@ -174,6 +174,41 @@ async function hubspotSearch(body) {
   return res.json();
 }
 
+// Generic HubSpot CRM object search (contacts, deals, etc.)
+async function hubspotSearchObject(objectType, body) {
+  var url = 'https://api.hubapi.com/crm/v3/objects/' + objectType + '/search';
+  var headers = { 'Content-Type': 'application/json' };
+  if (HUBSPOT_KEY && HUBSPOT_KEY.startsWith('pat-')) {
+    headers['Authorization'] = 'Bearer ' + HUBSPOT_KEY;
+  } else {
+    url += '?hapikey=' + HUBSPOT_KEY;
+  }
+  var res = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(body) });
+  if (!res.ok) {
+    var text = await res.text();
+    throw new Error('HubSpot ' + objectType + ' search error ' + res.status + ': ' + text);
+  }
+  return res.json();
+}
+
+async function fetchAllPagesObject(objectType, baseBody) {
+  var results = [];
+  var after = undefined;
+  var hasMore = true;
+  while (hasMore) {
+    var body = Object.assign({}, baseBody, { limit: 200 });
+    if (after) body.after = after;
+    var data = await hubspotSearchObject(objectType, body);
+    results = results.concat(data.results || []);
+    if (data.paging && data.paging.next && data.paging.next.after) {
+      after = data.paging.next.after;
+    } else {
+      hasMore = false;
+    }
+  }
+  return results;
+}
+
 async function fetchAllPages(baseBody) {
   var results = [];
   var after = undefined;
@@ -1528,6 +1563,25 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       console.log('[KPI Generate] Lost FTEs: ' + lostFTEs + ', <30 day FTE: ' + under30FTE);
     } catch (offErr) {
       console.error('[KPI Generate] Offboardings fetch failed:', offErr.message);
+    }
+
+    // ===== HubSpot Contacts: MQLs (became MQL in month) — Col 6 =====
+    console.log('[KPI Generate] Fetching MQL contacts for ' + month + '...');
+    try {
+      var mqlResults = await fetchAllPagesObject('contacts', {
+        filterGroups: [{
+          filters: [
+            { propertyName: 'hs_lifecyclestage_marketingqualifiedlead_date', operator: 'GTE', value: parsed.start + 'T00:00:00Z' },
+            { propertyName: 'hs_lifecyclestage_marketingqualifiedlead_date', operator: 'LTE', value: parsed.end + 'T23:59:59Z' }
+          ]
+        }],
+        properties: ['hs_lifecyclestage_marketingqualifiedlead_date']
+      });
+      var mqlCount = mqlResults.length;
+      console.log('[KPI Generate] MQLs found: ' + mqlCount);
+      updates['Discovery Calls / MQLs'] = { col: 6, value: mqlCount };
+    } catch (mqlErr) {
+      console.error('[KPI Generate] MQL fetch failed:', mqlErr.message);
     }
 
     // ===== Active FTE: Col 4 for NEXT month = current Col 4 + net FTE =====
