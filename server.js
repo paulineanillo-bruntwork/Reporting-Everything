@@ -1489,16 +1489,18 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     // ===== HubSpot: Hires (onboarding_date in month) =====
     console.log('[KPI Generate] Fetching HubSpot hires for ' + month + '...');
     try {
+      var hireStartMs = String(new Date(parsed.start + 'T00:00:00Z').getTime());
+      var hireEndMs = String(new Date(parsed.end + 'T23:59:59Z').getTime());
       var hireResults = await fetchAllPagesWithRetry({
         filterGroups: [{
           filters: [
             { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-            { propertyName: 'onboarding_date', operator: 'GTE', value: parsed.start },
-            { propertyName: 'onboarding_date', operator: 'LTE', value: parsed.end }
+            { propertyName: 'createdate', operator: 'GTE', value: hireStartMs },
+            { propertyName: 'createdate', operator: 'LTE', value: hireEndMs }
           ]
         }],
-        properties: ['onboarding_date', 'assignment_type', 'type_of_recruitment', 'hs_pipeline'],
-        sorts: [{ propertyName: 'onboarding_date', direction: 'ASCENDING' }]
+        properties: ['createdate', 'assignment_type', 'type_of_recruitment', 'hs_pipeline'],
+        sorts: [{ propertyName: 'createdate', direction: 'ASCENDING' }]
       });
       console.log('[KPI Generate] Hires found: ' + hireResults.length);
 
