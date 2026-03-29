@@ -1568,11 +1568,13 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     // ===== HubSpot Contacts: MQLs (became MQL in month) — Col 6 =====
     console.log('[KPI Generate] Fetching MQL contacts for ' + month + '...');
     try {
+      var mqlStartMs = String(new Date(parsed.start + 'T00:00:00Z').getTime());
+      var mqlEndMs = String(new Date(parsed.end + 'T23:59:59Z').getTime());
       var mqlResults = await fetchAllPagesObject('contacts', {
         filterGroups: [{
           filters: [
-            { propertyName: 'hs_lifecyclestage_marketingqualifiedlead_date', operator: 'GTE', value: parsed.start + 'T00:00:00Z' },
-            { propertyName: 'hs_lifecyclestage_marketingqualifiedlead_date', operator: 'LTE', value: parsed.end + 'T23:59:59Z' }
+            { propertyName: 'hs_lifecyclestage_marketingqualifiedlead_date', operator: 'GTE', value: mqlStartMs },
+            { propertyName: 'hs_lifecyclestage_marketingqualifiedlead_date', operator: 'LTE', value: mqlEndMs }
           ]
         }],
         properties: ['hs_lifecyclestage_marketingqualifiedlead_date']
