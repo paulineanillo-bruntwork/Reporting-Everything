@@ -287,6 +287,32 @@ app.get('/api/debug/months', async function(req, res) {
   }
 });
 
+// One-time fix: write a value to a specific month/col in KPI sheet
+app.post('/api/debug/fix-cell', async function(req, res) {
+  try {
+    var month = req.body.month; // e.g. "April 2025"
+    var col = parseInt(req.body.col);
+    var value = req.body.value;
+    if (!month || isNaN(col) || value === undefined) return res.status(400).json({ error: 'month, col, value required' });
+    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, KPI_SOURCE_TAB + '!A1:AZ');
+    var rows = data.values || [];
+    var dataRows = rows.slice(3);
+    var targetRowIdx = -1;
+    for (var i = 0; i < dataRows.length; i++) {
+      if (dataRows[i][0] && dataRows[i][0].trim() === month.trim()) { targetRowIdx = i; break; }
+    }
+    if (targetRowIdx === -1) return res.status(404).json({ error: 'Month not found: ' + month });
+    var sheetRow = targetRowIdx + 4;
+    var cell = KPI_SOURCE_TAB + '!' + colLetter(col) + sheetRow;
+    var numVal = parseFloat(value);
+    await sheetsUpdate(KPI_SOURCE_SHEET_ID, cell, [[isNaN(numVal) ? value : numVal]]);
+    kpiHistoryCache = { data: null, ts: 0 };
+    res.json({ success: true, cell: cell, value: isNaN(numVal) ? value : numVal, month: month });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/debug/endorsements', async function(req, res) {
   try {
     var includedStages = [
