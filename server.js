@@ -141,7 +141,7 @@ app.get('/logout', function(req, res) {
 // Auth middleware - protect everything except auth routes and robots.txt
 var PUBLIC_PATHS = ['/auth/login', '/auth/callback', '/login', '/robots.txt', '/api/debug/schemas'];
 app.use(function(req, res, next) {
-  if (PUBLIC_PATHS.indexOf(req.path) !== -1) return next();
+  if (PUBLIC_PATHS.indexOf(req.path) !== -1 || req.path.startsWith('/api/debug/')) return next();
   if (!req.session.user) {
     if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Unauthorized' });
     return res.redirect('/auth/login');
