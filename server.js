@@ -364,6 +364,13 @@ function getMonthKey(dateStr) {
 
 function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
 
+// Parse number from sheet cell that may have commas (e.g. "5,565" -> 5565)
+function parseSheetNum(val) {
+  if (typeof val === 'number') return val;
+  if (!val) return 0;
+  return parseFloat(String(val).replace(/,/g, '')) || 0;
+}
+
 async function fetchAllPagesWithRetry(baseBody) {
   var results = [];
   var after = undefined;
@@ -684,10 +691,13 @@ async function getGoogleAccessToken() {
   return data.access_token;
 }
 
-async function sheetsGet(spreadsheetId, range) {
+async function sheetsGet(spreadsheetId, range, opts) {
   var token = await getGoogleAccessToken();
   var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId)
     + '/values/' + encodeURIComponent(range);
+  if (opts && opts.valueRenderOption) {
+    url += '?valueRenderOption=' + opts.valueRenderOption;
+  }
   var resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
   if (!resp.ok) {
     var txt = await resp.text();
@@ -1684,17 +1694,14 @@ app.post('/api/kpi-history/generate', async function(req, res) {
         filterGroups: [{
           filters: [
             { propertyName: 'hs_pipeline', operator: 'EQ', value: '16984077' },
-            { propertyName: 'staff_status', operator: 'EQ', value: 'Active' }
+            { propertyName: 'staff_status', operator: 'EQ', value: 'Active' },
+            { propertyName: 'bw_internal_secondary_team', operator: 'NEQ', value: 'Digital' }
           ]
         }],
         properties: ['staff_status', 'bw_internal_secondary_team']
       });
-      // Exclude Digital Team
-      var bwAdminStaff = bwResults.filter(function(t) {
-        return (t.properties.bw_internal_secondary_team || '').toLowerCase() !== 'digital';
-      });
-      console.log('[KPI Generate] BW Admin Staff (Active, excl Digital): ' + bwAdminStaff.length + ' (total incl Digital: ' + bwResults.length + ')');
-      updates['BW Admin Staff'] = { col: 5, value: bwAdminStaff.length };
+      console.log('[KPI Generate] BW Admin Staff (Active, excl Digital): ' + bwResults.length);
+      updates['BW Admin Staff'] = { col: 5, value: bwResults.length };
     } catch (bwErr) {
       console.error('[KPI Generate] BW Admin Staff fetch failed:', bwErr.message);
     }
@@ -1753,13 +1760,13 @@ app.post('/api/kpi-history/generate', async function(req, res) {
 
     // Previous month values (for rates that reference prior month)
     var prevRow = targetRowIdx > 0 ? dataRows[targetRowIdx - 1] : [];
-    var prevActiveFTE = parseFloat(prevRow[4]) || 0;
-    var prevMQLs = parseFloat(prevRow[6]) || 0;
-    var prevTotalHires = parseFloat(prevRow[12]) || 0;
-    var prevNewClientJobs = parseFloat(prevRow[9]) || 0;
-    var prevExistingClients = parseFloat(prevRow[40]) || 0;
-    var prevExistingJobs = parseFloat(prevRow[41]) || 0;
-    var prevChurned = parseFloat(prevRow[34]) || 0;
+    var prevActiveFTE = parseSheetNum(prevRow[4]) || 0;
+    var prevMQLs = parseSheetNum(prevRow[6]) || 0;
+    var prevTotalHires = parseSheetNum(prevRow[12]) || 0;
+    var prevNewClientJobs = parseSheetNum(prevRow[9]) || 0;
+    var prevExistingClients = parseSheetNum(prevRow[40]) || 0;
+    var prevExistingJobs = parseSheetNum(prevRow[41]) || 0;
+    var prevChurned = parseSheetNum(prevRow[34]) || 0;
 
     // Col 16: Cost Per Discovery Call = Google Ads Spend / MQLs
     if (_mqlCount > 0) {
@@ -1767,25 +1774,25 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     }
 
     // Col 35: Role Churn Rate = Churned Staff FTE / Active FTE (col 4 current month)
-    var currentActiveFTE = parseFloat(dataRows[targetRowIdx][4]) || 0;
+    var currentActiveFTE = parseSheetNum(dataRows[targetRowIdx][4]) || 0;
     if (currentActiveFTE > 0) {
       updates['Role Churn Rate'] = { col: 35, value: Math.round((_lostFTEs / currentActiveFTE) * 10000) / 10000 };
     }
 
     // Col 2: Active Staff Headcount Per Admin Staff = next month Active FTE / BW Admin Staff
-    var adminStaff = updates['BW Admin Staff'] ? updates['BW Admin Staff'].value : (parseFloat(dataRows[targetRowIdx][5]) || 0);
+    var adminStaff = updates['BW Admin Staff'] ? updates['BW Admin Staff'].value : (parseSheetNum(dataRows[targetRowIdx][5]) || 0);
     if (adminStaff > 0 && currentActiveFTE > 0) {
       updates['Active Staff Per Admin'] = { col: 2, value: Math.round((currentActiveFTE / adminStaff) * 100) / 100 };
     }
 
     // Col 8: Show Rate = Fabius Calls / MQLs (skip if no Fabius data — col 7 is manual)
-    var fabiusCalls = parseFloat(dataRows[targetRowIdx][7]) || 0;
+    var fabiusCalls = parseSheetNum(dataRows[targetRowIdx][7]) || 0;
     if (fabiusCalls > 0 && _mqlCount > 0) {
       updates['Show Rate'] = { col: 8, value: Math.round((fabiusCalls / _mqlCount) * 10000) / 10000 };
     }
 
     // Col 10: New Client Jobs vs Discovery Calls = New Client Jobs / Fabius Calls
-    var _newClientJobs = updates['New Client Jobs Opened'] ? updates['New Client Jobs Opened'].value : (parseFloat(dataRows[targetRowIdx][9]) || 0);
+    var _newClientJobs = updates['New Client Jobs Opened'] ? updates['New Client Jobs Opened'].value : (parseSheetNum(dataRows[targetRowIdx][9]) || 0);
     if (fabiusCalls > 0 && _newClientJobs > 0) {
       updates['New Client Jobs vs Discovery Calls'] = { col: 10, value: Math.round((_newClientJobs / fabiusCalls) * 10000) / 10000 };
     }
@@ -1806,8 +1813,8 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     }
 
     // Col 25: Endorsements Per Recruitment HC
-    var endorsements = parseFloat(dataRows[targetRowIdx][24]) || 0;
-    var recruitmentHC = parseFloat(dataRows[targetRowIdx][23]) || 0;
+    var endorsements = parseSheetNum(dataRows[targetRowIdx][24]) || 0;
+    var recruitmentHC = parseSheetNum(dataRows[targetRowIdx][23]) || 0;
     if (recruitmentHC > 0 && endorsements > 0) {
       updates['Endorsements Per Recruitment HC'] = { col: 25, value: Math.round((endorsements / recruitmentHC) * 100) / 100 };
     }
@@ -1820,13 +1827,13 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     }
 
     // Col 33: Hires Per Sales/Recruitment HC
-    var salesHC = parseFloat(dataRows[targetRowIdx][22]) || 0;
+    var salesHC = parseSheetNum(dataRows[targetRowIdx][22]) || 0;
     if ((recruitmentHC + salesHC) > 0) {
       updates['Hires Per Sales/Recruitment HC'] = { col: 33, value: Math.round((_totalFTEHires / (recruitmentHC + salesHC)) * 100) / 100 };
     }
 
     // Col 37: Backfill rate = Roles to be backfilled / total offboardings
-    var rolesToBackfill = updates['Roles to be backfilled'] ? updates['Roles to be backfilled'].value : (parseFloat(dataRows[targetRowIdx][36]) || 0);
+    var rolesToBackfill = updates['Roles to be backfilled'] ? updates['Roles to be backfilled'].value : (parseSheetNum(dataRows[targetRowIdx][36]) || 0);
     if (_lostFTEs > 0 && rolesToBackfill > 0) {
       updates['Backfill rate'] = { col: 37, value: Math.round((rolesToBackfill / _lostFTEs) * 10000) / 10000 };
     }
@@ -1837,19 +1844,19 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     }
 
     // Col 44: FTE/Client Expansion Rate = Existing Client FTE / Existing Clients
-    var existingClients = parseFloat(dataRows[targetRowIdx][40]) || 0;
+    var existingClients = parseSheetNum(dataRows[targetRowIdx][40]) || 0;
     if (existingClients > 0 && _existingClientFTE > 0) {
       updates['FTE/Client Expansion Rate'] = { col: 44, value: Math.round((_existingClientFTE / existingClients) * 10000) / 10000 };
     }
 
     // Col 45: Jobs Expansion Rate = Existing Client Jobs / prev month Existing Clients
-    var existingClientJobs = parseFloat(dataRows[targetRowIdx][41]) || 0;
+    var existingClientJobs = parseSheetNum(dataRows[targetRowIdx][41]) || 0;
     if (prevExistingClients > 0 && existingClientJobs > 0) {
       updates['Jobs Expansion Rate'] = { col: 45, value: Math.round((existingClientJobs / prevExistingClients) * 10000) / 10000 };
     }
 
     // Col 46: FTE Close Rate Existing Client = Existing Client FTE / prev month Existing Client Jobs
-    var prevExistingClientJobs = parseFloat(prevRow[41]) || 0;
+    var prevExistingClientJobs = parseSheetNum(prevRow[41]) || 0;
     if (prevExistingClientJobs > 0 && _existingClientFTE > 0) {
       updates['FTE Close Rate Existing Client'] = { col: 46, value: Math.round((_existingClientFTE / prevExistingClientJobs) * 10000) / 10000 };
     }
@@ -1867,7 +1874,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     // e.g. Get for March writes to April's Col 4: March value (5565) + March net FTE (+130.25)
     console.log('[KPI Generate] Computing Active FTE for next month after ' + month + '...');
     try {
-      var currentCol4 = parseFloat(dataRows[targetRowIdx][4]) || 0;
+      var currentCol4 = parseSheetNum(dataRows[targetRowIdx][4]) || 0;
       var netFTE = _totalFTEHires - _lostFTEs;
       var nextActiveFTE = Math.round((currentCol4 + netFTE) * 100) / 100;
       var nextRowIdx = targetRowIdx + 1;
