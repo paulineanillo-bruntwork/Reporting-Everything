@@ -1592,6 +1592,49 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     // Delay to avoid HubSpot rate limits between major API calls
     await sleep(1000);
 
+    // ===== HubSpot Tickets: Sales Agent Hired FTE =====
+    console.log('[KPI Generate] Fetching Sales Agent Hired FTE for ' + month + '...');
+    try {
+      var saCol = findCol(headerRow, 'Sales Agent Hired FTE');
+      if (saCol === -1) saCol = findCol(headerRow, 'Sales Agent Hired');
+      if (saCol === -1) saCol = 11; // Column L
+      if (saCol >= 0) {
+        var saStartMs = String(new Date(parsed.start + 'T00:00:00Z').getTime());
+        var saEndMs = String(new Date(parsed.end + 'T23:59:59Z').getTime());
+        var saResults = await fetchAllPagesWithRetry({
+          filterGroups: [{
+            filters: [
+              { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+              { propertyName: 'createdate', operator: 'GTE', value: saStartMs },
+              { propertyName: 'createdate', operator: 'LTE', value: saEndMs },
+              { propertyName: 'assignment_group', operator: 'EQ', value: 'Outsource' },
+              { propertyName: 'sales_agent_associated', operator: 'HAS_PROPERTY' }
+            ]
+          }],
+          properties: ['createdate', 'assignment_type', 'assignment_group', 'sales_agent_associated']
+        });
+        // Filter to known contract types and FTE-weight
+        var validTypes = ['output-based', 'full-time', 'part-time-under-20-hours', 'part-time', 'project-based'];
+        var saFTE = 0;
+        for (var si = 0; si < saResults.length; si++) {
+          var saType = (saResults[si].properties.assignment_type || '').toLowerCase();
+          if (validTypes.indexOf(saType) !== -1) {
+            saFTE += fteWeight(saResults[si].properties.assignment_type || 'Unknown');
+          }
+        }
+        saFTE = Math.round(saFTE * 100) / 100;
+        console.log('[KPI Generate] Sales Agent Hired FTE: ' + saFTE + ' (from ' + saResults.length + ' tickets)');
+        updates['Sales Agent Hired FTE'] = { col: saCol, value: saFTE };
+      } else {
+        console.log('[KPI Generate] "Sales Agent Hired FTE" column not found in headers, skipping');
+      }
+    } catch (saErr) {
+      console.error('[KPI Generate] Sales Agent Hired FTE fetch failed:', saErr.message);
+    }
+
+    // Delay to avoid HubSpot rate limits between major API calls
+    await sleep(1000);
+
     // ===== HubSpot: Offboardings (offboarding_date in month) =====
     console.log('[KPI Generate] Fetching HubSpot offboardings for ' + month + '...');
     var lostFTEs = 0;
