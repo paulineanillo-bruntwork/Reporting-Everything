@@ -262,6 +262,23 @@ async function getJobsObjectTypeId() {
 }
 
 // Diagnostic endpoint to list all custom object schemas
+app.get('/api/debug/endorsements', async function(req, res) {
+  try {
+    var data = await hubspotSearchObject('2-38227027', {
+      filterGroups: [{
+        filters: [
+          { propertyName: 'hs_pipeline', operator: 'EQ', value: '666493306' }
+        ]
+      }],
+      properties: ['hs_pipeline_stage', 'client__cloned_'],
+      limit: 5
+    });
+    res.json({ total: data.total, count: (data.results || []).length, sample: (data.results || []).slice(0, 3).map(function(r) { return r.properties; }) });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 app.get('/api/debug/schemas', async function(req, res) {
   try {
     var schemas = await hubspotGet('https://api.hubapi.com/crm/v3/schemas');

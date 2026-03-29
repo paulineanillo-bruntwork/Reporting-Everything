@@ -161,19 +161,31 @@ function showToast(msg, type) {
 }
 
 // Determine which months should show Get button
-// Only current month, and only if before 4th day
+// Current month always gets a Get button.
+// Previous month also gets one if we're before the 4th of the current month.
 function shouldShowGet(monthLabel) {
   var now = new Date();
-  // Use GMT+8 like the rest of the app
   var gmt8 = new Date(now.getTime() + (8 * 60 * 60 * 1000));
-  var dayOfMonth = gmt8.getUTCDate();
-  if (dayOfMonth >= 4) return false;
-
   var shortMonths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var curMonth = shortMonths[gmt8.getUTCMonth()];
   var curYear = String(gmt8.getUTCFullYear()).slice(-2);
   var curLabel = curMonth + '-' + curYear;
-  return monthLabel.trim() === curLabel;
+  var trimmed = monthLabel.trim();
+
+  // Always show for current month
+  if (trimmed === curLabel) return true;
+
+  // Before the 4th, also show for previous month
+  var dayOfMonth = gmt8.getUTCDate();
+  if (dayOfMonth < 4) {
+    var prevDate = new Date(Date.UTC(gmt8.getUTCFullYear(), gmt8.getUTCMonth() - 1, 1));
+    var prevMonth = shortMonths[prevDate.getUTCMonth()];
+    var prevYear = String(prevDate.getUTCFullYear()).slice(-2);
+    var prevLabel = prevMonth + '-' + prevYear;
+    if (trimmed === prevLabel) return true;
+  }
+
+  return false;
 }
 
 function generateMonth(month, btnId) {
