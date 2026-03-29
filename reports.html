@@ -143,7 +143,7 @@ function parseMonth(label) {
 // Parse number from sheet value (strip commas etc)
 function pn(v) {
   if (v === undefined || v === null || v === '') return null;
-  var n = parseFloat(String(v).replace(/,/g, ''));
+  var n = parseFloat(String(v).replace(/[$,%]/g, '').replace(/,/g, ''));
   return isNaN(n) ? null : n;
 }
 
