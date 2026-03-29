@@ -1287,6 +1287,13 @@ app.get('/api/kpi-history', async function(req, res) {
   }
 });
 
+// FTE weighting by assignment type
+function fteWeight(type) {
+  if (type === 'Full-Time') return 1;
+  if (type === 'Part-Time') return 0.5;
+  return 0.25; // PT-Under-20, Project-Based, Output-Based
+}
+
 // Parse month labels like "March 2026" or "Mar-25" into { year, month, start, end }
 var FULL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 var SHORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1430,9 +1437,118 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       console.error('[KPI Generate] Ads data fetch failed:', adsErr.message);
     }
 
-    // TODO: Add HubSpot data pulls here
+    // ===== HubSpot: Hires (onboarding_date in month) =====
+    console.log('[KPI Generate] Fetching HubSpot hires for ' + month + '...');
+    try {
+      var hireResults = await fetchAllPagesWithRetry({
+        filterGroups: [{
+          filters: [
+            { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+            { propertyName: 'onboarding_date', operator: 'GTE', value: parsed.start },
+            { propertyName: 'onboarding_date', operator: 'LTE', value: parsed.end }
+          ]
+        }],
+        properties: ['onboarding_date', 'assignment_type', 'type_of_recruitment', 'hs_pipeline'],
+        sorts: [{ propertyName: 'onboarding_date', direction: 'ASCENDING' }]
+      });
+      console.log('[KPI Generate] Hires found: ' + hireResults.length);
 
-    // Write updates to the source sheet
+      var totalFTEHires = 0;
+      var backfillFTEHires = 0, newClientFTEHires = 0, existingClientFTEHires = 0;
+      var existingClientHC = 0;
+      for (var hi = 0; hi < hireResults.length; hi++) {
+        var hp = hireResults[hi].properties;
+        var w = fteWeight(hp.assignment_type || 'Unknown');
+        totalFTEHires += w;
+        var recLower = (hp.type_of_recruitment || '').toLowerCase();
+        if (recLower.indexOf('backfill') !== -1 || recLower.indexOf('back-fill') !== -1 || recLower.indexOf('replacement') !== -1) {
+          backfillFTEHires += w;
+        } else if (recLower.indexOf('new client') !== -1 || recLower.indexOf('new_client') !== -1) {
+          newClientFTEHires += w;
+        } else {
+          existingClientFTEHires += w;
+          existingClientHC++;
+        }
+      }
+      totalFTEHires = Math.round(totalFTEHires * 100) / 100;
+
+      // Col 12: Total FTE Hires (Sales)
+      updates['Total FTE Hires (Col 12)'] = { col: 12, value: totalFTEHires };
+      // Col 32: Total Hires FTE (Recruitment) — same value
+      updates['Total Hires FTE (Col 32)'] = { col: 32, value: totalFTEHires };
+      // Col 47: Total FTE Hires (Client Services) — same value
+      updates['Total FTE Hires (Col 47)'] = { col: 47, value: totalFTEHires };
+      // Col 38: Backfill FTE hires
+      updates['Backfill FTE hires'] = { col: 38, value: Math.round(backfillFTEHires * 100) / 100 };
+      // Col 43: FTE Hires (Existing Client)
+      updates['FTE Hires (Existing Client)'] = { col: 43, value: Math.round(existingClientFTEHires * 100) / 100 };
+      // Col 42: Headcount Hires (Existing Client)
+      updates['Headcount Hires (Existing Client)'] = { col: 42, value: existingClientHC };
+
+      console.log('[KPI Generate] FTE Hires: ' + totalFTEHires + ' (backfill=' + backfillFTEHires + ', newClient=' + newClientFTEHires + ', existing=' + existingClientFTEHires + ')');
+    } catch (hireErr) {
+      console.error('[KPI Generate] Hires fetch failed:', hireErr.message);
+    }
+
+    // ===== HubSpot: Offboardings (offboarding_date in month) =====
+    console.log('[KPI Generate] Fetching HubSpot offboardings for ' + month + '...');
+    var lostFTEs = 0;
+    try {
+      var offResults = await fetchAllPagesWithRetry({
+        filterGroups: [{
+          filters: [
+            { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+            { propertyName: 'offboarding_date', operator: 'GTE', value: parsed.start },
+            { propertyName: 'offboarding_date', operator: 'LTE', value: parsed.end }
+          ]
+        }],
+        properties: ['offboarding_date', 'assignment_type', 'onboarding_date', 'days_between_onboarding_offboarding', 'type_of_recruitment'],
+        sorts: [{ propertyName: 'offboarding_date', direction: 'ASCENDING' }]
+      });
+      console.log('[KPI Generate] Offboardings found: ' + offResults.length);
+
+      var under30FTE = 0;
+      var backfillRequested = 0;
+      for (var oi = 0; oi < offResults.length; oi++) {
+        var op = offResults[oi].properties;
+        var ow = fteWeight(op.assignment_type || 'Unknown');
+        lostFTEs += ow;
+        // Check <30 day tenure
+        var daysBetween = parseFloat(op.days_between_onboarding_offboarding);
+        if (isNaN(daysBetween) && op.onboarding_date && op.offboarding_date) {
+          daysBetween = (new Date(op.offboarding_date) - new Date(op.onboarding_date)) / (1000*60*60*24);
+        }
+        if (!isNaN(daysBetween) && daysBetween < 30) under30FTE += ow;
+      }
+      lostFTEs = Math.round(lostFTEs * 100) / 100;
+
+      // Col 34: Churned Staff (FTE)
+      updates['Churned Staff (FTE)'] = { col: 34, value: lostFTEs };
+
+      console.log('[KPI Generate] Lost FTEs: ' + lostFTEs + ', <30 day FTE: ' + under30FTE);
+    } catch (offErr) {
+      console.error('[KPI Generate] Offboardings fetch failed:', offErr.message);
+    }
+
+    // ===== Active FTE: Col 4 for NEXT month = current Col 4 + net FTE =====
+    console.log('[KPI Generate] Computing Active FTE for next month...');
+    try {
+      var currentCol4 = parseFloat(dataRows[targetRowIdx][4]) || 0;
+      var netFTE = (typeof totalFTEHires !== 'undefined' ? totalFTEHires : 0) - lostFTEs;
+      var nextActiveFTE = Math.round((currentCol4 + netFTE) * 100) / 100;
+      // Find the next month row
+      var nextRowIdx = targetRowIdx + 1;
+      if (nextRowIdx < dataRows.length) {
+        var nextSheetRow = nextRowIdx + 4;
+        var nextCell = KPI_SOURCE_TAB + '!' + colLetter(4) + nextSheetRow;
+        await sheetsUpdate(KPI_SOURCE_SHEET_ID, nextCell, [[nextActiveFTE]]);
+        console.log('[KPI Generate] Wrote Active FTE ' + nextActiveFTE + ' to next month row ' + nextSheetRow + ' (was ' + currentCol4 + ' + net ' + netFTE + ')');
+      }
+    } catch (activErr) {
+      console.error('[KPI Generate] Active FTE calc failed:', activErr.message);
+    }
+
+    // Write updates to the source sheet (current month row)
     var written = [];
     for (var key in updates) {
       var u = updates[key];
