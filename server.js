@@ -1805,7 +1805,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
             filters: [
               { propertyName: 'hs_pipeline', operator: 'EQ', value: '16984077' },
               { propertyName: 'staff_status', operator: 'EQ', value: 'Active' },
-              { propertyName: 'bw_internal_secondary_team', operator: 'EQ', value: 'Recruiting' }
+              { propertyName: 'bw_internal_secondary_team', operator: 'EQ', value: 'Recruitment' }
             ]
           },
           {
