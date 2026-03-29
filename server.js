@@ -1677,6 +1677,35 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     // Delay to avoid HubSpot rate limits between major API calls
     await sleep(1000);
 
+    // ===== HubSpot Tickets: BW Admin Staff — onboarded in month, excl. Digital Team (Col 5) =====
+    console.log('[KPI Generate] Fetching BW Admin Staff onboarded for ' + month + '...');
+    try {
+      var bwStartMs = String(new Date(parsed.start + 'T00:00:00Z').getTime());
+      var bwEndMs = String(new Date(parsed.end + 'T23:59:59Z').getTime());
+      var bwResults = await fetchAllPagesWithRetry({
+        filterGroups: [{
+          filters: [
+            { propertyName: 'hs_pipeline', operator: 'EQ', value: '16984077' },
+            { propertyName: 'onboarding_date', operator: 'GTE', value: bwStartMs },
+            { propertyName: 'onboarding_date', operator: 'LTE', value: bwEndMs }
+          ]
+        }],
+        properties: ['onboarding_date', 'bw_internal_secondary_team'],
+        sorts: [{ propertyName: 'onboarding_date', direction: 'ASCENDING' }]
+      });
+      // Exclude Digital Team
+      var bwAdminStaff = bwResults.filter(function(t) {
+        return (t.properties.bw_internal_secondary_team || '').toLowerCase() !== 'digital';
+      });
+      console.log('[KPI Generate] BW Admin Staff onboarded: ' + bwAdminStaff.length + ' (total: ' + bwResults.length + ', Digital excluded: ' + (bwResults.length - bwAdminStaff.length) + ')');
+      updates['BW Admin Staff'] = { col: 5, value: bwAdminStaff.length };
+    } catch (bwErr) {
+      console.error('[KPI Generate] BW Admin Staff fetch failed:', bwErr.message);
+    }
+
+    // Delay to avoid HubSpot rate limits between major API calls
+    await sleep(1000);
+
     // ===== HubSpot Custom Object: Jobs — New Client Jobs Opened (Col 9) =====
     console.log('[KPI Generate] Fetching new client jobs opened for ' + month + '...');
     try {
@@ -1748,7 +1777,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     }
 
     // Col 2: Active Staff Headcount Per Admin Staff = next month Active FTE / BW Admin Staff
-    var adminStaff = parseFloat(dataRows[targetRowIdx][5]) || 0;
+    var adminStaff = updates['BW Admin Staff'] ? updates['BW Admin Staff'].value : (parseFloat(dataRows[targetRowIdx][5]) || 0);
     if (adminStaff > 0 && currentActiveFTE > 0) {
       updates['Active Staff Per Admin'] = { col: 2, value: Math.round((currentActiveFTE / adminStaff) * 100) / 100 };
     }
