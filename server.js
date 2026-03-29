@@ -1795,22 +1795,30 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       }
       var jobStartMs = String(new Date(parsed.start + 'T00:00:00Z').getTime());
       var jobEndMs = String(new Date(parsed.end + 'T23:59:59Z').getTime());
-      var jobResults = await fetchAllPagesObject(jobsObjectType, {
+      // Fetch all jobs created in month (no job_source filter) so we can log actual values
+      var allJobResults = await fetchAllPagesObject(jobsObjectType, {
         filterGroups: [{
           filters: [
-            { propertyName: 'createdate', operator: 'GTE', value: jobStartMs },
-            { propertyName: 'createdate', operator: 'LTE', value: jobEndMs },
-            { propertyName: 'job_source', operator: 'EQ', value: 'New Client' }
+            { propertyName: 'hs_createdate', operator: 'GTE', value: jobStartMs },
+            { propertyName: 'hs_createdate', operator: 'LTE', value: jobEndMs }
           ]
         }],
-        properties: ['createdate', 'job_source', 'client_billing_name']
+        properties: ['hs_createdate', 'job_source', 'client_billing_name']
       });
-      // Filter out where client_billing_name contains "BruntWork"
-      var newClientJobs = jobResults.filter(function(j) {
+      // Log unique job_source values to discover correct filter value
+      var jobSourceValues = {};
+      for (var ji = 0; ji < allJobResults.length; ji++) {
+        var src = allJobResults[ji].properties.job_source || '(empty)';
+        jobSourceValues[src] = (jobSourceValues[src] || 0) + 1;
+      }
+      console.log('[KPI Generate] Jobs created in month: ' + allJobResults.length + ', job_source values: ' + JSON.stringify(jobSourceValues));
+      // Filter: job_source = "New Client" (case-insensitive), exclude BruntWork billing
+      var newClientJobs = allJobResults.filter(function(j) {
+        var src = (j.properties.job_source || '').toLowerCase();
         var billing = (j.properties.client_billing_name || '').toLowerCase();
-        return billing.indexOf('bruntwork') === -1;
+        return (src === 'new client' || src === 'new_client' || src === 'new') && billing.indexOf('bruntwork') === -1;
       });
-      console.log('[KPI Generate] New Client Jobs: ' + newClientJobs.length + ' (total: ' + jobResults.length + ', excluded BruntWork: ' + (jobResults.length - newClientJobs.length) + ')');
+      console.log('[KPI Generate] New Client Jobs: ' + newClientJobs.length + ' (excluded BruntWork: ' + (allJobResults.length - newClientJobs.length) + ')');
       updates['New Client Jobs Opened'] = { col: 9, value: newClientJobs.length };
     } catch (jobsErr) {
       console.error('[KPI Generate] Jobs fetch failed:', jobsErr.message);
