@@ -1626,6 +1626,33 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     // Delay to avoid HubSpot rate limits between major API calls
     await sleep(1000);
 
+    // ===== HubSpot Tickets: Roles to be Backfilled (Col 36) =====
+    console.log('[KPI Generate] Fetching roles to be backfilled for ' + month + '...');
+    try {
+      var bfStartMs = String(new Date(parsed.start + 'T00:00:00Z').getTime());
+      var bfEndMs = String(new Date(parsed.end + 'T23:59:59Z').getTime());
+      var backfillResults = await fetchAllPagesWithRetry({
+        filterGroups: [{
+          filters: [
+            { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+            { propertyName: 'assignment_group', operator: 'EQ', value: 'Outsource' },
+            { propertyName: 'client_role_backfill', operator: 'EQ', value: 'Yes' },
+            { propertyName: 'offboarding_date', operator: 'GTE', value: bfStartMs },
+            { propertyName: 'offboarding_date', operator: 'LTE', value: bfEndMs }
+          ]
+        }],
+        properties: ['offboarding_date', 'assignment_group', 'client_role_backfill'],
+        sorts: [{ propertyName: 'offboarding_date', direction: 'ASCENDING' }]
+      });
+      console.log('[KPI Generate] Roles to be backfilled: ' + backfillResults.length);
+      updates['Roles to be backfilled'] = { col: 36, value: backfillResults.length };
+    } catch (bfErr) {
+      console.error('[KPI Generate] Backfill roles fetch failed:', bfErr.message);
+    }
+
+    // Delay to avoid HubSpot rate limits between major API calls
+    await sleep(1000);
+
     // ===== HubSpot Contacts: MQLs (became MQL in month) — Col 6 =====
     console.log('[KPI Generate] Fetching MQL contacts for ' + month + '...');
     try {
@@ -1774,7 +1801,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     }
 
     // Col 37: Backfill rate = Roles to be backfilled / total offboardings
-    var rolesToBackfill = parseFloat(dataRows[targetRowIdx][36]) || 0;
+    var rolesToBackfill = updates['Roles to be backfilled'] ? updates['Roles to be backfilled'].value : (parseFloat(dataRows[targetRowIdx][36]) || 0);
     if (_lostFTEs > 0 && rolesToBackfill > 0) {
       updates['Backfill rate'] = { col: 37, value: Math.round((rolesToBackfill / _lostFTEs) * 10000) / 10000 };
     }
