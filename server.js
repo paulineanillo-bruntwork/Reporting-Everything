@@ -285,7 +285,22 @@ app.get('/api/debug/schemas', async function(req, res) {
         });
       } catch (pe) { jobsProps = { error: pe.message }; }
     }
-    res.json({ count: summary.length, schemas: summary, jobsProperties: jobsProps });
+    // Also fetch endorsements (applications) properties and pipelines
+    var endorseSchema = results.find(function(s) { return s.name === 'endorsements'; });
+    var endorseProps = null;
+    var endorsePipelines = null;
+    if (endorseSchema) {
+      try {
+        var ePropsData = await hubspotGet('https://api.hubapi.com/crm/v3/properties/' + endorseSchema.objectTypeId);
+        endorseProps = (ePropsData.results || []).map(function(p) {
+          return { name: p.name, label: p.label, type: p.type };
+        });
+      } catch (epe) { endorseProps = { error: epe.message }; }
+      try {
+        endorsePipelines = await hubspotGet('https://api.hubapi.com/crm/v3/pipelines/' + endorseSchema.objectTypeId);
+      } catch (eple) { endorsePipelines = { error: eple.message }; }
+    }
+    res.json({ count: summary.length, schemas: summary, jobsProperties: jobsProps, endorsementsProperties: endorseProps, endorsementsPipelines: endorsePipelines });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
