@@ -833,6 +833,7 @@ app.get('/api/report', async function(req, res) {
     if (!REPORT_SHEET_ID || !GOOGLE_SA_KEY) {
       return res.status(500).json({ error: 'Reports not configured' });
     }
+    await ensureSheetTabs();
     var reports = await readReportSheet();
     var projects = await readProjectsSheet();
 
@@ -894,6 +895,7 @@ app.post('/api/report', async function(req, res) {
     if (!REPORT_SHEET_ID || !GOOGLE_SA_KEY) {
       return res.status(500).json({ error: 'Reports not configured' });
     }
+    await ensureSheetTabs();
 
     // Read existing row to merge with manual updates
     var reports = await readReportSheet();
@@ -941,6 +943,7 @@ app.post('/api/report/generate', async function(req, res) {
     if (!REPORT_SHEET_ID || !GOOGLE_SA_KEY) {
       return res.status(500).json({ error: 'Reports not configured' });
     }
+    await ensureSheetTabs();
 
     console.log('[Report] Generating automated data for ' + month);
     var parts = month.split('-');
