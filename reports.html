@@ -309,15 +309,14 @@ Promise.all([
       }
     ], 'Admin Staff', 'Staff Per Admin');
 
-    // Chart 3: MQLs + New Client Jobs (ends at current month)
-    makeDualAxisChart('chartMQLsJobs', currentLabels, [
+    // Chart 3: MQLs + New Client Jobs (ends at current month) — same axis
+    makeChart('chartMQLsJobs', currentLabels, [
       {
         label: 'Discovery Calls (MQLs)',
         data: mqls,
         borderColor: '#7c3aed',
         backgroundColor: 'rgba(124,58,237,0.08)',
-        fill: false,
-        yAxisID: 'y'
+        fill: false
       },
       {
         label: 'New Client Jobs Opened',
@@ -325,10 +324,9 @@ Promise.all([
         borderColor: '#dc2626',
         backgroundColor: 'rgba(220,38,38,0.08)',
         borderDash: [5, 3],
-        fill: false,
-        yAxisID: 'y1'
+        fill: false
       }
-    ], 'MQLs', 'Jobs Opened');
+    ]);
   }
 
   // === Build report cards ===

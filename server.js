@@ -2078,10 +2078,10 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       updates['Cost Per Discovery Call'] = { col: 16, value: Math.round((_adsSpend / _mqlCount) * 100) / 100 };
     }
 
-    // Col 35: Role Churn Rate = Churned Staff FTE / Active FTE (col 4 current month)
-    var currentActiveFTE = parseSheetNum(dataRows[targetRowIdx][4]) || 0;
-    if (currentActiveFTE > 0) {
-      updates['Role Churn Rate'] = { col: 35, value: Math.round((_lostFTEs / currentActiveFTE) * 10000) / 10000 };
+    // Col 35: Role Churn Rate = Churned Staff (FTE) / Active Staff Assignments - start of period (FTE) for same month
+    var startOfPeriodFTE = parseSheetNum(dataRows[targetRowIdx][4]) || 0;
+    if (startOfPeriodFTE > 0) {
+      updates['Role Churn Rate'] = { col: 35, value: Math.round((_lostFTEs / startOfPeriodFTE) * 10000) / 10000 };
     }
 
     // Col 2: Active Staff Headcount Per Admin Staff = next month Active FTE / BW Admin Staff
