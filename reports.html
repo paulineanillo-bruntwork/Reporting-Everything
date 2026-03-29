@@ -75,6 +75,10 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
       <h3>Discovery Calls (MQLs) &amp; New Client Jobs Opened</h3>
       <canvas id="chartMQLsJobs"></canvas>
     </div>
+    <div class="chart-card">
+      <h3>Google Ads Spend &amp; Cost Per MQL</h3>
+      <canvas id="chartAdsSpend"></canvas>
+    </div>
   </div>
 </div>
 
@@ -270,12 +274,16 @@ Promise.all([
     // Col 2 = index 2: Active Staff Per Admin
     // Col 6 = index 6: MQLs
     // Col 9 = index 9: New Client Jobs Opened
+    // Col 15 = index 15: Google Ads Spend
+    // Col 16 = index 16: Cost Per Discovery Call (Cost Per MQL)
 
     var activeFTE = fteSlice.map(function(m) { return pn(m[4]); });
     var adminStaff = currentSlice.map(function(m) { return pn(m[5]); });
     var perAdmin = currentSlice.map(function(m) { return pn(m[2]); });
     var mqls = currentSlice.map(function(m) { return pn(m[6]); });
     var newJobs = currentSlice.map(function(m) { return pn(m[9]); });
+    var adsSpend = currentSlice.map(function(m) { return pn(m[15]); });
+    var costPerMQL = currentSlice.map(function(m) { return pn(m[16]); });
 
     document.getElementById('trendsSection').style.display = 'block';
 
@@ -327,6 +335,27 @@ Promise.all([
         fill: false
       }
     ]);
+
+    // Chart 4: Google Ads Spend + Cost Per MQL (dual axis — different scales)
+    makeDualAxisChart('chartAdsSpend', currentLabels, [
+      {
+        label: 'Google Ads Spend ($)',
+        data: adsSpend,
+        borderColor: '#0891b2',
+        backgroundColor: 'rgba(8,145,178,0.08)',
+        fill: false,
+        yAxisID: 'y'
+      },
+      {
+        label: 'Cost Per MQL ($)',
+        data: costPerMQL,
+        borderColor: '#e11d48',
+        backgroundColor: 'rgba(225,29,72,0.08)',
+        borderDash: [5, 3],
+        fill: false,
+        yAxisID: 'y1'
+      }
+    ], 'Ads Spend ($)', 'Cost Per MQL ($)');
   }
 
   // === Build report cards ===
