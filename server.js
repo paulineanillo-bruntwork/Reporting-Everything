@@ -1755,7 +1755,8 @@ app.post('/api/kpi-history/generate', async function(req, res) {
           backfillFTEHires += w;
         } else if (jobSrcLower.indexOf('new') !== -1) {
           newClientFTEHires += w;
-        } else {
+        }
+        if (jobSrcLower.indexOf('existing') !== -1) {
           existingClientFTEHires += w;
           existingClientHC++;
         }
