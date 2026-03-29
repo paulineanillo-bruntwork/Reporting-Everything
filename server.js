@@ -2058,7 +2058,8 @@ app.post('/api/kpi-history/generate', async function(req, res) {
 
     // ===== Col 24: Endorsements (Active Applications count) =====
     try {
-      // Use IN with included stages (much smaller set than fetching all 260K+ records)
+      // Use IN with included stages + NOT_CONTAINS_TOKEN to exclude bruntwork
+      // Only need the total count, so fetch a single page with limit=1
       var includedStages = [
         '978051969',   // Endorsed to Job Owner
         '977990485',   // Client Interview Scheduled
@@ -2069,22 +2070,28 @@ app.post('/api/kpi-history/generate', async function(req, res) {
         '977990489',   // Hired
         '1015966551'   // Hired - OEF Created
       ];
-      var allEndorsements = await fetchAllPagesObject('2-38227027', {
+      // Two filter groups: one for records with client (exclude bruntwork), one for records without client
+      var endData1 = await hubspotSearchObject('2-38227027', {
         filterGroups: [{
           filters: [
             { propertyName: 'hs_pipeline', operator: 'EQ', value: '666493306' },
-            { propertyName: 'hs_pipeline_stage', operator: 'IN', values: includedStages }
+            { propertyName: 'hs_pipeline_stage', operator: 'IN', values: includedStages },
+            { propertyName: 'client__cloned_', operator: 'NOT_CONTAINS_TOKEN', value: 'bruntwork' }
+          ]
+        },
+        {
+          filters: [
+            { propertyName: 'hs_pipeline', operator: 'EQ', value: '666493306' },
+            { propertyName: 'hs_pipeline_stage', operator: 'IN', values: includedStages },
+            { propertyName: 'client__cloned_', operator: 'NOT_HAS_PROPERTY' }
           ]
         }],
-        properties: ['hs_pipeline_stage', 'client__cloned_']
+        properties: ['hs_pipeline_stage'],
+        limit: 1
       });
-      // Exclude bruntwork clients
-      var filteredEndorsements = allEndorsements.filter(function(e) {
-        var client = (e.properties.client__cloned_ || '').toLowerCase();
-        return client.indexOf('bruntwork') === -1;
-      });
-      console.log('[KPI Generate] Endorsements: ' + filteredEndorsements.length + ' (total matching stages: ' + allEndorsements.length + ')');
-      updates['Endorsements'] = { col: 24, value: filteredEndorsements.length };
+      var endorsementCount = endData1.total || 0;
+      console.log('[KPI Generate] Endorsements: ' + endorsementCount);
+      updates['Endorsements'] = { col: 24, value: endorsementCount };
     } catch (endErr) {
       console.error('[KPI Generate] Endorsements fetch failed:', endErr.message);
       errors.push('Endorsements: ' + endErr.message);
