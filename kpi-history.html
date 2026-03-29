@@ -80,6 +80,57 @@ tbody tr:hover td:first-child{background:#f0f4f8}
       <table id="kpiTable"></table>
     </div>
   </div>
+  <div style="margin-top:24px;background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);padding:20px 24px;font-size:12px;line-height:1.7;color:var(--text-muted)">
+    <div style="font-weight:700;font-size:13px;color:var(--text);margin-bottom:8px">What "Get" pulls for each row</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 32px">
+      <div>
+        <b style="color:var(--text)">HubSpot Tickets (Pipelines)</b>
+        <ul style="padding-left:16px;margin:4px 0 10px">
+          <li><b>Active Staff FTE (Col 4)</b> — Previous month value + current Net FTE from live dashboard. Writes to <em>next</em> month's cell.</li>
+          <li><b>BW Admin Staff (Col 5)</b> — BW Internal pipeline, staff_status = Active, excl. Digital team.</li>
+          <li><b>Sales Agent Hired FTE (Col 11)</b> — Tickets created in month, assignment_group = Outsource, sales_agent_associated exists, FTE-weighted.</li>
+          <li><b>Total FTE Hires (Cols 12/32/47)</b> — Tickets created in month across 3 pipelines, FTE-weighted.</li>
+          <li><b>Recruitment Team HC (Col 23)</b> — BW Internal pipeline, staff_status = Active, secondary team = Recruitment or Sourcing.</li>
+          <li><b>Churned Staff FTE (Col 34)</b> — Tickets with offboarding_date in month, FTE-weighted.</li>
+          <li><b>Roles to be Backfilled (Col 36)</b> — Offboarded in month, assignment_group = Outsource, client_role_backfill = Yes.</li>
+          <li><b>Backfill / Existing Client / New Client FTE (Cols 38/42/43)</b> — Hires split by type_of_recruitment.</li>
+        </ul>
+        <b style="color:var(--text)">HubSpot Contacts</b>
+        <ul style="padding-left:16px;margin:4px 0 10px">
+          <li><b>MQLs (Col 6)</b> — Contacts where hs_v2_date_entered_marketingqualifiedlead is in the month.</li>
+        </ul>
+      </div>
+      <div>
+        <b style="color:var(--text)">HubSpot Custom Objects</b>
+        <ul style="padding-left:16px;margin:4px 0 10px">
+          <li><b>New Client Jobs Opened (Col 9)</b> — Jobs object created in month, job_source = New Client, excl. BruntWork billing.</li>
+          <li><b>Endorsements (Col 24)</b> — Applications object in pipeline, excl. early stages (Applied, AI Recommended, Failed Screening, etc.) and BruntWork clients.</li>
+        </ul>
+        <b style="color:var(--text)">Google Ads (from Sheets CSV)</b>
+        <ul style="padding-left:16px;margin:4px 0 10px">
+          <li><b>Google Ads Spend (Col 15)</b> — Monthly spend from Ads CSV data.</li>
+        </ul>
+        <b style="color:var(--text)">Computed (from other columns)</b>
+        <ul style="padding-left:16px;margin:4px 0 10px">
+          <li><b>Active Staff Per Admin (Col 2)</b> — Active FTE / BW Admin Staff</li>
+          <li><b>Show Rate (Col 8)</b> — Fabius Calls / MQLs</li>
+          <li><b>New Client Jobs vs Calls (Col 10)</b> — Jobs / Fabius Calls</li>
+          <li><b>FTE Close Rate (Col 13)</b> — Hires / prev month MQLs</li>
+          <li><b>FTE Conv from Job (Col 14)</b> — Hires / prev month Jobs</li>
+          <li><b>Cost Per Discovery Call (Col 16)</b> — Ads Spend / MQLs</li>
+          <li><b>Sales Conversion Rate (Col 17)</b> — Jobs / MQLs</li>
+          <li><b>Endorsements Per Recruitment HC (Col 25)</b> — Endorsements / Recruitment HC</li>
+          <li><b>Staff churned &lt;1m % (Col 27)</b> — Under-30-day churn FTE / prev month hires</li>
+          <li><b>Hires Per HC (Col 33)</b> — Hires / (Recruitment + Sales HC)</li>
+          <li><b>Role Churn Rate (Col 35)</b> — Churned FTE / Active FTE</li>
+          <li><b>Backfill Rate (Col 37)</b> — Backfill roles / churned</li>
+          <li><b>Backfill Close Rate (Col 39)</b> — Backfill hires / prev churned</li>
+          <li><b>New Client Hires (Col 48)</b> — Total - Existing - Backfill</li>
+          <li><b>New Client FTE Conv (Col 49)</b> — New Client Hires / prev MQLs</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 </div>
 </div>
 <div id="toast" class="status-toast"></div>
