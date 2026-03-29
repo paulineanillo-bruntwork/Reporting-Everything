@@ -1287,6 +1287,70 @@ app.get('/api/kpi-history', async function(req, res) {
   }
 });
 
+// Generate KPI data for a specific month from HubSpot + Google Ads
+app.post('/api/kpi-history/generate', async function(req, res) {
+  try {
+    if (!GOOGLE_SA_KEY) {
+      return res.status(500).json({ error: 'Google service account key not configured' });
+    }
+    var month = req.body.month; // e.g. "Mar-25"
+    if (!month) {
+      return res.status(400).json({ error: 'month is required (e.g. "Mar-25")' });
+    }
+
+    // Find the row in the source sheet that matches this month
+    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, KPI_SOURCE_TAB + '!A1:AZ');
+    var rows = data.values || [];
+    if (rows.length < 4) {
+      return res.status(500).json({ error: 'Source sheet has no data' });
+    }
+
+    var headerRow = rows[2];
+    var dataRows = rows.slice(3);
+
+    // Find the row index (in the sheet, 1-indexed; row 0 in dataRows = sheet row 4)
+    var targetRowIdx = -1;
+    for (var i = 0; i < dataRows.length; i++) {
+      if (dataRows[i][0] && dataRows[i][0].trim() === month.trim()) {
+        targetRowIdx = i;
+        break;
+      }
+    }
+
+    if (targetRowIdx === -1) {
+      return res.status(404).json({ error: 'Month "' + month + '" not found in sheet' });
+    }
+
+    var sheetRow = targetRowIdx + 4; // 1-indexed, accounting for 3 header rows
+
+    // TODO: Pull data from HubSpot and Google Ads here
+    // For now, return the row info so the user can define data mappings
+    var currentValues = dataRows[targetRowIdx];
+    var columns = [];
+    for (var j = 0; j < headerRow.length; j++) {
+      columns.push({
+        col: j,
+        name: (headerRow[j] || '').trim(),
+        currentValue: currentValues[j] !== undefined ? currentValues[j] : ''
+      });
+    }
+
+    res.json({
+      success: true,
+      month: month,
+      sheetRow: sheetRow,
+      message: 'Generate endpoint ready — data source mappings not yet configured',
+      columns: columns
+    });
+
+    // Invalidate cache so next GET reflects any changes
+    kpiHistoryCache = { data: null, ts: 0 };
+  } catch (err) {
+    console.error('KPI generate error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/kpi', function(req, res) {
   res.sendFile(path.join(__dirname, 'kpi-history.html'));
 });
