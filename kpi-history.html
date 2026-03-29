@@ -144,9 +144,7 @@ td.override-cell{background:var(--orange-light) !important;border-bottom-color:v
 <div id="toast" class="status-toast"></div>
 <script>
 var editingRows = {}; // colIndex -> true when row is in edit mode
-var overrides = {};   // "col|month" -> value
 var monthLabels = []; // month labels from data
-var columnsData = []; // columns metadata
 
 function formatCell(val) {
   if (val === undefined || val === null || val === '') return '<span class="empty-cell">-</span>';
@@ -312,13 +310,8 @@ function saveCell(td, ci, mj, newVal) {
   td.innerHTML = formatCell(newVal);
   td.setAttribute('data-raw', newVal);
 
-  // Mark as override
-  var key = ci + '|' + month;
-  overrides[key] = newVal;
-  td.classList.add('override-cell');
-
   // Save to server
-  fetch('/api/kpi-history/override', {
+  fetch('/api/kpi-history/edit-cell', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ col: ci, month: month, value: newVal })
@@ -336,16 +329,9 @@ function saveCell(td, ci, mj, newVal) {
   });
 }
 
-// Load overrides then table data
-Promise.all([
-  fetch('/api/kpi-history/overrides').then(function(r) { return r.json(); }),
-  fetch('/api/kpi-history').then(function(r) { return r.json(); })
-])
-.then(function(results) {
-  var ovData = results[0];
-  var data = results[1];
-
-  overrides = ovData.overrides || {};
+// Load table data
+fetch('/api/kpi-history').then(function(r) { return r.json(); })
+.then(function(data) {
   document.getElementById('loading').style.display = 'none';
 
   if (data.error) {
@@ -412,10 +398,7 @@ Promise.all([
     for (var mj = 0; mj < months.length; mj++) {
       var rawVal = months[mj][ci];
       var rawStr = (rawVal === undefined || rawVal === null) ? '' : String(rawVal);
-      var overrideKey = ci + '|' + monthLabels[mj];
-      var isOverride = overrides[overrideKey] !== undefined && overrides[overrideKey] !== '';
       h += '<td data-mj="' + mj + '" data-raw="' + escAttr(rawStr) + '"'
-        + (isOverride ? ' class="override-cell"' : '')
         + ' onclick="startEditCell(this,' + ci + ',' + mj + ')">'
         + formatCell(rawVal) + '</td>';
     }
