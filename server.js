@@ -511,6 +511,643 @@ function scheduleGChatPosts() {
   scheduleNext();
 }
 
+// ===== Monthly KPI Reports =====
+var REPORT_SHEET_ID = process.env.REPORT_SHEET_ID;
+var REPORT_PROJECTS_GID = process.env.REPORT_PROJECTS_GID || '1'; // second tab
+var GOOGLE_SA_KEY = null;
+try {
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+    GOOGLE_SA_KEY = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+  }
+} catch (e) {
+  console.error('Failed to parse GOOGLE_SERVICE_ACCOUNT_KEY:', e.message);
+}
+
+// KPI column definitions — order must match the sheet header row
+var REPORT_COLUMNS = [
+  'month',
+  // Automated - Company
+  'active_outsource_fte', 'monthly_contract_value',
+  // Automated - Marketing/Ads
+  'google_ads_spend', 'google_ads_conversions', 'cost_per_lead',
+  // Automated - Hires
+  'total_fte_hires', 'hires_full_time', 'hires_part_time', 'hires_pt_under_20',
+  'hires_project_based', 'hires_output_based',
+  // Automated - New Jobs
+  'new_jobs_created', 'new_jobs_backfill', 'new_jobs_existing_client', 'new_jobs_new_client',
+  // Automated - Offboardings
+  'lost_ftes', 'offboardings_full_time', 'offboardings_part_time', 'offboardings_pt_under_20',
+  'offboardings_project_based', 'offboardings_output_based',
+  'pct_offboardings_under_30_days', 'fte_churn_rate', 'backfill_ftes_hired',
+  // Automated - Client mix
+  'new_client_hires', 'existing_client_hires',
+  // Manual KPIs
+  'monthly_contract_margin_pct', 'marketing_qualified_leads',
+  'lead_to_new_job_conv_rate', 'lead_to_closed_fte_conv_rate',
+  'time_to_first_candidate_submission', 'candidate_endorsements_per_recruitment_hc',
+  'internal_staff_headcount', 'recruitment_team_hc', 'sales_team_hc',
+  'expansion_rate',
+  // Metadata
+  'generated_at', 'last_edited_at'
+];
+
+var PROJECT_COLUMNS = ['month', 'pillar', 'project', 'status', 'description'];
+
+// Google Sheets API v4 — JWT auth using built-in crypto (zero extra deps)
+var googleTokenCache = { token: null, expiry: 0 };
+
+function createGoogleJWT() {
+  if (!GOOGLE_SA_KEY) throw new Error('Google service account key not configured');
+  var now = Math.floor(Date.now() / 1000);
+  var header = { alg: 'RS256', typ: 'JWT' };
+  var payload = {
+    iss: GOOGLE_SA_KEY.client_email,
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600
+  };
+  var headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
+  var payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  var toSign = headerB64 + '.' + payloadB64;
+  var sign = crypto.createSign('RSA-SHA256');
+  sign.update(toSign);
+  var signature = sign.sign(GOOGLE_SA_KEY.private_key, 'base64url');
+  return toSign + '.' + signature;
+}
+
+async function getGoogleAccessToken() {
+  var now = Date.now();
+  if (googleTokenCache.token && now < googleTokenCache.expiry) {
+    return googleTokenCache.token;
+  }
+  var jwt = createGoogleJWT();
+  var body = 'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=' + jwt;
+  var resp = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body
+  });
+  if (!resp.ok) {
+    var txt = await resp.text();
+    throw new Error('Google token exchange failed: ' + txt);
+  }
+  var data = await resp.json();
+  googleTokenCache = { token: data.access_token, expiry: now + (data.expires_in - 60) * 1000 };
+  return data.access_token;
+}
+
+async function sheetsGet(spreadsheetId, range) {
+  var token = await getGoogleAccessToken();
+  var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId)
+    + '/values/' + encodeURIComponent(range);
+  var resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+  if (!resp.ok) {
+    var txt = await resp.text();
+    throw new Error('Sheets GET failed (' + resp.status + '): ' + txt);
+  }
+  return resp.json();
+}
+
+async function sheetsUpdate(spreadsheetId, range, values) {
+  var token = await getGoogleAccessToken();
+  var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId)
+    + '/values/' + encodeURIComponent(range) + '?valueInputOption=RAW';
+  var resp = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ range: range, majorDimension: 'ROWS', values: values })
+  });
+  if (!resp.ok) {
+    var txt = await resp.text();
+    throw new Error('Sheets PUT failed (' + resp.status + '): ' + txt);
+  }
+  return resp.json();
+}
+
+async function sheetsAppend(spreadsheetId, range, values) {
+  var token = await getGoogleAccessToken();
+  var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId)
+    + '/values/' + encodeURIComponent(range) + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS';
+  var resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ range: range, majorDimension: 'ROWS', values: values })
+  });
+  if (!resp.ok) {
+    var txt = await resp.text();
+    throw new Error('Sheets APPEND failed (' + resp.status + '): ' + txt);
+  }
+  return resp.json();
+}
+
+// Read all report rows from sheet, returning array of objects keyed by column name
+async function readReportSheet() {
+  if (!REPORT_SHEET_ID) throw new Error('REPORT_SHEET_ID not configured');
+  var data = await sheetsGet(REPORT_SHEET_ID, 'KPI Data!A:AQ');
+  var rows = data.values || [];
+  if (rows.length < 2) return []; // no data rows
+  var headers = rows[0];
+  var results = [];
+  for (var i = 1; i < rows.length; i++) {
+    var row = rows[i];
+    if (!row[0]) continue; // skip empty rows
+    var obj = {};
+    for (var j = 0; j < headers.length; j++) {
+      obj[headers[j]] = row[j] || '';
+    }
+    results.push(obj);
+  }
+  return results;
+}
+
+// Read project updates from second tab
+async function readProjectsSheet() {
+  if (!REPORT_SHEET_ID) throw new Error('REPORT_SHEET_ID not configured');
+  var data = await sheetsGet(REPORT_SHEET_ID, 'Project Updates!A:E');
+  var rows = data.values || [];
+  if (rows.length < 2) return [];
+  var headers = rows[0];
+  var results = [];
+  for (var i = 1; i < rows.length; i++) {
+    var row = rows[i];
+    if (!row[0]) continue;
+    var obj = {};
+    for (var j = 0; j < headers.length; j++) {
+      obj[headers[j]] = row[j] || '';
+    }
+    results.push(obj);
+  }
+  return results;
+}
+
+// Write or update a report row for a given month
+async function writeReportRow(month, kpiData) {
+  if (!REPORT_SHEET_ID) throw new Error('REPORT_SHEET_ID not configured');
+  // Read existing data to find the row for this month
+  var existing = await sheetsGet(REPORT_SHEET_ID, 'KPI Data!A:A');
+  var rows = existing.values || [];
+  var rowIdx = -1;
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][0] === month) { rowIdx = i; break; }
+  }
+  // Build the row values in column order
+  var rowValues = REPORT_COLUMNS.map(function(col) {
+    if (col === 'month') return month;
+    return kpiData[col] !== undefined ? String(kpiData[col]) : '';
+  });
+  if (rowIdx >= 0) {
+    // Update existing row
+    var range = 'KPI Data!A' + (rowIdx + 1) + ':AQ' + (rowIdx + 1);
+    await sheetsUpdate(REPORT_SHEET_ID, range, [rowValues]);
+  } else {
+    // Append new row (ensure headers exist first)
+    if (rows.length === 0) {
+      await sheetsUpdate(REPORT_SHEET_ID, 'KPI Data!A1:AQ1', [REPORT_COLUMNS]);
+    }
+    await sheetsAppend(REPORT_SHEET_ID, 'KPI Data!A:AQ', [rowValues]);
+  }
+}
+
+// Write project updates for a month (replace all for that month)
+async function writeProjectUpdates(month, projects) {
+  if (!REPORT_SHEET_ID) throw new Error('REPORT_SHEET_ID not configured');
+  // Read all existing project rows
+  var existing = await sheetsGet(REPORT_SHEET_ID, 'Project Updates!A:E');
+  var rows = existing.values || [];
+  // Keep header + rows for other months, replace rows for target month
+  var newRows = [];
+  if (rows.length > 0) newRows.push(rows[0]); // header
+  else newRows.push(PROJECT_COLUMNS);
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][0] !== month) newRows.push(rows[i]);
+  }
+  for (var j = 0; j < projects.length; j++) {
+    var p = projects[j];
+    newRows.push([month, p.pillar || '', p.project || '', p.status || '', p.description || '']);
+  }
+  // Clear and rewrite the entire sheet
+  await sheetsUpdate(REPORT_SHEET_ID, 'Project Updates!A1:E' + Math.max(newRows.length, rows.length + 1),
+    newRows.concat(Array(Math.max(0, rows.length - newRows.length)).fill(['', '', '', '', '']))
+  );
+}
+
+// ===== Report API Endpoints =====
+
+// GET /api/reports — list all available months
+app.get('/api/reports', async function(req, res) {
+  try {
+    if (!REPORT_SHEET_ID || !GOOGLE_SA_KEY) {
+      return res.json({ error: 'Reports not configured', months: [] });
+    }
+    var reports = await readReportSheet();
+    var months = reports.map(function(r) {
+      return {
+        month: r.month,
+        generated_at: r.generated_at || null,
+        last_edited_at: r.last_edited_at || null,
+        total_fte_hires: r.total_fte_hires || null,
+        lost_ftes: r.lost_ftes || null,
+        google_ads_spend: r.google_ads_spend || null
+      };
+    }).sort(function(a, b) { return b.month.localeCompare(a.month); });
+    res.json({ months: months });
+  } catch (err) {
+    console.error('GET /api/reports error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/report?month=YYYY-MM — return full data for a month + previous month
+app.get('/api/report', async function(req, res) {
+  try {
+    var month = req.query.month;
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
+    }
+    if (!REPORT_SHEET_ID || !GOOGLE_SA_KEY) {
+      return res.status(500).json({ error: 'Reports not configured' });
+    }
+    var reports = await readReportSheet();
+    var projects = await readProjectsSheet();
+
+    var current = null;
+    var previous = null;
+    // Find current month
+    for (var i = 0; i < reports.length; i++) {
+      if (reports[i].month === month) { current = reports[i]; break; }
+    }
+    // Compute previous month key
+    var parts = month.split('-');
+    var yr = parseInt(parts[0]);
+    var mo = parseInt(parts[1]);
+    if (mo === 1) { yr--; mo = 12; } else { mo--; }
+    var prevMonth = yr + '-' + String(mo).padStart(2, '0');
+    for (var j = 0; j < reports.length; j++) {
+      if (reports[j].month === prevMonth) { previous = reports[j]; break; }
+    }
+
+    // Filter projects for this month
+    var monthProjects = projects.filter(function(p) { return p.month === month; });
+
+    // Parse numeric fields
+    function parseNum(obj) {
+      if (!obj) return null;
+      var result = { month: obj.month };
+      for (var key in obj) {
+        if (key === 'month' || key === 'generated_at' || key === 'last_edited_at') {
+          result[key] = obj[key];
+        } else {
+          var v = parseFloat(obj[key]);
+          result[key] = isNaN(v) ? (obj[key] || null) : v;
+        }
+      }
+      return result;
+    }
+
+    res.json({
+      month: month,
+      current: parseNum(current),
+      previous: parseNum(previous),
+      previous_month: prevMonth,
+      projects: monthProjects,
+      exists: current !== null
+    });
+  } catch (err) {
+    console.error('GET /api/report error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/report — save manual KPIs + project updates
+app.post('/api/report', async function(req, res) {
+  try {
+    var month = req.body.month;
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
+    }
+    if (!REPORT_SHEET_ID || !GOOGLE_SA_KEY) {
+      return res.status(500).json({ error: 'Reports not configured' });
+    }
+
+    // Read existing row to merge with manual updates
+    var reports = await readReportSheet();
+    var existing = {};
+    for (var i = 0; i < reports.length; i++) {
+      if (reports[i].month === month) { existing = reports[i]; break; }
+    }
+
+    // Merge manual KPI fields from request body
+    var kpiData = Object.assign({}, existing);
+    var manualFields = [
+      'monthly_contract_margin_pct', 'marketing_qualified_leads',
+      'lead_to_new_job_conv_rate', 'lead_to_closed_fte_conv_rate',
+      'time_to_first_candidate_submission', 'candidate_endorsements_per_recruitment_hc',
+      'internal_staff_headcount', 'recruitment_team_hc', 'sales_team_hc',
+      'expansion_rate'
+    ];
+    for (var j = 0; j < manualFields.length; j++) {
+      var f = manualFields[j];
+      if (req.body[f] !== undefined) kpiData[f] = req.body[f];
+    }
+    kpiData.last_edited_at = new Date().toISOString();
+
+    await writeReportRow(month, kpiData);
+
+    // Save project updates if provided
+    if (req.body.projects && Array.isArray(req.body.projects)) {
+      await writeProjectUpdates(month, req.body.projects);
+    }
+
+    res.json({ success: true, month: month });
+  } catch (err) {
+    console.error('POST /api/report error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/report/generate — pull automated KPIs from HubSpot + Google Ads
+app.post('/api/report/generate', async function(req, res) {
+  try {
+    var month = req.body.month;
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
+    }
+    if (!REPORT_SHEET_ID || !GOOGLE_SA_KEY) {
+      return res.status(500).json({ error: 'Reports not configured' });
+    }
+
+    console.log('[Report] Generating automated data for ' + month);
+    var parts = month.split('-');
+    var yr = parseInt(parts[0]);
+    var mo = parseInt(parts[1]);
+    // Month start/end in YYYY-MM-DD format
+    var monthStart = month + '-01';
+    var lastDay = new Date(yr, mo, 0).getDate();
+    var monthEnd = month + '-' + String(lastDay).padStart(2, '0');
+    // Timestamps for HubSpot filters (milliseconds)
+    var startMs = String(new Date(monthStart + 'T00:00:00Z').getTime());
+    var endMs = String(new Date(monthEnd + 'T23:59:59Z').getTime());
+
+    // Read existing row to preserve manual fields
+    var reports = await readReportSheet();
+    var existing = {};
+    for (var i = 0; i < reports.length; i++) {
+      if (reports[i].month === month) { existing = reports[i]; break; }
+    }
+
+    var kpiData = Object.assign({}, existing);
+
+    // ===== 1. HubSpot Tickets: Hires (onboarding_date in month) =====
+    console.log('[Report] Fetching HubSpot hires...');
+    var hireResults = await fetchAllPagesWithRetry({
+      filterGroups: [{
+        filters: [
+          { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+          { propertyName: 'onboarding_date', operator: 'GTE', value: monthStart },
+          { propertyName: 'onboarding_date', operator: 'LTE', value: monthEnd }
+        ]
+      }],
+      properties: ['onboarding_date', 'assignment_type', 'type_of_recruitment', 'hs_pipeline'],
+      sorts: [{ propertyName: 'onboarding_date', direction: 'ASCENDING' }]
+    });
+    console.log('[Report] Hires found: ' + hireResults.length);
+
+    // FTE weighting
+    function fteWeight(type) {
+      if (type === 'Full-Time') return 1;
+      if (type === 'Part-Time') return 0.5;
+      return 0.25; // PT-Under-20, Project-Based, Output-Based
+    }
+
+    var totalFTEHires = 0;
+    var hiresByType = { 'Full-Time': 0, 'Part-Time': 0, 'Part-Time-Under-20-Hours': 0, 'Project-Based': 0, 'Output-Based': 0 };
+    var newClientHires = 0, existingClientHires = 0, backfillHires = 0;
+    var newJobsNewClient = 0, newJobsExistingClient = 0, newJobsBackfill = 0;
+
+    for (var hi = 0; hi < hireResults.length; hi++) {
+      var hp = hireResults[hi].properties;
+      var aType = hp.assignment_type || 'Unknown';
+      var recType = hp.type_of_recruitment || '';
+      var w = fteWeight(aType);
+      totalFTEHires += w;
+      if (hiresByType[aType] !== undefined) hiresByType[aType] += w;
+
+      // Categorize by recruitment type
+      var recLower = recType.toLowerCase();
+      if (recLower.indexOf('backfill') !== -1 || recLower.indexOf('back-fill') !== -1 || recLower.indexOf('replacement') !== -1) {
+        backfillHires += w;
+        newJobsBackfill++;
+      } else if (recLower.indexOf('new client') !== -1 || recLower.indexOf('new_client') !== -1) {
+        newClientHires += w;
+        newJobsNewClient++;
+      } else {
+        existingClientHires += w;
+        newJobsExistingClient++;
+      }
+    }
+
+    kpiData.total_fte_hires = Math.round(totalFTEHires * 100) / 100;
+    kpiData.hires_full_time = hiresByType['Full-Time'];
+    kpiData.hires_part_time = hiresByType['Part-Time'];
+    kpiData.hires_pt_under_20 = hiresByType['Part-Time-Under-20-Hours'];
+    kpiData.hires_project_based = hiresByType['Project-Based'];
+    kpiData.hires_output_based = hiresByType['Output-Based'];
+    kpiData.new_client_hires = Math.round(newClientHires * 100) / 100;
+    kpiData.existing_client_hires = Math.round(existingClientHires * 100) / 100;
+    kpiData.backfill_ftes_hired = Math.round(backfillHires * 100) / 100;
+    kpiData.new_jobs_created = hireResults.length;
+    kpiData.new_jobs_backfill = newJobsBackfill;
+    kpiData.new_jobs_existing_client = newJobsExistingClient;
+    kpiData.new_jobs_new_client = newJobsNewClient;
+
+    // ===== 2. HubSpot Tickets: Offboardings (offboarding_date in month) =====
+    console.log('[Report] Fetching HubSpot offboardings...');
+    var offResults = await fetchAllPagesWithRetry({
+      filterGroups: [{
+        filters: [
+          { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+          { propertyName: 'offboarding_date', operator: 'GTE', value: monthStart },
+          { propertyName: 'offboarding_date', operator: 'LTE', value: monthEnd }
+        ]
+      }],
+      properties: ['offboarding_date', 'assignment_type', 'onboarding_date', 'days_between_onboarding_offboarding', 'hs_pipeline'],
+      sorts: [{ propertyName: 'offboarding_date', direction: 'ASCENDING' }]
+    });
+    console.log('[Report] Offboardings found: ' + offResults.length);
+
+    var lostFTEs = 0;
+    var offByType = { 'Full-Time': 0, 'Part-Time': 0, 'Part-Time-Under-20-Hours': 0, 'Project-Based': 0, 'Output-Based': 0 };
+    var under30Count = 0;
+
+    for (var oi = 0; oi < offResults.length; oi++) {
+      var op = offResults[oi].properties;
+      var oType = op.assignment_type || 'Unknown';
+      var ow = fteWeight(oType);
+      lostFTEs += ow;
+      if (offByType[oType] !== undefined) offByType[oType] += ow;
+
+      // Check <30 day offboardings
+      var daysBetween = parseFloat(op.days_between_onboarding_offboarding);
+      if (!isNaN(daysBetween) && daysBetween < 30) {
+        under30Count++;
+      } else if (op.onboarding_date && op.offboarding_date) {
+        var onD = new Date(op.onboarding_date);
+        var offD = new Date(op.offboarding_date);
+        var diffDays = (offD - onD) / (1000 * 60 * 60 * 24);
+        if (diffDays < 30) under30Count++;
+      }
+    }
+
+    kpiData.lost_ftes = Math.round(lostFTEs * 100) / 100;
+    kpiData.offboardings_full_time = offByType['Full-Time'];
+    kpiData.offboardings_part_time = offByType['Part-Time'];
+    kpiData.offboardings_pt_under_20 = offByType['Part-Time-Under-20-Hours'];
+    kpiData.offboardings_project_based = offByType['Project-Based'];
+    kpiData.offboardings_output_based = offByType['Output-Based'];
+    kpiData.pct_offboardings_under_30_days = offResults.length > 0
+      ? Math.round((under30Count / offResults.length) * 1000) / 10 : 0;
+
+    // ===== 3. HubSpot Tickets: Active FTE (onboarded, not offboarded, as of month end) =====
+    console.log('[Report] Fetching active FTE...');
+    // Tickets with onboarding_date <= monthEnd and no offboarding_date (or offboarding_date > monthEnd)
+    var activeResults = await fetchAllPagesWithRetry({
+      filterGroups: [
+        {
+          filters: [
+            { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+            { propertyName: 'onboarding_date', operator: 'LTE', value: monthEnd },
+            { propertyName: 'offboarding_date', operator: 'NOT_HAS_PROPERTY' }
+          ]
+        },
+        {
+          filters: [
+            { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+            { propertyName: 'onboarding_date', operator: 'LTE', value: monthEnd },
+            { propertyName: 'offboarding_date', operator: 'GT', value: monthEnd }
+          ]
+        }
+      ],
+      properties: ['assignment_type', 'onboarding_date', 'offboarding_date'],
+    });
+    console.log('[Report] Active tickets found: ' + activeResults.length);
+
+    var activeFTE = 0;
+    for (var ai = 0; ai < activeResults.length; ai++) {
+      var ap = activeResults[ai].properties;
+      activeFTE += fteWeight(ap.assignment_type || 'Unknown');
+    }
+    kpiData.active_outsource_fte = Math.round(activeFTE * 100) / 100;
+
+    // Churn rate
+    kpiData.fte_churn_rate = activeFTE > 0
+      ? Math.round((lostFTEs / activeFTE) * 1000) / 10 : 0;
+
+    // ===== 4. Google Ads: Monthly spend + conversions =====
+    console.log('[Report] Fetching Google Ads data...');
+    try {
+      var adsCsv = await fetchAdsCsv(ADS_CSV_URL);
+      var adsRows = parseAdsCsv(adsCsv);
+      var adsResult = processAdsData(adsRows);
+      // Filter timeseries to target month
+      var monthAds = adsResult.timeseries.filter(function(d) {
+        return d.day >= monthStart && d.day <= monthEnd;
+      });
+      var adsSpend = 0, adsConversions = 0;
+      for (var mi = 0; mi < monthAds.length; mi++) {
+        adsSpend += monthAds[mi].cost;
+        adsConversions += monthAds[mi].conversions;
+      }
+      kpiData.google_ads_spend = Math.round(adsSpend * 100) / 100;
+      kpiData.google_ads_conversions = Math.round(adsConversions * 100) / 100;
+      kpiData.cost_per_lead = adsConversions > 0
+        ? Math.round((adsSpend / adsConversions) * 100) / 100 : 0;
+      console.log('[Report] Ads: $' + kpiData.google_ads_spend + ' spend, ' + kpiData.google_ads_conversions + ' conversions');
+    } catch (adsErr) {
+      console.error('[Report] Ads data fetch failed:', adsErr.message);
+      // Don't fail the whole generation if ads fail
+    }
+
+    // ===== 5. HubSpot Deals: Monthly Contract Value =====
+    console.log('[Report] Fetching HubSpot deals for MCV...');
+    try {
+      var DEALS_API = 'https://api.hubapi.com/crm/v3/objects/deals/search';
+      var dealHeaders = { 'Content-Type': 'application/json' };
+      if (HUBSPOT_KEY && HUBSPOT_KEY.startsWith('pat-')) {
+        dealHeaders['Authorization'] = 'Bearer ' + HUBSPOT_KEY;
+      }
+      // Search for active deals
+      var dealResults = [];
+      var dealAfter = undefined;
+      var dealHasMore = true;
+      while (dealHasMore) {
+        var dealBody = {
+          filterGroups: [{
+            filters: [
+              { propertyName: 'dealstage', operator: 'NOT_IN', values: ['closedlost', 'closedwon'] }
+            ]
+          }],
+          properties: ['monthly_revenue_aud', 'mrr', 'amount', 'dealstage'],
+          limit: 200
+        };
+        if (dealAfter) dealBody.after = dealAfter;
+        var dealUrl = DEALS_API;
+        if (HUBSPOT_KEY && !HUBSPOT_KEY.startsWith('pat-')) {
+          dealUrl += '?hapikey=' + HUBSPOT_KEY;
+        }
+        if (dealResults.length > 0) await sleep(400);
+        var dealResp = await fetch(dealUrl, {
+          method: 'POST',
+          headers: dealHeaders,
+          body: JSON.stringify(dealBody)
+        });
+        if (dealResp.ok) {
+          var dealData = await dealResp.json();
+          dealResults = dealResults.concat(dealData.results || []);
+          if (dealData.paging && dealData.paging.next && dealData.paging.next.after) {
+            dealAfter = dealData.paging.next.after;
+          } else {
+            dealHasMore = false;
+          }
+        } else {
+          console.error('[Report] Deals API error:', dealResp.status);
+          dealHasMore = false;
+        }
+      }
+      var mcv = 0;
+      for (var di = 0; di < dealResults.length; di++) {
+        var dp = dealResults[di].properties;
+        var rev = parseFloat(dp.monthly_revenue_aud) || parseFloat(dp.mrr) || parseFloat(dp.amount) || 0;
+        mcv += rev;
+      }
+      kpiData.monthly_contract_value = Math.round(mcv * 100) / 100;
+      console.log('[Report] MCV: $' + kpiData.monthly_contract_value + ' from ' + dealResults.length + ' deals');
+    } catch (dealErr) {
+      console.error('[Report] Deals fetch failed:', dealErr.message);
+    }
+
+    // Set metadata
+    kpiData.generated_at = new Date().toISOString();
+
+    // Write to sheet
+    await writeReportRow(month, kpiData);
+    console.log('[Report] Saved report for ' + month);
+
+    res.json({ success: true, month: month, kpis: kpiData });
+  } catch (err) {
+    console.error('POST /api/report/generate error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Serve report pages
+app.get('/reports', function(req, res) {
+  res.sendFile(path.join(__dirname, 'reports.html'));
+});
+app.get('/report', function(req, res) {
+  res.sendFile(path.join(__dirname, 'report.html'));
+});
+
 initOIDC().then(function() {
   app.listen(PORT, function() {
     console.log('FTE Dashboard server running at http://localhost:' + PORT);

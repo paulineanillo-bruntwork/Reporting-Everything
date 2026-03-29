@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<title>Monthly KPI Reports</title>
+<style>
+:root{--bg:#f4f6fb;--surface:#fff;--border:#e2e8f0;--text:#1e293b;--text-muted:#64748b;--blue:#2563eb;--blue-dark:#1e40af;--green:#059669;--green-light:#d1fae5;--red:#dc2626;--red-light:#fee2e2;--radius:16px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
+.header{background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:28px 40px 20px;display:flex;justify-content:space-between;align-items:flex-start}
+.header h1{font-size:26px;font-weight:700;letter-spacing:-.5px;margin-bottom:4px}
+.header .subtitle{color:#94a3b8;font-size:13px}
+.back-link{display:inline-block;padding:8px 16px;background:rgba(255,255,255,.1);color:#cbd5e1;border:1px solid rgba(255,255,255,.2);border-radius:6px;font-size:13px;font-weight:500;text-decoration:none}
+.back-link:hover{background:rgba(255,255,255,.2)}
+.nav-links{display:flex;gap:8px;align-items:center}
+.main{padding:28px 40px 60px;max-width:1200px;margin:0 auto}
+.loading{text-align:center;padding:80px 20px;color:var(--text-muted)}
+.loading .spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.report-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.report-card{background:var(--surface);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow);border:1px solid var(--border);text-decoration:none;color:var(--text);transition:all .15s;display:block}
+.report-card:hover{border-color:var(--blue);box-shadow:0 4px 12px rgba(37,99,235,.1);transform:translateY(-2px)}
+.report-card h3{font-size:18px;font-weight:700;margin-bottom:4px}
+.report-card .meta{font-size:12px;color:var(--text-muted);margin-bottom:12px}
+.report-card .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.report-card .stat{text-align:center}
+.report-card .stat .val{font-size:16px;font-weight:700}
+.report-card .stat .lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted)}
+.empty{text-align:center;padding:60px 20px;color:var(--text-muted)}
+.empty h2{font-size:20px;color:var(--text);margin-bottom:8px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;transition:all .15s}
+.btn-primary{background:var(--blue);color:#fff}.btn-primary:hover{background:var(--blue-dark)}
+.actions-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
+@media(max-width:900px){.header,.main{padding-left:20px;padding-right:20px}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div>
+    <h1>Monthly KPI Reports</h1>
+    <div class="subtitle">Management reporting dashboard</div>
+  </div>
+  <div class="nav-links">
+    <a href="/" class="back-link">FTE Dashboard</a>
+    <a href="/adspend" class="back-link">Ad Spend</a>
+    <a href="/logout" class="back-link">Log out</a>
+  </div>
+</div>
+<div class="main">
+<div id="loadingReports" class="loading"><div class="spinner"></div><div>Loading reports...</div></div>
+<div id="reportsContent" style="display:none">
+  <div class="actions-bar">
+    <div id="reportCount" style="font-size:14px;color:var(--text-muted)"></div>
+    <a id="newReportLink" class="btn btn-primary" href="/report">View Current Month</a>
+  </div>
+  <div class="report-grid" id="reportGrid"></div>
+</div>
+<div id="reportsEmpty" class="empty" style="display:none">
+  <h2>No Reports Yet</h2>
+  <p>Generate your first monthly report to get started.</p>
+  <a id="emptyNewLink" class="btn btn-primary" style="margin-top:16px" href="/report">Create First Report</a>
+</div>
+</div>
+<script>
+var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function monthLabel(m) {
+  if (!m) return '';
+  var parts = m.split('-');
+  return MONTH_NAMES[parseInt(parts[1]) - 1] + ' ' + parts[0];
+}
+
+function fm(n) {
+  if (!n && n !== 0) return '—';
+  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function fmtD(n) {
+  if (!n && n !== 0) return '—';
+  return Number(n).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+// Set "current month" link to previous calendar month
+var now = new Date();
+var yr = now.getFullYear();
+var mo = now.getMonth();
+if (mo === 0) { yr--; mo = 12; }
+var currentMonthKey = yr + '-' + String(mo).padStart(2, '0');
+document.getElementById('newReportLink').href = '/report?month=' + currentMonthKey;
+document.getElementById('emptyNewLink').href = '/report?month=' + currentMonthKey;
+
+fetch('/api/reports').then(function(r) { return r.json(); }).then(function(data) {
+  document.getElementById('loadingReports').style.display = 'none';
+
+  if (data.error) {
+    document.getElementById('reportsEmpty').style.display = 'block';
+    document.querySelector('#reportsEmpty p').textContent = data.error;
+    return;
+  }
+
+  var months = data.months || [];
+  if (months.length === 0) {
+    document.getElementById('reportsEmpty').style.display = 'block';
+    return;
+  }
+
+  document.getElementById('reportsContent').style.display = 'block';
+  document.getElementById('reportCount').textContent = months.length + ' report' + (months.length !== 1 ? 's' : '');
+
+  var grid = document.getElementById('reportGrid');
+  var h = '';
+  for (var i = 0; i < months.length; i++) {
+    var m = months[i];
+    h += '<a class="report-card" href="/report?month=' + m.month + '">';
+    h += '<h3>' + monthLabel(m.month) + '</h3>';
+    h += '<div class="meta">';
+    if (m.generated_at) h += 'Generated ' + new Date(m.generated_at).toLocaleDateString();
+    if (m.last_edited_at) h += ' &middot; Edited ' + new Date(m.last_edited_at).toLocaleDateString();
+    if (!m.generated_at && !m.last_edited_at) h += 'No data yet';
+    h += '</div>';
+    h += '<div class="stats">';
+    h += '<div class="stat"><div class="val">' + fmtD(m.total_fte_hires) + '</div><div class="lbl">FTE Hires</div></div>';
+    h += '<div class="stat"><div class="val">' + fmtD(m.lost_ftes) + '</div><div class="lbl">Lost FTEs</div></div>';
+    h += '<div class="stat"><div class="val">' + fm(m.google_ads_spend) + '</div><div class="lbl">Ad Spend</div></div>';
+    h += '</div>';
+    h += '</a>';
+  }
+  grid.innerHTML = h;
+
+}).catch(function(err) {
+  document.getElementById('loadingReports').innerHTML =
+    '<div style="color:var(--red)"><strong>Failed to load</strong><br>' + err.message + '</div>';
+});
+</script>
+</body>
+</html>
