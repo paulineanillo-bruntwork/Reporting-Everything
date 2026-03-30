@@ -106,6 +106,8 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .btn-save:hover{background:#047857}
 .save-status{font-size:13px;color:var(--text-muted)}
 .edit-hidden{display:none}
+.btn-copy-prev{padding:8px 16px;border:1px solid var(--border);background:var(--surface);color:var(--text-muted);border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;display:none}
+.btn-copy-prev:hover{border-color:var(--blue);color:var(--blue);background:rgba(37,99,235,.04)}
 
 /* Quarterly Roadmap */
 .q-table-wrap{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden}
@@ -203,6 +205,7 @@ td[data-qk].drag-over{background:rgba(37,99,235,.08);outline:2px dashed var(--bl
   <div class="section-title"><span class="dot" style="background:var(--orange)"></span> <span id="updatesTitle">Updates</span></div>
   <div id="updatesSection"></div>
   <div id="saveBar" class="save-bar" style="display:none">
+    <button class="btn-copy-prev" id="copyPrevUpdates" onclick="copyPrevUpdates()">&#8592; Copy from previous month</button>
     <button class="btn-save" onclick="saveUpdates()">Save Changes</button>
     <span id="saveStatus" class="save-status"></span>
   </div>
@@ -214,6 +217,7 @@ td[data-qk].drag-over{background:rgba(37,99,235,.08);outline:2px dashed var(--bl
   <div id="qLegend" style="display:flex;gap:16px;margin-bottom:10px;flex-wrap:wrap"></div>
   <div class="q-table-wrap" id="quarterlyGrid"></div>
   <div id="quarterlySaveBar" class="save-bar" style="display:none">
+    <button class="btn-copy-prev" id="copyPrevQuarterly" onclick="copyPrevQuarterly()">&#8592; Copy from previous month</button>
     <button class="btn-save" onclick="saveQuarterly()">Save Quarterly Roadmap</button>
     <span id="quarterlySaveStatus" class="save-status"></span>
   </div>
@@ -735,6 +739,8 @@ function toggleEditMode() {
   fab.innerHTML = _editMode ? '&#10005;' : '&#9998;';
   renderUpdates(_editMode);
   renderQuarterly(_editMode);
+  document.getElementById('copyPrevUpdates').style.display = _editMode ? 'inline-block' : 'none';
+  document.getElementById('copyPrevQuarterly').style.display = _editMode ? 'inline-block' : 'none';
 }
 
 function collectFromInputs() {
@@ -767,6 +773,27 @@ function deleteRow(pillar, idx) {
   collectFromInputs();
   if (_projectsData[pillar]) _projectsData[pillar].splice(idx, 1);
   renderUpdates(true);
+}
+
+function copyPrevUpdates() {
+  var prev = prevMonthKey(currentMonth);
+  var btn = document.getElementById('copyPrevUpdates');
+  btn.textContent = 'Loading...';
+  fetch('/api/report?month=' + prev).then(function(r){return r.json();}).then(function(data) {
+    var projects = (data && data.projects) || [];
+    if (projects.length === 0) {
+      btn.textContent = 'No data in ' + monthLabel(prev);
+      setTimeout(function(){ btn.innerHTML = '&#8592; Copy from previous month'; }, 2000);
+      return;
+    }
+    _projectsData = groupProjects(projects);
+    renderUpdates(true);
+    btn.innerHTML = '&#8592; Copied from ' + monthLabel(prev);
+    setTimeout(function(){ btn.innerHTML = '&#8592; Copy from previous month'; }, 2000);
+  }).catch(function(e) {
+    btn.textContent = 'Error: ' + e.message;
+    setTimeout(function(){ btn.innerHTML = '&#8592; Copy from previous month'; }, 2000);
+  });
 }
 
 function saveUpdates() {
@@ -1080,6 +1107,44 @@ function deleteQuarterlyGoal(key, idx) {
   collectQuarterlyInputs();
   if (_quarterlyData[key]) _quarterlyData[key].splice(idx, 1);
   renderQuarterly(true);
+}
+
+function copyPrevQuarterly() {
+  var prev = prevMonthKey(currentMonth);
+  var prevQuarters = computeDisplayQuarters(prev);
+  // Restore current quarter label since computeDisplayQuarters overwrites it
+  computeDisplayQuarters(currentMonth);
+  var btn = document.getElementById('copyPrevQuarterly');
+  btn.textContent = 'Loading...';
+  fetch('/api/quarterly?quarters=' + encodeURIComponent(prevQuarters.join(','))).then(function(r){return r.json();}).then(function(data) {
+    var goals = data.goals || [];
+    if (goals.length === 0) {
+      btn.textContent = 'No data in ' + monthLabel(prev);
+      setTimeout(function(){ btn.innerHTML = '&#8592; Copy from previous month'; }, 2000);
+      return;
+    }
+    // Map previous quarters to current quarters by position
+    var mapping = {};
+    for (var i = 0; i < prevQuarters.length; i++) {
+      if (i < _quarterLabels.length) mapping[prevQuarters[i]] = _quarterLabels[i];
+    }
+    // Group previous goals by quarter+category, then copy into current data
+    for (var j = 0; j < goals.length; j++) {
+      var g = goals[j];
+      var targetQ = mapping[g.quarter];
+      if (!targetQ) continue;
+      var cat = g.category || 'Other';
+      var k = qKey(targetQ, cat);
+      if (!_quarterlyData[k]) _quarterlyData[k] = [];
+      _quarterlyData[k].push({ goal: g.goal || '', status: g.status || 'lightgreen', notes: g.notes || '' });
+    }
+    renderQuarterly(true);
+    btn.innerHTML = '&#8592; Copied from ' + monthLabel(prev);
+    setTimeout(function(){ btn.innerHTML = '&#8592; Copy from previous month'; }, 2000);
+  }).catch(function(e) {
+    btn.textContent = 'Error: ' + e.message;
+    setTimeout(function(){ btn.innerHTML = '&#8592; Copy from previous month'; }, 2000);
+  });
 }
 
 function saveQuarterly() {
