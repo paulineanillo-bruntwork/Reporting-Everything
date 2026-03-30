@@ -107,29 +107,38 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .save-status{font-size:13px;color:var(--text-muted)}
 .edit-hidden{display:none}
 
-/* Quarterly Goals */
-.quarterly-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
-.quarterly-col{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column}
-.quarterly-col.current-quarter{border-color:var(--blue);box-shadow:0 0 0 2px rgba(37,99,235,.15),var(--shadow)}
-.quarterly-col-header{padding:14px 16px;background:#f8fafc;border-bottom:1px solid var(--border);text-align:center}
-.quarterly-col-header h3{font-size:14px;font-weight:700;color:var(--text);margin-bottom:2px}
-.quarterly-col-header .q-dates{font-size:11px;color:var(--text-muted)}
-.quarterly-col-body{padding:12px 16px;flex:1}
-.quarterly-goal-item{padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
-.quarterly-goal-item:last-child{border-bottom:none}
-.quarterly-goal-item .goal-text{font-weight:500;margin-bottom:3px}
-.quarterly-goal-item .goal-notes{font-size:12px;color:var(--text-muted);line-height:1.4}
-.quarterly-goal-item .goal-status{margin-top:4px}
-.q-empty{text-align:center;color:var(--text-muted);font-size:12px;padding:20px 0}
-.q-goal-input{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;width:100%;margin-bottom:4px}
-.q-goal-input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
-.q-notes-input{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;width:100%;min-height:40px;resize:vertical}
-.q-del-btn{float:right;border:none;background:transparent;color:var(--red);font-size:16px;cursor:pointer;opacity:.6;padding:0 4px}
+/* Quarterly Roadmap */
+.q-table-wrap{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden}
+.q-table{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+.q-table thead th{padding:12px 10px;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);background:#f8fafc;border-bottom:2px solid var(--border);text-align:center}
+.q-table thead th.q-cat-header{width:160px;text-align:left;padding-left:16px}
+.q-table thead th.q-current{background:rgba(37,99,235,.08);color:var(--blue);border-bottom-color:var(--blue)}
+.q-table thead .q-dates{display:block;font-size:10px;font-weight:500;letter-spacing:0;text-transform:none;margin-top:2px;color:var(--text-muted)}
+.q-table thead th.q-current .q-dates{color:var(--blue)}
+.q-table tbody td{padding:10px;border-bottom:1px solid var(--border);vertical-align:top}
+.q-table tbody td.q-current-col{background:rgba(37,99,235,.03)}
+.q-cat-cell{font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);padding-left:16px!important;background:#fafbfc;border-right:1px solid var(--border);vertical-align:top;padding-top:14px!important}
+.q-goal-item{padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px}
+.q-goal-item:last-child{border-bottom:none}
+.q-goal-item .goal-text{font-weight:500;margin-bottom:2px}
+.q-goal-item .goal-notes{font-size:11px;color:var(--text-muted);line-height:1.3}
+.q-goal-item .goal-status{margin-top:3px}
+.q-empty{text-align:center;color:var(--text-muted);font-size:11px;padding:12px 0}
+.q-goal-input{padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;width:100%;margin-bottom:3px}
+.q-goal-input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 2px rgba(37,99,235,.1)}
+.q-notes-input{padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:11px;font-family:inherit;width:100%;min-height:32px;resize:vertical}
+.q-del-btn{float:right;border:none;background:transparent;color:var(--red);font-size:14px;cursor:pointer;opacity:.5;padding:0 3px}
 .q-del-btn:hover{opacity:1}
-.q-add-btn{padding:6px 12px;border:1px dashed var(--border);background:transparent;color:var(--text-muted);border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;margin-top:8px;width:100%;transition:all .15s}
+.q-add-btn{padding:4px 10px;border:1px dashed var(--border);background:transparent;color:var(--text-muted);border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;margin-top:6px;width:100%;transition:all .15s}
 .q-add-btn:hover{border-color:var(--blue);color:var(--blue)}
+/* Color status dots */
+.q-color-select{display:inline-flex;gap:4px;margin-bottom:3px;align-items:center}
+.q-color-dot{width:16px;height:16px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all .1s;display:inline-block}
+.q-color-dot:hover{transform:scale(1.2)}
+.q-color-dot.selected{border-color:var(--text);box-shadow:0 0 0 2px rgba(0,0,0,.1)}
+.q-status-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:middle}
 
-@media(max-width:1100px){.quarterly-grid{grid-template-columns:repeat(2,1fr)}.highlight-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:1100px){.q-cat-header{width:120px!important}.highlight-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:900px){.chart-grid{grid-template-columns:1fr}.header,.main{padding-left:20px;padding-right:20px}.highlight-grid{grid-template-columns:1fr}.quarterly-grid{grid-template-columns:1fr}}
 @media print{.header{background:#1e293b!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.nav-links,.month-nav{display:none!important}.main{padding:16px}}
 </style>
@@ -190,12 +199,12 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
   </div>
 </div>
 
-<!-- Quarterly Goals Section -->
+<!-- Quarterly Roadmap Section -->
 <div class="section">
-  <div class="section-title"><span class="dot" style="background:var(--purple)"></span> <span id="quarterlyTitle">Quarterly Goals</span></div>
-  <div class="quarterly-grid" id="quarterlyGrid"></div>
+  <div class="section-title"><span class="dot" style="background:var(--purple)"></span> Quarterly Roadmap</div>
+  <div class="q-table-wrap" id="quarterlyGrid"></div>
   <div id="quarterlySaveBar" class="save-bar" style="display:none">
-    <button class="btn-save" onclick="saveQuarterly()">Save Quarterly Goals</button>
+    <button class="btn-save" onclick="saveQuarterly()">Save Quarterly Roadmap</button>
     <span id="quarterlySaveStatus" class="save-status"></span>
   </div>
 </div>
@@ -416,7 +425,7 @@ Promise.all([
 
   // === Highlight trend charts ===
   var hlCharts = [
-    { label:'Active Staff FTE', col:C.activeFTE, color:'#2563eb', type:'bar', slice:fteSlice, labels:fteLabels },
+    { label:'Active Staff FTE - as at start of month', col:C.activeFTE, color:'#2563eb', type:'bar', slice:fteSlice, labels:fteLabels },
     { label:'Net FTE Gain/Loss', col:null, color:'#7c3aed', type:'bar', slice:curSlice, labels:curLabels, compute:function(m){ var h=pn(m[C.totalHires]),l=pn(m[C.churnedFTE]); return (h!==null&&l!==null)?Math.round((h-l)*100)/100:null; } },
     { label:'FTEs Hired', col:C.totalHires, color:'#059669', type:'bar', slice:curSlice, labels:curLabels },
     { label:'Lost FTEs', col:C.churnedFTE, color:'#dc2626', type:'bar', slice:curSlice, labels:curLabels }
@@ -777,10 +786,18 @@ function saveUpdates() {
   });
 }
 
-// === Quarterly Goals Section ===
-var Q_STATUSES = ['Not Started', 'In Progress', 'On Track', 'At Risk', 'Completed'];
-var _quarterlyData = {}; // keyed by quarter label
-var _quarterLabels = []; // the 4 quarter labels to display
+// === Quarterly Roadmap Section ===
+var Q_CATEGORIES = ['Easy to do business with', 'FTE Growth', 'Profitability', 'Other'];
+var Q_COLORS = [
+  { name:'grey', hex:'#94a3b8', label:'Not Started' },
+  { name:'blue', hex:'#3b82f6', label:'In Progress' },
+  { name:'green', hex:'#22c55e', label:'On Track' },
+  { name:'orange', hex:'#f59e0b', label:'At Risk' },
+  { name:'emerald', hex:'#059669', label:'Completed' },
+  { name:'red', hex:'#ef4444', label:'Blocked' }
+];
+var _quarterlyData = {}; // keyed by "quarter|category" → array of goals
+var _quarterLabels = [];
 var _currentQuarterLabel = '';
 
 function getQuarterInfo(monthKey) {
@@ -801,9 +818,7 @@ function quarterLabel(qNum, fyYear) {
 function quarterDateRange(qNum, fyYear) {
   var calYear = fyYear;
   if (qNum <= 2) calYear = fyYear - 1;
-  var monthRanges = {
-    1: ['Jul', 'Sep'], 2: ['Oct', 'Dec'], 3: ['Jan', 'Mar'], 4: ['Apr', 'Jun']
-  };
+  var monthRanges = { 1:['Jul','Sep'], 2:['Oct','Dec'], 3:['Jan','Mar'], 4:['Apr','Jun'] };
   var r = monthRanges[qNum];
   return r[0] + ' – ' + r[1] + ' ' + calYear;
 }
@@ -818,7 +833,6 @@ function offsetQuarter(qNum, fyYear, offset) {
 function computeDisplayQuarters(monthKey) {
   var info = getQuarterInfo(monthKey);
   var labels = [];
-  // Previous quarter, current, next, next+1
   for (var off = -1; off <= 2; off++) {
     var q = offsetQuarter(info.quarter, info.fy, off);
     labels.push(quarterLabel(q.quarter, q.fy));
@@ -827,16 +841,32 @@ function computeDisplayQuarters(monthKey) {
   return labels;
 }
 
+function qKey(quarter, category) { return quarter + '|' + category; }
+
+function getQColor(status) {
+  for (var i = 0; i < Q_COLORS.length; i++) {
+    if (Q_COLORS[i].name === status || Q_COLORS[i].label === status) return Q_COLORS[i];
+  }
+  return Q_COLORS[0]; // grey default
+}
+
 function loadQuarterlyGoals() {
   _quarterLabels = computeDisplayQuarters(currentMonth);
   fetch('/api/quarterly?quarters=' + encodeURIComponent(_quarterLabels.join(','))).then(function(r){return r.json();}).then(function(data) {
     var goals = data.goals || [];
     _quarterlyData = {};
-    for (var i = 0; i < _quarterLabels.length; i++) _quarterlyData[_quarterLabels[i]] = [];
+    // Init all cells
+    for (var i = 0; i < _quarterLabels.length; i++) {
+      for (var c = 0; c < Q_CATEGORIES.length; c++) {
+        _quarterlyData[qKey(_quarterLabels[i], Q_CATEGORIES[c])] = [];
+      }
+    }
     for (var j = 0; j < goals.length; j++) {
       var g = goals[j];
-      if (_quarterlyData[g.quarter]) {
-        _quarterlyData[g.quarter].push({ goal: g.goal || '', status: g.status || '', notes: g.notes || '' });
+      var cat = g.category || 'Other';
+      var k = qKey(g.quarter, cat);
+      if (_quarterlyData[k]) {
+        _quarterlyData[k].push({ goal: g.goal || '', status: g.status || 'grey', notes: g.notes || '' });
       }
     }
     renderQuarterly(_editMode);
@@ -845,97 +875,123 @@ function loadQuarterlyGoals() {
 
 function renderQuarterly(editMode) {
   var grid = document.getElementById('quarterlyGrid');
-  var html = '';
-  for (var i = 0; i < _quarterLabels.length; i++) {
-    var ql = _quarterLabels[i];
+  var html = '<table class="q-table"><thead><tr><th class="q-cat-header">Category</th>';
+  // Quarter column headers
+  for (var qi = 0; qi < _quarterLabels.length; qi++) {
+    var ql = _quarterLabels[qi];
     var isCurrent = (ql === _currentQuarterLabel);
-    // Parse quarter info from label for date range
     var qMatch = ql.match(/Q(\d) FY(\d+)/);
     var qNum = parseInt(qMatch[1]);
     var fyYear = 2000 + parseInt(qMatch[2]);
     var dateRange = quarterDateRange(qNum, fyYear);
-    var goals = _quarterlyData[ql] || [];
-
-    html += '<div class="quarterly-col' + (isCurrent ? ' current-quarter' : '') + '" data-quarter="' + ql + '">';
-    html += '<div class="quarterly-col-header"><h3>' + ql + '</h3><div class="q-dates">' + dateRange + '</div></div>';
-    html += '<div class="quarterly-col-body">';
-
-    if (editMode) {
-      for (var gi = 0; gi < goals.length; gi++) {
-        var g = goals[gi];
-        html += '<div class="quarterly-goal-item" data-qi="' + gi + '">';
-        html += '<button class="q-del-btn" onclick="deleteQuarterlyGoal(\'' + ql + '\',' + gi + ')">&times;</button>';
-        html += '<input class="q-goal-input qg-goal" value="' + escH(g.goal) + '" placeholder="Goal">';
-        html += '<select class="edit-select qg-status">';
-        for (var si = 0; si < Q_STATUSES.length; si++) {
-          html += '<option' + (Q_STATUSES[si] === g.status ? ' selected' : '') + '>' + Q_STATUSES[si] + '</option>';
-        }
-        html += '</select>';
-        html += '<textarea class="q-notes-input qg-notes" placeholder="Notes">' + escH(g.notes) + '</textarea>';
-        html += '</div>';
-      }
-      html += '<button class="q-add-btn" onclick="addQuarterlyGoal(\'' + ql + '\')">+ Add Goal</button>';
-    } else {
-      if (goals.length === 0) {
-        html += '<div class="q-empty">No goals set</div>';
-      }
-      for (var gi2 = 0; gi2 < goals.length; gi2++) {
-        var g2 = goals[gi2];
-        html += '<div class="quarterly-goal-item">';
-        html += '<div class="goal-text">' + escH(g2.goal) + '</div>';
-        html += '<div class="goal-status"><span class="status-badge ' + statusClass(g2.status) + '">' + escH(g2.status || 'Not Started') + '</span></div>';
-        if (g2.notes) html += '<div class="goal-notes">' + escH(g2.notes) + '</div>';
-        html += '</div>';
-      }
-    }
-
-    html += '</div></div>';
+    html += '<th' + (isCurrent ? ' class="q-current"' : '') + '>' + ql + '<span class="q-dates">' + dateRange + '</span></th>';
   }
+  html += '</tr></thead><tbody>';
+
+  // One row per category
+  for (var ci = 0; ci < Q_CATEGORIES.length; ci++) {
+    var cat = Q_CATEGORIES[ci];
+    html += '<tr><td class="q-cat-cell">' + cat + '</td>';
+    for (var qi2 = 0; qi2 < _quarterLabels.length; qi2++) {
+      var ql2 = _quarterLabels[qi2];
+      var isCur = (ql2 === _currentQuarterLabel);
+      var k = qKey(ql2, cat);
+      var goals = _quarterlyData[k] || [];
+      html += '<td' + (isCur ? ' class="q-current-col"' : '') + ' data-qk="' + escH(k) + '">';
+
+      if (editMode) {
+        for (var gi = 0; gi < goals.length; gi++) {
+          var g = goals[gi];
+          html += '<div class="q-goal-item" data-gi="' + gi + '">';
+          html += '<button class="q-del-btn" onclick="deleteQuarterlyGoal(\'' + escH(k).replace(/'/g,"\\'") + '\',' + gi + ')">&times;</button>';
+          html += '<input class="q-goal-input qg-goal" value="' + escH(g.goal) + '" placeholder="Item">';
+          // Color status dots
+          html += '<div class="q-color-select">';
+          for (var si = 0; si < Q_COLORS.length; si++) {
+            var sc = Q_COLORS[si];
+            html += '<span class="q-color-dot' + (g.status === sc.name ? ' selected' : '') + '" style="background:' + sc.hex + '" data-color="' + sc.name + '" title="' + sc.label + '" onclick="selectQColor(this)"></span>';
+          }
+          html += '<input type="hidden" class="qg-status" value="' + escH(g.status || 'grey') + '">';
+          html += '</div>';
+          html += '<textarea class="q-notes-input qg-notes" placeholder="Notes">' + escH(g.notes) + '</textarea>';
+          html += '</div>';
+        }
+        html += '<button class="q-add-btn" onclick="addQuarterlyGoal(\'' + escH(k).replace(/'/g,"\\'") + '\')">+ Add</button>';
+      } else {
+        if (goals.length === 0) {
+          html += '<div class="q-empty">—</div>';
+        }
+        for (var gi2 = 0; gi2 < goals.length; gi2++) {
+          var g2 = goals[gi2];
+          var col = getQColor(g2.status);
+          html += '<div class="q-goal-item">';
+          html += '<div class="goal-text"><span class="q-status-dot" style="background:' + col.hex + '" title="' + col.label + '"></span>' + escH(g2.goal) + '</div>';
+          if (g2.notes) html += '<div class="goal-notes">' + escH(g2.notes) + '</div>';
+          html += '</div>';
+        }
+      }
+
+      html += '</td>';
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
   grid.innerHTML = html;
   document.getElementById('quarterlySaveBar').style.display = editMode ? 'flex' : 'none';
 }
 
+function selectQColor(el) {
+  var parent = el.parentElement;
+  var dots = parent.querySelectorAll('.q-color-dot');
+  dots.forEach(function(d) { d.classList.remove('selected'); });
+  el.classList.add('selected');
+  parent.querySelector('.qg-status').value = el.getAttribute('data-color');
+}
+
 function collectQuarterlyInputs() {
-  for (var i = 0; i < _quarterLabels.length; i++) {
-    var ql = _quarterLabels[i];
-    var col = document.querySelector('[data-quarter="' + ql + '"]');
-    if (!col) continue;
-    var items = col.querySelectorAll('.quarterly-goal-item');
+  var cells = document.querySelectorAll('[data-qk]');
+  cells.forEach(function(cell) {
+    var k = cell.getAttribute('data-qk');
+    var items = cell.querySelectorAll('.q-goal-item');
     var goals = [];
     items.forEach(function(item) {
       var goalInput = item.querySelector('.qg-goal');
-      var statusSelect = item.querySelector('.qg-status');
+      var statusInput = item.querySelector('.qg-status');
       var notesInput = item.querySelector('.qg-notes');
       if (goalInput) {
-        goals.push({ goal: goalInput.value.trim(), status: statusSelect ? statusSelect.value : '', notes: notesInput ? notesInput.value.trim() : '' });
+        goals.push({ goal: goalInput.value.trim(), status: statusInput ? statusInput.value : 'grey', notes: notesInput ? notesInput.value.trim() : '' });
       }
     });
-    _quarterlyData[ql] = goals;
-  }
+    _quarterlyData[k] = goals;
+  });
 }
 
-function addQuarterlyGoal(quarter) {
+function addQuarterlyGoal(key) {
   collectQuarterlyInputs();
-  if (!_quarterlyData[quarter]) _quarterlyData[quarter] = [];
-  _quarterlyData[quarter].push({ goal: '', status: 'Not Started', notes: '' });
+  if (!_quarterlyData[key]) _quarterlyData[key] = [];
+  _quarterlyData[key].push({ goal: '', status: 'grey', notes: '' });
   renderQuarterly(true);
 }
 
-function deleteQuarterlyGoal(quarter, idx) {
+function deleteQuarterlyGoal(key, idx) {
   collectQuarterlyInputs();
-  if (_quarterlyData[quarter]) _quarterlyData[quarter].splice(idx, 1);
+  if (_quarterlyData[key]) _quarterlyData[key].splice(idx, 1);
   renderQuarterly(true);
 }
 
 function saveQuarterly() {
   collectQuarterlyInputs();
   var allGoals = [];
-  for (var i = 0; i < _quarterLabels.length; i++) {
-    var ql = _quarterLabels[i];
-    var goals = _quarterlyData[ql] || [];
-    for (var j = 0; j < goals.length; j++) {
-      if (goals[j].goal.trim() || goals[j].notes.trim()) {
-        allGoals.push({ quarter: ql, goal: goals[j].goal, status: goals[j].status, notes: goals[j].notes });
+  for (var ci = 0; ci < Q_CATEGORIES.length; ci++) {
+    var cat = Q_CATEGORIES[ci];
+    for (var qi = 0; qi < _quarterLabels.length; qi++) {
+      var ql = _quarterLabels[qi];
+      var k = qKey(ql, cat);
+      var goals = _quarterlyData[k] || [];
+      for (var j = 0; j < goals.length; j++) {
+        if (goals[j].goal.trim() || goals[j].notes.trim()) {
+          allGoals.push({ quarter: ql, category: cat, goal: goals[j].goal, status: goals[j].status, notes: goals[j].notes });
+        }
       }
     }
   }

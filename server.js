@@ -796,7 +796,7 @@ var REPORT_COLUMNS = [
 ];
 
 var PROJECT_COLUMNS = ['month', 'pillar', 'project', 'status', 'description'];
-var QUARTERLY_COLUMNS = ['quarter', 'goal', 'status', 'notes'];
+var QUARTERLY_COLUMNS = ['quarter', 'category', 'goal', 'status', 'notes'];
 
 // Google Sheets API v4 — JWT auth using built-in crypto (zero extra deps)
 var googleTokenCache = { token: null, expiry: 0 };
@@ -953,11 +953,11 @@ async function ensureSheetTabs() {
     try {
       var qHeaderCheck = await sheetsGet(REPORT_SHEET_ID, 'Quarterly Goals!A1:A1');
       if (!qHeaderCheck.values || !qHeaderCheck.values[0] || qHeaderCheck.values[0][0] !== 'quarter') {
-        await sheetsUpdate(REPORT_SHEET_ID, 'Quarterly Goals!A1:D1', [QUARTERLY_COLUMNS]);
+        await sheetsUpdate(REPORT_SHEET_ID, 'Quarterly Goals!A1:E1', [QUARTERLY_COLUMNS]);
         console.log('[Report] Wrote Quarterly Goals headers');
       }
     } catch (e) {
-      await sheetsUpdate(REPORT_SHEET_ID, 'Quarterly Goals!A1:D1', [QUARTERLY_COLUMNS]);
+      await sheetsUpdate(REPORT_SHEET_ID, 'Quarterly Goals!A1:E1', [QUARTERLY_COLUMNS]);
     }
 
     sheetsInitialised = true;
@@ -1061,7 +1061,7 @@ async function writeProjectUpdates(month, projects) {
 // Read quarterly goals from sheet
 async function readQuarterlySheet() {
   if (!REPORT_SHEET_ID) throw new Error('REPORT_SHEET_ID not configured');
-  var data = await sheetsGet(REPORT_SHEET_ID, 'Quarterly Goals!A:D');
+  var data = await sheetsGet(REPORT_SHEET_ID, 'Quarterly Goals!A:E');
   var rows = data.values || [];
   if (rows.length < 2) return [];
   var headers = rows[0];
@@ -1081,7 +1081,7 @@ async function readQuarterlySheet() {
 // Write quarterly goals for specific quarters (replace all for those quarters)
 async function writeQuarterlyGoals(quarters, goals) {
   if (!REPORT_SHEET_ID) throw new Error('REPORT_SHEET_ID not configured');
-  var existing = await sheetsGet(REPORT_SHEET_ID, 'Quarterly Goals!A:D');
+  var existing = await sheetsGet(REPORT_SHEET_ID, 'Quarterly Goals!A:E');
   var rows = existing.values || [];
   // Keep header + rows for quarters NOT being updated
   var quartersSet = {};
@@ -1094,10 +1094,10 @@ async function writeQuarterlyGoals(quarters, goals) {
   }
   for (var j = 0; j < goals.length; j++) {
     var g = goals[j];
-    newRows.push([g.quarter || '', g.goal || '', g.status || '', g.notes || '']);
+    newRows.push([g.quarter || '', g.category || '', g.goal || '', g.status || '', g.notes || '']);
   }
-  await sheetsUpdate(REPORT_SHEET_ID, 'Quarterly Goals!A1:D' + Math.max(newRows.length, rows.length + 1),
-    newRows.concat(Array(Math.max(0, rows.length - newRows.length)).fill(['', '', '', '']))
+  await sheetsUpdate(REPORT_SHEET_ID, 'Quarterly Goals!A1:E' + Math.max(newRows.length, rows.length + 1),
+    newRows.concat(Array(Math.max(0, rows.length - newRows.length)).fill(['', '', '', '', '']))
   );
 }
 
