@@ -476,29 +476,64 @@ Promise.all([
     if (!hCtx) continue;
 
     if (hc.stacked && hc.stackCols) {
-      // Stacked bar chart with breakdown
+      // Stacked bar chart with breakdown — use total col for height, breakdown for segments
       var stackDatasets = [];
-      var numStacks = hc.stackCols.length;
-      for (var si=0;si<numStacks;si++) {
-        var sc = hc.stackCols[si];
-        var sData = hc.slice.map(function(m){return pn(m[sc.col]);});
-        var isLast = (si === numStacks - 1);
+      // Pre-compute totals from the main col (e.g. Total FTE Hires)
+      var totalData = hc.slice.map(function(m){ return pn(m[hc.col]); });
+
+      // Build breakdown datasets
+      for (var si=0;si<hc.stackCols.length;si++) {
+        (function(idx){
+          var sc = hc.stackCols[idx];
+          var sData = hc.slice.map(function(m){ return pn(m[sc.col]) || 0; });
+          stackDatasets.push({
+            type:'bar', label:sc.label, data:sData, stack:'stack0',
+            backgroundColor:hexAlpha(sc.color,0.7), borderColor:sc.color, borderWidth:1, borderRadius:0,
+            datalabels:{display:false}
+          });
+        })(si);
+      }
+      // "Other" segment = total minus sum of breakdowns (for months with incomplete data)
+      var otherData = hc.slice.map(function(m, i){
+        var total = totalData[i] || 0;
+        var sum = 0;
+        for(var k=0;k<hc.stackCols.length;k++){ sum += (pn(m[hc.stackCols[k].col]) || 0); }
+        var diff = Math.round((total - sum)*100)/100;
+        return diff > 0 ? diff : 0;
+      });
+      var hasOther = otherData.some(function(v){return v>0;});
+      if (hasOther) {
         stackDatasets.push({
-          type:'bar', label:sc.label, data:sData, stack:'stack0',
-          backgroundColor:hexAlpha(sc.color,0.7), borderColor:sc.color, borderWidth:1, borderRadius: isLast ? 2 : 0,
-          datalabels: isLast ? {
-            display:true, anchor:'end', align:'end', color:'#1e293b', font:{size:9,weight:'bold'},
-            formatter:function(value, context) {
-              var total=0;
-              for(var d=0;d<context.chart.data.datasets.length;d++){
-                var v=context.chart.data.datasets[d].data[context.dataIndex];
-                if(v)total+=v;
-              }
-              return total?Number(Math.round(total*100)/100).toLocaleString():'';
-            }
-          } : {display:false}
+          type:'bar', label:'Other', data:otherData, stack:'stack0',
+          backgroundColor:'rgba(148,163,184,0.5)', borderColor:'#94a3b8', borderWidth:1, borderRadius:2,
+          datalabels:{display:false}
         });
       }
+      // Add total labels via a plugin
+      var stackTotalPlugin = {
+        id: 'stackTotals',
+        afterDraw: function(chart) {
+          var ctx = chart.ctx;
+          var datasets = chart.data.datasets;
+          var meta0 = chart.getDatasetMeta(0);
+          for (var i=0;i<meta0.data.length;i++) {
+            var total = totalData[i];
+            if (!total) continue;
+            // Find the top of the stack (highest bar y position)
+            var minY = Infinity;
+            for(var d=0;d<datasets.length;d++){
+              var bar = chart.getDatasetMeta(d).data[i];
+              if(bar && bar.y < minY) minY = bar.y;
+            }
+            ctx.save();
+            ctx.font = 'bold 9px -apple-system, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#1e293b';
+            ctx.fillText(Number(total).toLocaleString(), meta0.data[i].x, minY - 5);
+            ctx.restore();
+          }
+        }
+      };
       var stackOpts = chartOpts();
       stackOpts.plugins.legend = {display:true, position:'top', labels:{boxWidth:10,font:{size:10}}};
       stackOpts.scales.x.stacked = true;
@@ -506,6 +541,7 @@ Promise.all([
       new Chart(hCtx.getContext('2d'), {
         type:'bar',
         data:{labels:hc.labels, datasets:stackDatasets},
+        plugins:[stackTotalPlugin],
         options:stackOpts
       });
     } else {
