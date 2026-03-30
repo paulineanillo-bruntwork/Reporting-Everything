@@ -487,8 +487,8 @@ Promise.all([
     { title:'Client Expansion', rows:[
       { label:'Existing Client FTE Hires', col:C.existingFTE, format:'dec' },
       { label:'Jobs Opened (Existing Clients)', col:C.existingJobs, format:'num' },
-      { label:'Jobs Expansion Rate', col:C.jobsExpRate, format:'pct' },
-      { label:'FTE/Client Expansion Rate', col:C.fteClientExpRate, format:'pct' }
+      { label:'Jobs Expansion Rate', col:C.jobsExpRate, format:'pctR' },
+      { label:'FTE/Client Expansion Rate', col:C.fteClientExpRate, format:'pctR' }
     ], charts:[
       { label:'Existing Client FTE Hires', col:C.existingFTE, color:'#059669', type:'bar' },
       { label:'Jobs Opened (Existing Clients)', col:C.existingJobs, color:'#2563eb', type:'bar' },
@@ -502,16 +502,16 @@ Promise.all([
   var churnSections = [
     { title:'Churn', rows:[
       { label:'Churned Staff (FTE)', col:C.churnedFTE, format:'dec', invert:true },
-      { label:'Role Churn Rate', col:C.churnRate, format:'pct', invert:true }
+      { label:'Role Churn Rate', col:C.churnRate, format:'pctR', invert:true }
     ], charts:[
       { label:'Churned Staff (FTE)', col:C.churnedFTE, color:'#dc2626', type:'bar' },
       { label:'Role Churn Rate', col:C.churnRate, color:'#e11d48', type:'line', pct:true }
     ]},
     { title:'Backfill', rows:[
       { label:'Offboarded Roles to be Backfilled', col:C.rolesToBackfill, format:'num' },
-      { label:'Backfill Rate', col:C.backfillRate, format:'pct' },
+      { label:'Backfill Rate', col:C.backfillRate, format:'pctR' },
       { label:'Backfill FTE Hires', col:C.backfillFTE, format:'dec' },
-      { label:'Backfill Close Rate (1-month conversion window)', col:C.backfillCloseRate, format:'pct' }
+      { label:'Backfill Close Rate (1-month conversion window)', col:C.backfillCloseRate, format:'pctR' }
     ], charts:[
       { label:'Backfill FTE Hires', col:C.backfillFTE, color:'#059669', type:'bar' },
       { label:'Backfill Rate', col:C.backfillRate, color:'#d97706', type:'line', pct:true }
