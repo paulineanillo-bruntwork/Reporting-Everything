@@ -590,12 +590,12 @@ Promise.all([
   var expSections = [
     { title:'Client Expansion', rows:[
       { label:'Jobs Opened (Existing Clients)', col:C.existingJobs, format:'num' },
-      { label:'Jobs Expansion Rate', col:C.jobsExpRate, format:'pctR' },
-      { label:'FTE/Client Expansion Rate', col:C.fteClientExpRate, format:'pctR' }
+      { label:'Jobs Opened Vs Active Clients', col:C.jobsExpRate, format:'pctR' },
+      { label:'FTEs closed Vs Active Clients', col:C.fteClientExpRate, format:'pctR' }
     ], charts:[
       { label:'Jobs Opened (Existing Clients)', col:C.existingJobs, color:'#2563eb', type:'bar' },
-      { label:'Jobs Expansion Rate', col:C.jobsExpRate, color:'#d97706', type:'line', pct:true },
-      { label:'FTE/Client Expansion Rate', col:C.fteClientExpRate, color:'#7c3aed', type:'line', pct:true }
+      { label:'Jobs Opened Vs Active Clients', col:C.jobsExpRate, color:'#d97706', type:'line', pct:true },
+      { label:'FTEs closed Vs Active Clients', col:C.fteClientExpRate, color:'#7c3aed', type:'line', pct:true }
     ]}
   ];
   renderSubBlocks('expBlocks', expSections, cur, prev, curSlice, curLabels);
