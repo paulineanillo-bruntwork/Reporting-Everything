@@ -131,6 +131,15 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .q-del-btn:hover{opacity:1}
 .q-add-btn{padding:4px 10px;border:1px dashed var(--border);background:transparent;color:var(--text-muted);border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;margin-top:6px;width:100%;transition:all .15s}
 .q-add-btn:hover{border-color:var(--blue);color:var(--blue)}
+/* Drag and drop */
+.q-goal-item[draggable="true"]{cursor:grab;position:relative}
+.q-goal-item[draggable="true"]:active{cursor:grabbing}
+.q-goal-item.dragging{opacity:.3}
+.q-drag-handle{position:absolute;left:-2px;top:8px;color:var(--border);font-size:12px;cursor:grab;user-select:none;line-height:1}
+.q-drag-handle:hover{color:var(--text-muted)}
+td[data-qk].drag-over{background:rgba(37,99,235,.08);outline:2px dashed var(--blue);outline-offset:-2px}
+.q-drop-indicator{height:3px;background:var(--blue);border-radius:2px;margin:2px 0;transition:opacity .1s}
+
 /* Color status dots */
 .q-color-select{display:inline-flex;gap:4px;margin-bottom:3px;align-items:center}
 .q-color-dot{width:16px;height:16px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all .1s;display:inline-block}
@@ -912,7 +921,8 @@ function renderQuarterly(editMode) {
       if (editMode) {
         for (var gi = 0; gi < goals.length; gi++) {
           var g = goals[gi];
-          html += '<div class="q-goal-item" data-gi="' + gi + '">';
+          html += '<div class="q-goal-item" draggable="true" data-gi="' + gi + '" data-qk="' + escH(k) + '" style="padding-left:14px">';
+          html += '<span class="q-drag-handle">&#9776;</span>';
           html += '<button class="q-del-btn" onclick="deleteQuarterlyGoal(\'' + escH(k).replace(/'/g,"\\'") + '\',' + gi + ')">&times;</button>';
           html += '<input class="q-goal-input qg-goal" value="' + escH(g.goal) + '" placeholder="Item">';
           // Color status dots
@@ -948,6 +958,89 @@ function renderQuarterly(editMode) {
   html += '</tbody></table>';
   grid.innerHTML = html;
   document.getElementById('quarterlySaveBar').style.display = editMode ? 'flex' : 'none';
+  if (editMode) initQDragDrop();
+}
+
+// === Drag & Drop for Quarterly Roadmap ===
+var _dragItem = null;
+var _dragSourceKey = null;
+var _dragSourceIdx = null;
+
+function initQDragDrop() {
+  var items = document.querySelectorAll('.q-goal-item[draggable]');
+  items.forEach(function(item) {
+    item.addEventListener('dragstart', function(e) {
+      collectQuarterlyInputs();
+      _dragItem = item;
+      _dragSourceKey = item.getAttribute('data-qk');
+      _dragSourceIdx = parseInt(item.getAttribute('data-gi'));
+      item.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', '');
+    });
+    item.addEventListener('dragend', function() {
+      item.classList.remove('dragging');
+      _dragItem = null;
+      // Clean up all drag-over highlights
+      document.querySelectorAll('.drag-over').forEach(function(el) { el.classList.remove('drag-over'); });
+      document.querySelectorAll('.q-drop-indicator').forEach(function(el) { el.remove(); });
+    });
+  });
+
+  var cells = document.querySelectorAll('td[data-qk]');
+  cells.forEach(function(cell) {
+    cell.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      cell.classList.add('drag-over');
+    });
+    cell.addEventListener('dragleave', function(e) {
+      // Only remove if actually leaving the cell
+      if (!cell.contains(e.relatedTarget)) {
+        cell.classList.remove('drag-over');
+      }
+    });
+    cell.addEventListener('drop', function(e) {
+      e.preventDefault();
+      cell.classList.remove('drag-over');
+      if (!_dragItem || _dragSourceKey === null || _dragSourceIdx === null) return;
+
+      var targetKey = cell.getAttribute('data-qk');
+      var sourceGoals = _quarterlyData[_dragSourceKey] || [];
+      var movedGoal = sourceGoals[_dragSourceIdx];
+      if (!movedGoal) return;
+
+      // Find drop position based on mouse Y
+      var targetGoals = _quarterlyData[targetKey] || [];
+      var dropIdx = targetGoals.length; // default: end
+      var goalItems = cell.querySelectorAll('.q-goal-item');
+      for (var i = 0; i < goalItems.length; i++) {
+        var rect = goalItems[i].getBoundingClientRect();
+        if (e.clientY < rect.top + rect.height / 2) {
+          // Adjust index if same cell and source is before target
+          if (_dragSourceKey === targetKey && _dragSourceIdx < i) {
+            dropIdx = i - 1;
+          } else {
+            dropIdx = i;
+          }
+          break;
+        }
+      }
+
+      // Remove from source
+      sourceGoals.splice(_dragSourceIdx, 1);
+      _quarterlyData[_dragSourceKey] = sourceGoals;
+
+      // Insert into target
+      if (!_quarterlyData[targetKey]) _quarterlyData[targetKey] = [];
+      _quarterlyData[targetKey].splice(dropIdx, 0, movedGoal);
+
+      _dragItem = null;
+      _dragSourceKey = null;
+      _dragSourceIdx = null;
+      renderQuarterly(true);
+    });
+  });
 }
 
 function selectQColor(el) {
