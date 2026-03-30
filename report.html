@@ -173,7 +173,6 @@ td.q-backlog-collapsed{background:#f8fafc}
     <img src="https://www.bruntwork.co/wp-content/uploads/2023/01/BruntWork-logo-website.png" alt="BruntWork" class="header-logo">
     <div>
       <h1 id="reportTitle">Management KPI Report</h1>
-      <div class="month-nav" id="monthNav"></div>
     </div>
   </div>
   <div class="header-right">
@@ -348,11 +347,7 @@ var currentMonth = getMonthParam();
 if (currentMonth < MIN_MONTH) { window.location.href = '/report?month='+MIN_MONTH; }
 document.getElementById('reportTitle').textContent = monthLabel(currentMonth) + ' Management KPI Report';
 
-// Month nav
-var nav = document.getElementById('monthNav');
-var pm = prevMonthKey(currentMonth), nm = nextMonthKey(currentMonth);
-var prevLink = pm >= MIN_MONTH ? '<a href="/report?month='+pm+'">&larr; '+monthLabel(pm)+'</a>' : '<a style="opacity:0.3;pointer-events:none">&larr; '+monthLabel(pm)+'</a>';
-nav.innerHTML = prevLink+'<a class="current">'+monthLabel(currentMonth)+'</a><a href="/report?month='+nm+'">'+monthLabel(nm)+' &rarr;</a>';
+// Month nav removed — navigation via URL param only
 
 // Fetch KPI data
 Promise.all([
