@@ -458,8 +458,8 @@ Promise.all([
     { label:'Net FTE Gain/Loss', col:null, color:'#7c3aed', type:'bar', slice:curSlice, labels:curLabels, compute:function(m){ var h=pn(m[C.totalHires]),l=pn(m[C.churnedFTE]); return (h!==null&&l!==null)?Math.round((h-l)*100)/100:null; } },
     { label:'FTEs Hired', col:C.totalHires, color:'#059669', type:'bar', slice:curSlice, labels:curLabels, stacked:true,
       stackCols:[
-        { label:'New', col:C.newClientHires, color:'#2563eb' },
-        { label:'Existing', col:C.newClientFTE, color:'#059669' },
+        { label:'New Client', col:C.newClientHires, color:'#2563eb' },
+        { label:'Existing Client', col:C.newClientFTE, color:'#059669' },
         { label:'Backfill', col:C.backfillFTE, color:'#d97706' }
       ]
     },
@@ -504,7 +504,7 @@ Promise.all([
       var hasOther = otherData.some(function(v){return v>0;});
       if (hasOther) {
         stackDatasets.push({
-          type:'bar', label:'Other', data:otherData, stack:'stack0',
+          type:'bar', label:'Untagged', data:otherData, stack:'stack0',
           backgroundColor:'rgba(148,163,184,0.5)', borderColor:'#94a3b8', borderWidth:1, borderRadius:2,
           datalabels:{display:false}
         });
