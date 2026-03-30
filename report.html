@@ -478,26 +478,29 @@ Promise.all([
     if (hc.stacked && hc.stackCols) {
       // Stacked bar chart with breakdown
       var stackDatasets = [];
-      for (var si=0;si<hc.stackCols.length;si++) {
+      var numStacks = hc.stackCols.length;
+      for (var si=0;si<numStacks;si++) {
         var sc = hc.stackCols[si];
         var sData = hc.slice.map(function(m){return pn(m[sc.col]);});
+        var isLast = (si === numStacks - 1);
         stackDatasets.push({
-          type:'bar', label:sc.label, data:sData,
-          backgroundColor:hexAlpha(sc.color,0.7), borderColor:sc.color, borderWidth:1, borderRadius:2,
-          datalabels:{display:false}
+          type:'bar', label:sc.label, data:sData, stack:'stack0',
+          backgroundColor:hexAlpha(sc.color,0.7), borderColor:sc.color, borderWidth:1, borderRadius: isLast ? 2 : 0,
+          datalabels: isLast ? {
+            display:true, anchor:'end', align:'end', color:'#1e293b', font:{size:9,weight:'bold'},
+            formatter:function(value, context) {
+              var total=0;
+              for(var d=0;d<context.chart.data.datasets.length;d++){
+                var v=context.chart.data.datasets[d].data[context.dataIndex];
+                if(v)total+=v;
+              }
+              return total?Number(Math.round(total*100)/100).toLocaleString():'';
+            }
+          } : {display:false}
         });
       }
-      // Total datalabel on top via hidden dataset
-      var totals = hc.slice.map(function(m){
-        var t=0; for(var k=0;k<hc.stackCols.length;k++){var v=pn(m[hc.stackCols[k].col]);if(v)t+=v;} return Math.round(t*100)/100;
-      });
-      stackDatasets.push({
-        type:'bar', label:'Total', data:totals,
-        backgroundColor:'rgba(0,0,0,0)', borderColor:'rgba(0,0,0,0)', borderWidth:0,
-        datalabels:{display:true, anchor:'end', align:'end', color:'#1e293b', font:{size:9,weight:'bold'}, formatter:function(v){return v?Number(v).toLocaleString():'';}}
-      });
       var stackOpts = chartOpts();
-      stackOpts.plugins.legend = {display:true, position:'top', labels:{boxWidth:10,font:{size:10},filter:function(item){return item.text!=='Total';}}};
+      stackOpts.plugins.legend = {display:true, position:'top', labels:{boxWidth:10,font:{size:10}}};
       stackOpts.scales.x.stacked = true;
       stackOpts.scales.y.stacked = true;
       new Chart(hCtx.getContext('2d'), {
