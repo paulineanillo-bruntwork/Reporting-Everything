@@ -441,7 +441,7 @@ app.get('/api/tickets', async function(req, res) {
           { propertyName: 'createdate', operator: 'GTE', value: cutoffStr }
         ]
       }],
-      properties: ['createdate', 'assignment_type', 'hs_pipeline'],
+      properties: ['createdate', 'assignment_type', 'hs_pipeline', 'job_source', 'subject'],
       sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }]
     });
 
@@ -452,21 +452,25 @@ app.get('/api/tickets', async function(req, res) {
           { propertyName: 'offboarding_date', operator: 'GTE', value: cutoffStr }
         ]
       }],
-      properties: ['offboarding_date', 'assignment_type', 'hs_pipeline']
+      properties: ['offboarding_date', 'assignment_type', 'hs_pipeline', 'job_source', 'subject']
     });
 
     var raw = createdResults.map(function(r) {
       return {
         d: r.properties.createdate,
         t: r.properties.assignment_type || 'Unknown',
-        p: r.properties.hs_pipeline
+        p: r.properties.hs_pipeline,
+        s: r.properties.job_source || '',
+        n: r.properties.subject || ''
       };
     });
 
     var offboard = offboardResults.map(function(r) {
       return {
         o: r.properties.offboarding_date,
-        t: r.properties.assignment_type || 'Unknown'
+        t: r.properties.assignment_type || 'Unknown',
+        s: r.properties.job_source || '',
+        n: r.properties.subject || ''
       };
     });
 

@@ -437,7 +437,15 @@
 <div id="runningUpdateSection" class="running-update">
   <div class="ru-header">
     <h2>Running Update</h2>
-    <select id="ruMonth"></select>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="jobSourceFilter" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;background:#fff">
+        <option value="all">All Job Sources</option>
+        <option value="New">New</option>
+        <option value="Existing">Existing</option>
+        <option value="Backfill">Backfill</option>
+      </select>
+      <select id="ruMonth"></select>
+    </div>
   </div>
   <div class="ru-body">
     <table class="ru-table" id="ruTable"></table>
@@ -555,9 +563,11 @@ function emptyBucket() {
 }
 
 function buildGroupedData(numPeriods, groupBy) {
+  var jsFilter = getSelectedJobSource();
   var buckets = {};
 
   RAW_DATA.forEach(function(r) {
+    if (!matchesJobSource(r, jsFilter)) return;
     var key = groupBy === 'month' ? getMonthKey(r.d) : getSundayOfWeek(r.d);
     if (!buckets[key]) buckets[key] = emptyBucket();
     var w = getFTEWeight(r.t);
@@ -571,6 +581,7 @@ function buildGroupedData(numPeriods, groupBy) {
   });
 
   OFFBOARD_DATA.forEach(function(r) {
+    if (!matchesJobSource(r, jsFilter)) return;
     var key = groupBy === 'month' ? getMonthKey(r.o + 'T00:00:00Z') : getSundayOfWeek(r.o + 'T00:00:00Z');
     if (!buckets[key]) buckets[key] = emptyBucket();
     var w = getFTEWeight(r.t);
@@ -608,7 +619,18 @@ function fmtFTE(val) {
   return val.toFixed(1);
 }
 
+function getSelectedJobSource() {
+  var el = document.getElementById('jobSourceFilter');
+  return el ? el.value : 'all';
+}
+
+function matchesJobSource(record, filter) {
+  if (filter === 'all') return true;
+  return (record.s || '').toLowerCase() === filter.toLowerCase();
+}
+
 function buildMonthSummary(monthKey) {
+  var jsFilter = getSelectedJobSource();
   var counts = { hire: {}, churn: {} };
   ['Full-Time','Part-Time','Part-Time-Under-20-Hours','Output-Based','Project-Based','Trial'].forEach(function(t) {
     counts.hire[t] = 0; counts.churn[t] = 0;
@@ -619,6 +641,7 @@ function buildMonthSummary(monthKey) {
   RAW_DATA.forEach(function(r) {
     var k = getMonthKey(r.d);
     if (k !== monthKey) return;
+    if (!matchesJobSource(r, jsFilter)) return;
     var type = r.t || 'Unknown';
     if (counts.hire[type] === undefined) counts.hire[type] = 0;
     counts.hire[type]++;
@@ -629,6 +652,7 @@ function buildMonthSummary(monthKey) {
   OFFBOARD_DATA.forEach(function(r) {
     var k = getMonthKey(r.o + 'T00:00:00Z');
     if (k !== monthKey) return;
+    if (!matchesJobSource(r, jsFilter)) return;
     var type = r.t || 'Unknown';
     if (counts.churn[type] === undefined) counts.churn[type] = 0;
     counts.churn[type]++;
@@ -685,6 +709,10 @@ function renderRunningUpdate() {
   sel.options.add(new Option('Current Month - ' + curY + ' ' + curM, curMonth));
   sel.options.add(new Option('Previous Month - ' + prevY + ' ' + prevM, prevMonth));
   sel.addEventListener('change', renderRunningUpdate);
+  document.getElementById('jobSourceFilter').addEventListener('change', function() {
+    renderRunningUpdate();
+    render();
+  });
 })();
 
 var fteChart, netChart;
