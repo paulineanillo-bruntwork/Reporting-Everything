@@ -566,7 +566,7 @@ Promise.all([
     ], charts:[
       { label:'Google Ads Spend', col:C.adsSpend, color:'#0891b2', type:'bar' },
       { label:'Discovery Calls (MQLs) Booked', col:C.mqls, color:'#7c3aed', type:'bar' },
-      { label:'Cost Per Discovery Call', col:C.costPerCall, color:'#e11d48', type:'line' }
+      { label:'Cost Per Discovery Call', col:C.costPerCall, color:'#e11d48', type:'line', money:true }
     ]},
     { title:'Sales', rows:[
       { label:'New Client Jobs Opened', col:C.newClientJobs, format:'num' },
@@ -668,6 +668,8 @@ function renderSubBlocks(containerId, sections, cur, prev, slice, labels) {
     var opts = chartOpts();
     if (item.chart.pct) {
       ds.datalabels = { display:true, anchor:'end', align:'end', color:item.chart.color, font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?v.toFixed(1)+'%':'';} };
+    } else if (item.chart.money) {
+      ds.datalabels = { display:true, anchor:'end', align:'end', color:item.chart.color, font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?'$'+Number(Math.round(v)).toLocaleString():'';} };
     } else {
       ds.datalabels = { display:true, anchor:'end', align:'end', color:item.chart.color, font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?Number(v).toLocaleString():'';} };
     }
