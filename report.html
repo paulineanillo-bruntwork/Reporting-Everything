@@ -142,12 +142,12 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 td[data-qk].drag-over{background:rgba(37,99,235,.08);outline:2px dashed var(--blue);outline-offset:-2px}
 .q-drop-indicator{height:3px;background:var(--blue);border-radius:2px;margin:2px 0;transition:opacity .1s}
 
-/* Color status dots */
-.q-color-select{display:inline-flex;gap:4px;margin-bottom:3px;align-items:center}
-.q-color-dot{width:16px;height:16px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all .1s;display:inline-block}
-.q-color-dot:hover{transform:scale(1.2)}
-.q-color-dot.selected{border-color:var(--text);box-shadow:0 0 0 2px rgba(0,0,0,.1)}
-.q-status-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:middle}
+/* Status tags */
+.q-status-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;line-height:1.4;white-space:nowrap}
+.q-color-select{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:3px}
+.q-color-tag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;border:2px solid transparent;transition:all .1s;line-height:1.4;white-space:nowrap;opacity:.5}
+.q-color-tag:hover{opacity:.8}
+.q-color-tag.selected{opacity:1;border-color:var(--text);box-shadow:0 0 0 1px rgba(0,0,0,.08)}
 
 @media(max-width:1100px){.q-cat-header{width:120px!important}.highlight-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:900px){.chart-grid{grid-template-columns:1fr}.header,.main{padding-left:20px;padding-right:20px}.highlight-grid{grid-template-columns:1fr}.quarterly-grid{grid-template-columns:1fr}}
@@ -825,11 +825,11 @@ function saveUpdates() {
 // === Quarterly Roadmap Section ===
 var Q_CATEGORIES = ['Easy to do business with', 'FTE Growth', 'Profitability', 'Other'];
 var Q_COLORS = [
-  { name:'lightorange', hex:'#fdba74', label:'To Commence' },
-  { name:'lightgreen', hex:'#4ade80', label:'In Progress' },
-  { name:'darkgreen', hex:'#15803d', label:'Completed' },
-  { name:'orange', hex:'#f59e0b', label:'On Hold' },
-  { name:'red', hex:'#ef4444', label:'Cancelled' }
+  { name:'lightorange', bg:'#fef3c7', text:'#92400e', label:'To Commence' },
+  { name:'lightgreen', bg:'#dcfce7', text:'#166534', label:'In Progress' },
+  { name:'darkgreen', bg:'#bbf7d0', text:'#14532d', label:'Completed' },
+  { name:'orange', bg:'#fef3c7', text:'#b45309', label:'On Hold' },
+  { name:'red', bg:'#fee2e2', text:'#991b1b', label:'Cancelled' }
 ];
 var _quarterlyData = {}; // keyed by "quarter|category" → array of goals
 var _quarterLabels = [];
@@ -891,7 +891,7 @@ function getQColor(status) {
   var html = '';
   for (var i = 0; i < Q_COLORS.length; i++) {
     var c = Q_COLORS[i];
-    html += '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted)"><span class="q-status-dot" style="background:'+c.hex+'"></span>'+c.label+'</span>';
+    html += '<span class="q-status-tag" style="background:'+c.bg+';color:'+c.text+'">'+c.label+'</span>';
   }
   leg.innerHTML = html;
 })();
@@ -952,11 +952,11 @@ function renderQuarterly(editMode) {
           html += '<span class="q-drag-handle">&#9776;</span>';
           html += '<button class="q-del-btn" onclick="deleteQuarterlyGoal(\'' + escH(k).replace(/'/g,"\\'") + '\',' + gi + ')">&times;</button>';
           html += '<input class="q-goal-input qg-goal" value="' + escH(g.goal) + '" placeholder="Item">';
-          // Color status dots
+          // Status tag selector
           html += '<div class="q-color-select">';
           for (var si = 0; si < Q_COLORS.length; si++) {
             var sc = Q_COLORS[si];
-            html += '<span class="q-color-dot' + (g.status === sc.name ? ' selected' : '') + '" style="background:' + sc.hex + '" data-color="' + sc.name + '" title="' + sc.label + '" onclick="selectQColor(this)"></span>';
+            html += '<span class="q-color-tag' + (g.status === sc.name ? ' selected' : '') + '" style="background:' + sc.bg + ';color:' + sc.text + '" data-color="' + sc.name + '" onclick="selectQColor(this)">' + sc.label + '</span>';
           }
           html += '<input type="hidden" class="qg-status" value="' + escH(g.status || 'grey') + '">';
           html += '</div>';
@@ -972,7 +972,8 @@ function renderQuarterly(editMode) {
           var g2 = goals[gi2];
           var col = getQColor(g2.status);
           html += '<div class="q-goal-item">';
-          html += '<div class="goal-text"><span class="q-status-dot" style="background:' + col.hex + '" title="' + col.label + '"></span>' + escH(g2.goal) + '</div>';
+          html += '<div class="goal-text">' + escH(g2.goal) + '</div>';
+          html += '<span class="q-status-tag" style="background:' + col.bg + ';color:' + col.text + '">' + col.label + '</span>';
           if (g2.notes) html += '<div class="goal-notes">' + escH(g2.notes) + '</div>';
           html += '</div>';
         }
@@ -1072,8 +1073,8 @@ function initQDragDrop() {
 
 function selectQColor(el) {
   var parent = el.parentElement;
-  var dots = parent.querySelectorAll('.q-color-dot');
-  dots.forEach(function(d) { d.classList.remove('selected'); });
+  var tags = parent.querySelectorAll('.q-color-tag');
+  tags.forEach(function(d) { d.classList.remove('selected'); });
   el.classList.add('selected');
   parent.querySelector('.qg-status').value = el.getAttribute('data-color');
 }
