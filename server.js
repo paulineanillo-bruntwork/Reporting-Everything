@@ -1826,10 +1826,25 @@ app.post('/api/kpi-history/generate', async function(req, res) {
             { propertyName: 'createdate', operator: 'LTE', value: hireEndMs }
           ]
         }],
-        properties: ['createdate', 'assignment_type', 'type_of_recruitment', 'job_source', 'hs_pipeline'],
+        properties: ['createdate', 'assignment_type', 'type_of_recruitment', 'job_source', 'hs_pipeline', 'subject'],
         sorts: [{ propertyName: 'createdate', direction: 'ASCENDING' }]
       });
-      console.log('[KPI Generate] Hires found: ' + hireResults.length);
+      console.log('[KPI Generate] Hires found (raw): ' + hireResults.length);
+
+      // Exclude tickets where subject contains "BruntWork"
+      hireResults = hireResults.filter(function(t) {
+        var subj = (t.properties.subject || '').toLowerCase();
+        return subj.indexOf('bruntwork') === -1;
+      });
+      console.log('[KPI Generate] Hires after excluding BruntWork: ' + hireResults.length);
+
+      // Log job_source distribution for debugging
+      var jobSrcDist = {};
+      for (var hd = 0; hd < hireResults.length; hd++) {
+        var src = hireResults[hd].properties.job_source || '(empty)';
+        jobSrcDist[src] = (jobSrcDist[src] || 0) + 1;
+      }
+      console.log('[KPI Generate] Hires job_source distribution: ' + JSON.stringify(jobSrcDist));
 
       var totalFTEHires = 0;
       var backfillFTEHires = 0, newClientFTEHires = 0, existingClientFTEHires = 0;
@@ -1838,13 +1853,13 @@ app.post('/api/kpi-history/generate', async function(req, res) {
         var hp = hireResults[hi].properties;
         var w = fteWeight(hp.assignment_type || 'Unknown');
         totalFTEHires += w;
-        var jobSrcLower = (hp.job_source || '').toLowerCase();
-        if (jobSrcLower.indexOf('backfill') !== -1 || jobSrcLower === 'back up') {
+        var jobSrcLower = (hp.job_source || '').toLowerCase().trim();
+        if (jobSrcLower === 'backfill' || jobSrcLower === 'back up') {
           backfillFTEHires += w;
-        } else if (jobSrcLower.indexOf('new') !== -1) {
+        } else if (jobSrcLower === 'new') {
           newClientFTEHires += w;
         }
-        if (jobSrcLower.indexOf('existing') !== -1) {
+        if (jobSrcLower === 'existing') {
           existingClientFTEHires += w;
           existingClientHC++;
         }
