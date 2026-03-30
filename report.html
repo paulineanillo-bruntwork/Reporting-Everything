@@ -454,13 +454,14 @@ Promise.all([
         { label:'New Client', col:C.newClientHires, color:'#2563eb' },
         { label:'Existing Client', col:C.newClientFTE, color:'#059669' },
         { label:'Backfill', col:C.backfillFTE, color:'#d97706' }
-      ]
+      ], height:280
     },
-    { label:'Lost FTEs', col:C.churnedFTE, color:'#dc2626', type:'bar', slice:curSlice, labels:curLabels }
+    { label:'Lost FTEs', col:C.churnedFTE, color:'#dc2626', type:'bar', slice:curSlice, labels:curLabels, height:150 }
   ];
   var hlHtml = '';
   for (var hi=0;hi<hlCharts.length;hi++) {
-    hlHtml += '<div class="trend-chart-item"><h4>'+hlCharts[hi].label+'</h4><canvas id="hlchart_'+hi+'"></canvas></div>';
+    var chH = hlCharts[hi].height ? hlCharts[hi].height+'px' : '200px';
+    hlHtml += '<div class="trend-chart-item"><h4>'+hlCharts[hi].label+'</h4><canvas id="hlchart_'+hi+'" style="height:'+chH+'!important"></canvas></div>';
   }
   document.getElementById('highlightCharts').innerHTML = hlHtml;
   for (var hj=0;hj<hlCharts.length;hj++) {
