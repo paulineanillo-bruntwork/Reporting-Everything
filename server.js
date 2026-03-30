@@ -949,12 +949,13 @@ async function ensureSheetTabs() {
       await sheetsUpdate(REPORT_SHEET_ID, 'Project Updates!A1:E1', [PROJECT_COLUMNS]);
     }
 
-    // Ensure headers exist in Quarterly Goals
+    // Ensure headers exist in Quarterly Goals (must have 5 columns: quarter, category, goal, status, notes)
     try {
-      var qHeaderCheck = await sheetsGet(REPORT_SHEET_ID, 'Quarterly Goals!A1:A1');
-      if (!qHeaderCheck.values || !qHeaderCheck.values[0] || qHeaderCheck.values[0][0] !== 'quarter') {
+      var qHeaderCheck = await sheetsGet(REPORT_SHEET_ID, 'Quarterly Goals!A1:E1');
+      var qHeaders = (qHeaderCheck.values && qHeaderCheck.values[0]) || [];
+      if (qHeaders[0] !== 'quarter' || qHeaders[1] !== 'category' || qHeaders.length < 5) {
         await sheetsUpdate(REPORT_SHEET_ID, 'Quarterly Goals!A1:E1', [QUARTERLY_COLUMNS]);
-        console.log('[Report] Wrote Quarterly Goals headers');
+        console.log('[Report] Wrote/updated Quarterly Goals headers (was: ' + JSON.stringify(qHeaders) + ')');
       }
     } catch (e) {
       await sheetsUpdate(REPORT_SHEET_ID, 'Quarterly Goals!A1:E1', [QUARTERLY_COLUMNS]);

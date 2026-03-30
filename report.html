@@ -1080,7 +1080,7 @@ function selectQColor(el) {
 }
 
 function collectQuarterlyInputs() {
-  var cells = document.querySelectorAll('[data-qk]');
+  var cells = document.querySelectorAll('td[data-qk]');
   cells.forEach(function(cell) {
     var k = cell.getAttribute('data-qk');
     var items = cell.querySelectorAll('.q-goal-item');
