@@ -73,6 +73,40 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 @media(max-width:900px){.trend-chart-grid{grid-template-columns:1fr}}
 
 
+/* Updates tables */
+.updates-block{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);margin-bottom:16px;overflow:hidden}
+.updates-block .pillar-header{padding:12px 16px;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);background:#f8fafc;border-bottom:1px solid var(--border)}
+.updates-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.updates-tbl th{text-align:left;padding:10px 16px;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);border-bottom:1px solid var(--border);background:#fafbfc}
+.updates-tbl td{padding:10px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+.updates-tbl tr:last-child td{border-bottom:none}
+.updates-tbl tr:hover{background:#f8fafc}
+.updates-tbl .proj-name{font-weight:500;min-width:200px}
+.updates-tbl .proj-desc{color:var(--text);line-height:1.5}
+.status-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;font-style:italic;margin-bottom:4px}
+.status-in-progress{background:#dbeafe;color:#1d4ed8}
+.status-deployed,.status-phase-1-deployed{background:var(--green-light);color:#15803d}
+.status-on-hold{background:var(--orange-light);color:#b45309}
+.status-completed{background:#d1fae5;color:#065f46}
+.status-not-started{background:#f1f5f9;color:var(--text-muted)}
+/* Edit mode */
+.edit-fab{position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:var(--blue);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:100;border:none;transition:all .15s}
+.edit-fab:hover{background:var(--blue-dark);transform:scale(1.05)}
+.edit-fab.active{background:var(--red)}
+.edit-input{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;width:100%}
+.edit-input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+.edit-select{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit}
+.edit-textarea{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;width:100%;min-height:60px;resize:vertical}
+.btn-add-row{padding:6px 16px;border:1px dashed var(--border);background:transparent;color:var(--text-muted);border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;margin:8px 16px 12px;transition:all .15s}
+.btn-add-row:hover{border-color:var(--blue);color:var(--blue);background:rgba(37,99,235,.04)}
+.btn-del-row{padding:2px 8px;border:none;background:transparent;color:var(--red);font-size:16px;cursor:pointer;border-radius:4px;opacity:0.6}
+.btn-del-row:hover{opacity:1;background:var(--red-light)}
+.save-bar{display:flex;align-items:center;gap:12px;margin-top:12px}
+.btn-save{padding:10px 24px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
+.btn-save:hover{background:#047857}
+.save-status{font-size:13px;color:var(--text-muted)}
+.edit-hidden{display:none}
+
 @media(max-width:1100px){.highlight-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:900px){.chart-grid{grid-template-columns:1fr}.header,.main{padding-left:20px;padding-right:20px}.highlight-grid{grid-template-columns:1fr}}
 @media print{.header{background:#1e293b!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.nav-links,.month-nav{display:none!important}.main{padding:16px}}
@@ -124,6 +158,18 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
   <div id="churnBlocks"></div>
 </div>
 
+<!-- Monthly Updates Section -->
+<div class="section">
+  <div class="section-title"><span class="dot" style="background:var(--orange)"></span> <span id="updatesTitle">Updates</span></div>
+  <div id="updatesSection"></div>
+  <div id="saveBar" class="save-bar" style="display:none">
+    <button class="btn-save" onclick="saveUpdates()">Save Changes</button>
+    <span id="saveStatus" class="save-status"></span>
+  </div>
+</div>
+
+<!-- Edit toggle -->
+<div class="edit-fab" id="editFab" onclick="toggleEditMode()">&#9998;</div>
 
 </div><!-- /content -->
 </div><!-- /main -->
@@ -241,7 +287,12 @@ var prevLink = pm >= MIN_MONTH ? '<a href="/report?month='+pm+'">&larr; '+monthL
 nav.innerHTML = prevLink+'<a class="current">'+monthLabel(currentMonth)+'</a><a href="/report?month='+nm+'">'+monthLabel(nm)+' &rarr;</a>';
 
 // Fetch KPI data
-fetch('/api/kpi-history').then(function(r){return r.json();}).then(function(data){
+Promise.all([
+  fetch('/api/kpi-history').then(function(r){return r.json();}),
+  fetch('/api/report?month='+currentMonth).then(function(r){return r.json();}).catch(function(){return {projects:[]};})
+]).then(function(results){
+  var data = results[0];
+  var reportData = results[1];
   if (data.error) {
     document.getElementById('loading').innerHTML = '<div style="color:var(--red)">'+data.error+'</div>';
     return;
@@ -428,6 +479,12 @@ fetch('/api/kpi-history').then(function(r){return r.json();}).then(function(data
   ];
   renderSubBlocks('churnBlocks', churnSections, cur, prev, curSlice, curLabels);
 
+  // === Monthly Updates Section ===
+  document.getElementById('updatesTitle').textContent = monthLabel(currentMonth) + ' Updates';
+  var projectsData = (reportData && reportData.projects) || [];
+  _projectsData = groupProjects(projectsData);
+  renderUpdates(false);
+
 }).catch(function(err){
   document.getElementById('loading').innerHTML = '<div style="color:var(--red)">Error: '+err.message+'</div>';
 });
@@ -539,6 +596,151 @@ function hexAlpha(hex, alpha) {
   var g = parseInt(hex.slice(3,5),16);
   var b = parseInt(hex.slice(5,7),16);
   return 'rgba('+r+','+g+','+b+','+alpha+')';
+}
+
+// === Updates Section ===
+var PILLARS = ['Easy to do business with', 'FTE Growth', 'Profitability', 'Other'];
+var STATUSES = ['In Progress', 'Deployed', 'Phase 1 Deployed', 'On Hold', 'Completed', 'Not Started'];
+var _projectsData = {};
+var _editMode = false;
+
+function groupProjects(projects) {
+  var grouped = {};
+  for (var i=0;i<PILLARS.length;i++) grouped[PILLARS[i]] = [];
+  for (var j=0;j<projects.length;j++) {
+    var p = projects[j];
+    var pillar = p.pillar || 'Other';
+    if (!grouped[pillar]) grouped[pillar] = [];
+    grouped[pillar].push({project:p.project||'',status:p.status||'',description:p.description||''});
+  }
+  return grouped;
+}
+
+function statusClass(s) {
+  if (!s) return 'status-not-started';
+  var lc = s.toLowerCase().replace(/\s+/g,'-');
+  if (lc.indexOf('phase')>=0) return 'status-phase-1-deployed';
+  if (lc==='deployed') return 'status-deployed';
+  if (lc==='in-progress') return 'status-in-progress';
+  if (lc==='on-hold') return 'status-on-hold';
+  if (lc==='completed') return 'status-completed';
+  return 'status-not-started';
+}
+
+function renderUpdates(editMode) {
+  var container = document.getElementById('updatesSection');
+  var html = '';
+  for (var pi=0;pi<PILLARS.length;pi++) {
+    var pillar = PILLARS[pi];
+    var rows = _projectsData[pillar] || [];
+    html += '<div class="updates-block" data-pillar="'+pillar+'">';
+    html += '<div class="pillar-header">'+pillar+'</div>';
+    html += '<table class="updates-tbl"><thead><tr><th style="width:25%">Project</th><th>Status / Description</th>';
+    if (editMode) html += '<th style="width:40px"></th>';
+    html += '</tr></thead><tbody>';
+    if (rows.length===0 && !editMode) {
+      html += '<tr><td colspan="'+(editMode?3:2)+'" style="text-align:center;color:var(--text-muted);padding:16px">No updates</td></tr>';
+    }
+    for (var ri=0;ri<rows.length;ri++) {
+      var r = rows[ri];
+      html += '<tr data-pillar="'+pillar+'" data-idx="'+ri+'">';
+      if (editMode) {
+        html += '<td><input class="edit-input proj-name-input" value="'+(r.project||'').replace(/"/g,'&quot;')+'" placeholder="Project name"></td>';
+        html += '<td><select class="edit-select proj-status-select">';
+        for (var si=0;si<STATUSES.length;si++) {
+          html += '<option'+(STATUSES[si]===r.status?' selected':'')+'>'+STATUSES[si]+'</option>';
+        }
+        html += '</select><textarea class="edit-textarea proj-desc-input" placeholder="Description">'+(r.description||'').replace(/</g,'&lt;')+'</textarea></td>';
+        html += '<td><button class="btn-del-row" onclick="deleteRow(\''+pillar.replace(/'/g,"\\'")+'\','+ri+')">&times;</button></td>';
+      } else {
+        html += '<td class="proj-name">'+escH(r.project)+'</td>';
+        html += '<td class="proj-desc"><span class="status-badge '+statusClass(r.status)+'">'+escH(r.status||'—')+'</span><br>'+escH(r.description)+'</td>';
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    if (editMode) {
+      html += '<button class="btn-add-row" onclick="addRow(\''+pillar.replace(/'/g,"\\'")+'\')">+ Add Row</button>';
+    }
+    html += '</div>';
+  }
+  container.innerHTML = html;
+  document.getElementById('saveBar').style.display = editMode ? 'flex' : 'none';
+}
+
+function escH(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toggleEditMode() {
+  if (_editMode) {
+    // Collect data from inputs before exiting
+    collectFromInputs();
+  }
+  _editMode = !_editMode;
+  var fab = document.getElementById('editFab');
+  fab.classList.toggle('active', _editMode);
+  fab.innerHTML = _editMode ? '&#10005;' : '&#9998;';
+  renderUpdates(_editMode);
+}
+
+function collectFromInputs() {
+  for (var pi=0;pi<PILLARS.length;pi++) {
+    var pillar = PILLARS[pi];
+    var block = document.querySelector('[data-pillar="'+pillar+'"].updates-block');
+    if (!block) continue;
+    var trs = block.querySelectorAll('tbody tr[data-pillar]');
+    var rows = [];
+    trs.forEach(function(tr) {
+      var name = tr.querySelector('.proj-name-input');
+      var status = tr.querySelector('.proj-status-select');
+      var desc = tr.querySelector('.proj-desc-input');
+      if (name) {
+        rows.push({project:name.value.trim(), status:status?status.value:'', description:desc?desc.value.trim():''});
+      }
+    });
+    _projectsData[pillar] = rows;
+  }
+}
+
+function addRow(pillar) {
+  collectFromInputs();
+  if (!_projectsData[pillar]) _projectsData[pillar] = [];
+  _projectsData[pillar].push({project:'', status:'In Progress', description:''});
+  renderUpdates(true);
+}
+
+function deleteRow(pillar, idx) {
+  collectFromInputs();
+  if (_projectsData[pillar]) _projectsData[pillar].splice(idx, 1);
+  renderUpdates(true);
+}
+
+function saveUpdates() {
+  collectFromInputs();
+  var allProjects = [];
+  for (var pi=0;pi<PILLARS.length;pi++) {
+    var pillar = PILLARS[pi];
+    var rows = _projectsData[pillar] || [];
+    for (var ri=0;ri<rows.length;ri++) {
+      if (rows[ri].project.trim() || rows[ri].description.trim()) {
+        allProjects.push({pillar:pillar, project:rows[ri].project, status:rows[ri].status, description:rows[ri].description});
+      }
+    }
+  }
+  var statusEl = document.getElementById('saveStatus');
+  statusEl.textContent = 'Saving...';
+  fetch('/api/report', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({month:currentMonth, projects:allProjects})
+  }).then(function(r){return r.json();}).then(function(d){
+    if (d.error) { statusEl.textContent = 'Error: '+d.error; }
+    else { statusEl.textContent = 'Saved!'; setTimeout(function(){statusEl.textContent='';},3000); }
+  }).catch(function(e){
+    statusEl.textContent = 'Error: '+e.message;
+  });
 }
 </script>
 </body>
