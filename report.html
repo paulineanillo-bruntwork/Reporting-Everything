@@ -456,7 +456,13 @@ Promise.all([
   var hlCharts = [
     { label:'Active Staff FTE - as at start of month', col:C.activeFTE, color:'#2563eb', type:'bar', slice:fteSlice, labels:fteLabels },
     { label:'Net FTE Gain/Loss', col:null, color:'#7c3aed', type:'bar', slice:curSlice, labels:curLabels, compute:function(m){ var h=pn(m[C.totalHires]),l=pn(m[C.churnedFTE]); return (h!==null&&l!==null)?Math.round((h-l)*100)/100:null; } },
-    { label:'FTEs Hired', col:C.totalHires, color:'#059669', type:'bar', slice:curSlice, labels:curLabels },
+    { label:'FTEs Hired', col:C.totalHires, color:'#059669', type:'bar', slice:curSlice, labels:curLabels, stacked:true,
+      stackCols:[
+        { label:'New', col:C.newClientHires, color:'#2563eb' },
+        { label:'Existing', col:C.newClientFTE, color:'#059669' },
+        { label:'Backfill', col:C.backfillFTE, color:'#d97706' }
+      ]
+    },
     { label:'Lost FTEs', col:C.churnedFTE, color:'#dc2626', type:'bar', slice:curSlice, labels:curLabels }
   ];
   var hlHtml = '';
@@ -466,18 +472,50 @@ Promise.all([
   document.getElementById('highlightCharts').innerHTML = hlHtml;
   for (var hj=0;hj<hlCharts.length;hj++) {
     var hc = hlCharts[hj];
-    var hData = hc.compute ? hc.slice.map(hc.compute) : hc.slice.map(function(m){return pn(m[hc.col]);});
-    var hds = makeDS(hc);
-    hds.data = hData;
-    hds.datalabels = { display:true, anchor:'end', align:'end', color:hc.color, font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?Number(v).toLocaleString():'';} };
-    // For net FTE, color bars green/red based on value
-    if (hc.label === 'Net FTE Gain/Loss') {
-      hds.backgroundColor = hData.map(function(v){ return v>=0 ? 'rgba(5,150,105,0.65)' : 'rgba(220,38,38,0.65)'; });
-      hds.borderColor = hData.map(function(v){ return v>=0 ? '#059669' : '#dc2626'; });
-      hds.datalabels.color = hData.map(function(v){ return v>=0 ? '#059669' : '#dc2626'; });
-    }
     var hCtx = document.getElementById('hlchart_'+hj);
-    if (hCtx) {
+    if (!hCtx) continue;
+
+    if (hc.stacked && hc.stackCols) {
+      // Stacked bar chart with breakdown
+      var stackDatasets = [];
+      for (var si=0;si<hc.stackCols.length;si++) {
+        var sc = hc.stackCols[si];
+        var sData = hc.slice.map(function(m){return pn(m[sc.col]);});
+        stackDatasets.push({
+          type:'bar', label:sc.label, data:sData,
+          backgroundColor:hexAlpha(sc.color,0.7), borderColor:sc.color, borderWidth:1, borderRadius:2,
+          datalabels:{display:false}
+        });
+      }
+      // Total datalabel on top via hidden dataset
+      var totals = hc.slice.map(function(m){
+        var t=0; for(var k=0;k<hc.stackCols.length;k++){var v=pn(m[hc.stackCols[k].col]);if(v)t+=v;} return Math.round(t*100)/100;
+      });
+      stackDatasets.push({
+        type:'bar', label:'Total', data:totals,
+        backgroundColor:'rgba(0,0,0,0)', borderColor:'rgba(0,0,0,0)', borderWidth:0,
+        datalabels:{display:true, anchor:'end', align:'end', color:'#1e293b', font:{size:9,weight:'bold'}, formatter:function(v){return v?Number(v).toLocaleString():'';}}
+      });
+      var stackOpts = chartOpts();
+      stackOpts.plugins.legend = {display:true, position:'top', labels:{boxWidth:10,font:{size:10},filter:function(item){return item.text!=='Total';}}};
+      stackOpts.scales.x.stacked = true;
+      stackOpts.scales.y.stacked = true;
+      new Chart(hCtx.getContext('2d'), {
+        type:'bar',
+        data:{labels:hc.labels, datasets:stackDatasets},
+        options:stackOpts
+      });
+    } else {
+      var hData = hc.compute ? hc.slice.map(hc.compute) : hc.slice.map(function(m){return pn(m[hc.col]);});
+      var hds = makeDS(hc);
+      hds.data = hData;
+      hds.datalabels = { display:true, anchor:'end', align:'end', color:hc.color, font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?Number(v).toLocaleString():'';} };
+      // For net FTE, color bars green/red based on value
+      if (hc.label === 'Net FTE Gain/Loss') {
+        hds.backgroundColor = hData.map(function(v){ return v>=0 ? 'rgba(5,150,105,0.65)' : 'rgba(220,38,38,0.65)'; });
+        hds.borderColor = hData.map(function(v){ return v>=0 ? '#059669' : '#dc2626'; });
+        hds.datalabels.color = hData.map(function(v){ return v>=0 ? '#059669' : '#dc2626'; });
+      }
       new Chart(hCtx.getContext('2d'), {
         type: hc.type==='bar'?'bar':'line',
         data:{labels:hc.labels, datasets:[hds]},
