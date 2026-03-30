@@ -2228,8 +2228,9 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       updates['Role Churn Rate'] = { col: 35, value: Math.round((_lostFTEs / startOfPeriodFTE) * 10000) / 10000 };
     }
 
-    // Col 2: Active Staff Headcount Per Admin Staff = next month Active FTE / BW Admin Staff
+    // Col 2: Active Staff Headcount Per Admin Staff = Active FTE / BW Admin Staff
     var adminStaff = updates['BW Admin Staff'] ? updates['BW Admin Staff'].value : (parseSheetNum(dataRows[targetRowIdx][5]) || 0);
+    var currentActiveFTE = startOfPeriodFTE;
     if (adminStaff > 0 && currentActiveFTE > 0) {
       updates['Active Staff Per Admin'] = { col: 2, value: Math.round((currentActiveFTE / adminStaff) * 100) / 100 };
     }
