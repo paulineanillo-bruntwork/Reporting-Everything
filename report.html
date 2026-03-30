@@ -224,7 +224,6 @@ td.q-backlog-collapsed{background:#f8fafc}
 <!-- Quarterly Roadmap Section -->
 <div class="section">
   <div class="section-title"><span class="dot" style="background:var(--purple)"></span> Quarterly Roadmap</div>
-  <div id="qLegend" style="display:flex;gap:16px;margin-bottom:10px;flex-wrap:wrap"></div>
   <div class="q-table-wrap" id="quarterlyGrid"></div>
   <div id="quarterlySaveBar" class="save-bar" style="display:none">
     <button class="btn-copy-prev" id="copyPrevQuarterly" onclick="copyPrevQuarterly()">&#8592; Copy from previous month</button>
@@ -894,17 +893,6 @@ function getQColor(status) {
   }
   return Q_COLORS[0]; // grey default
 }
-
-// Render legend
-(function(){
-  var leg = document.getElementById('qLegend');
-  var html = '';
-  for (var i = 0; i < Q_COLORS.length; i++) {
-    var c = Q_COLORS[i];
-    html += '<span class="q-status-tag" style="background:'+c.bg+';color:'+c.text+'">'+c.label+'</span>';
-  }
-  leg.innerHTML = html;
-})();
 
 var BACKLOG_KEY = 'Backlog';
 var _backlogOpen = false;
