@@ -202,6 +202,7 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 <!-- Quarterly Roadmap Section -->
 <div class="section">
   <div class="section-title"><span class="dot" style="background:var(--purple)"></span> Quarterly Roadmap</div>
+  <div id="qLegend" style="display:flex;gap:16px;margin-bottom:10px;flex-wrap:wrap"></div>
   <div class="q-table-wrap" id="quarterlyGrid"></div>
   <div id="quarterlySaveBar" class="save-bar" style="display:none">
     <button class="btn-save" onclick="saveQuarterly()">Save Quarterly Roadmap</button>
@@ -788,12 +789,10 @@ function saveUpdates() {
 // === Quarterly Roadmap Section ===
 var Q_CATEGORIES = ['Easy to do business with', 'FTE Growth', 'Profitability', 'Other'];
 var Q_COLORS = [
-  { name:'grey', hex:'#94a3b8', label:'Not Started' },
-  { name:'blue', hex:'#3b82f6', label:'In Progress' },
-  { name:'green', hex:'#22c55e', label:'On Track' },
-  { name:'orange', hex:'#f59e0b', label:'At Risk' },
-  { name:'emerald', hex:'#059669', label:'Completed' },
-  { name:'red', hex:'#ef4444', label:'Blocked' }
+  { name:'lightgreen', hex:'#4ade80', label:'In Progress' },
+  { name:'darkgreen', hex:'#15803d', label:'Completed' },
+  { name:'orange', hex:'#f59e0b', label:'On Hold' },
+  { name:'red', hex:'#ef4444', label:'Cancelled' }
 ];
 var _quarterlyData = {}; // keyed by "quarter|category" → array of goals
 var _quarterLabels = [];
@@ -848,6 +847,17 @@ function getQColor(status) {
   }
   return Q_COLORS[0]; // grey default
 }
+
+// Render legend
+(function(){
+  var leg = document.getElementById('qLegend');
+  var html = '';
+  for (var i = 0; i < Q_COLORS.length; i++) {
+    var c = Q_COLORS[i];
+    html += '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted)"><span class="q-status-dot" style="background:'+c.hex+'"></span>'+c.label+'</span>';
+  }
+  leg.innerHTML = html;
+})();
 
 function loadQuarterlyGoals() {
   _quarterLabels = computeDisplayQuarters(currentMonth);
@@ -968,7 +978,7 @@ function collectQuarterlyInputs() {
 function addQuarterlyGoal(key) {
   collectQuarterlyInputs();
   if (!_quarterlyData[key]) _quarterlyData[key] = [];
-  _quarterlyData[key].push({ goal: '', status: 'grey', notes: '' });
+  _quarterlyData[key].push({ goal: '', status: 'lightgreen', notes: '' });
   renderQuarterly(true);
 }
 
