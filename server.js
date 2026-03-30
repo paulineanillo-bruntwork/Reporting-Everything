@@ -2151,6 +2151,15 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       });
       console.log('[KPI Generate] New Client Jobs: ' + newClientJobs.length + ' (excluded BruntWork: ' + (allJobResults.length - newClientJobs.length) + ')');
       updates['New Client Jobs Opened'] = { col: 9, value: newClientJobs.length };
+
+      // Filter: job_source = "Existing Client" (case-insensitive), exclude BruntWork billing
+      var existingClientJobs = allJobResults.filter(function(j) {
+        var src = (j.properties.job_source || '').toLowerCase();
+        var billing = (j.properties.client_billing_name || '').toLowerCase();
+        return (src === 'existing client' || src === 'existing_client' || src === 'existing') && billing.indexOf('bruntwork') === -1;
+      });
+      console.log('[KPI Generate] Existing Client Jobs: ' + existingClientJobs.length);
+      updates['Jobs Opened (Existing Clients)'] = { col: 41, value: existingClientJobs.length };
     } catch (jobsErr) {
       console.error('[KPI Generate] Jobs fetch failed:', jobsErr.message);
       errors.push('Jobs: ' + jobsErr.message);
