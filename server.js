@@ -2366,11 +2366,37 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       updates['New Client FTE Conv Rate'] = { col: 49, value: Math.round((newClientHires / prevMQLs) * 10000) / 10000 };
     }
 
-    // ===== Active FTE: Col 4 for NEXT month = current month Col 4 + this month's net FTE =====
-    // e.g. Get for March writes to April's Col 4: March value (5565) + March net FTE (+130.25)
-    console.log('[KPI Generate] Computing Active FTE for next month after ' + month + '...');
+    // ===== Active FTE: First recalculate CURRENT month's Col 4 from prev month, then compute next month =====
+    console.log('[KPI Generate] Computing Active FTE for ' + month + ' and next month...');
     try {
-      var currentCol4 = parseSheetNum(dataRows[targetRowIdx][4]) || 0;
+      var currentCol4;
+      // Step 1: Recalculate current month's Col 4 = prev month Col 4 + prev month net FTE
+      if (targetRowIdx > 0) {
+        var prevCol4 = parseSheetNum(dataRows[targetRowIdx - 1][4]) || 0;
+        var prevHires = parseSheetNum(dataRows[targetRowIdx - 1][12]) || 0;
+        var prevChurnedFTE = parseSheetNum(dataRows[targetRowIdx - 1][34]) || 0;
+        var prevNetFTE = prevHires - prevChurnedFTE;
+        currentCol4 = Math.round((prevCol4 + prevNetFTE) * 100) / 100;
+        // Write corrected value to current month's Col 4
+        var currentCell = KPI_SOURCE_TAB + '!' + colLetter(4) + sheetRow;
+        await sheetsUpdate(KPI_SOURCE_SHEET_ID, currentCell, [[currentCol4]]);
+        console.log('[KPI Generate] Recalculated current month Col 4: ' + currentCol4 + ' (prev ' + prevCol4 + ' + prevNet ' + prevNetFTE + ' [hires ' + prevHires + ' - churned ' + prevChurnedFTE + '])');
+      } else {
+        currentCol4 = parseSheetNum(dataRows[targetRowIdx][4]) || 0;
+        console.log('[KPI Generate] First month row, using existing Col 4: ' + currentCol4);
+      }
+
+      // Update startOfPeriodFTE and dependent calculations with corrected value
+      startOfPeriodFTE = currentCol4;
+      currentActiveFTE = currentCol4;
+      if (startOfPeriodFTE > 0) {
+        updates['Role Churn Rate'] = { col: 35, value: Math.round((_lostFTEs / startOfPeriodFTE) * 10000) / 10000 };
+      }
+      if (adminStaff > 0 && currentActiveFTE > 0) {
+        updates['Active Staff Per Admin'] = { col: 2, value: Math.round((currentActiveFTE / adminStaff) * 100) / 100 };
+      }
+
+      // Step 2: Compute next month's Col 4 = current month Col 4 + this month's net FTE
       var netFTE = _totalFTEHires - _lostFTEs;
       var nextActiveFTE = Math.round((currentCol4 + netFTE) * 100) / 100;
       var nextRowIdx = targetRowIdx + 1;
@@ -2378,7 +2404,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
         var nextSheetRow = nextRowIdx + 4;
         var nextCell = KPI_SOURCE_TAB + '!' + colLetter(4) + nextSheetRow;
         await sheetsUpdate(KPI_SOURCE_SHEET_ID, nextCell, [[nextActiveFTE]]);
-        console.log('[KPI Generate] Wrote Active FTE ' + nextActiveFTE + ' to next month row ' + nextSheetRow + ' (' + currentCol4 + ' + net ' + netFTE + ')');
+        console.log('[KPI Generate] Wrote next month Active FTE ' + nextActiveFTE + ' to row ' + nextSheetRow + ' (' + currentCol4 + ' + net ' + netFTE + ')');
       }
     } catch (activErr) {
       console.error('[KPI Generate] Active FTE calc failed:', activErr.message);
