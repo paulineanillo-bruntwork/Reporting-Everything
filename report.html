@@ -64,8 +64,8 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .trend-toggle:hover{background:#f1f5f9}
 .trend-toggle .arrow{transition:transform .2s;display:inline-block}
 .trend-toggle.open .arrow{transform:rotate(180deg)}
-.trend-chart{display:none;padding:16px;border-top:1px solid var(--border)}
-.trend-chart.open{display:block}
+.trend-chart{display:block;padding:16px;border-top:1px solid var(--border)}
+.trend-chart.closed{display:none}
 .trend-chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .trend-chart-item{position:relative}
 .trend-chart-item h4{font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px}
@@ -102,7 +102,7 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 <!-- Highlight Panels -->
 <div class="highlight-grid" id="highlightPanels"></div>
 <div class="sub-block" style="margin-bottom:28px">
-  <div class="trend-toggle" data-target="highlightTrends" onclick="toggleTrend(this)"><span class="arrow">&#9660;</span> Show Trend</div>
+  <div class="trend-toggle open" data-target="highlightTrends" onclick="toggleTrend(this)"><span class="arrow">&#9650;</span> Hide Trend</div>
   <div class="trend-chart" id="highlightTrends"><div class="trend-chart-grid" id="highlightCharts"></div></div>
 </div>
 
@@ -453,7 +453,7 @@ function renderSubBlocks(containerId, sections, cur, prev, slice, labels) {
     }
     html += '</tbody></table>';
     if (sec.charts && sec.charts.length > 0) {
-      html += '<div class="trend-toggle" data-target="'+bid+'" onclick="toggleTrend(this)"><span class="arrow">&#9660;</span> Show Trend</div>';
+      html += '<div class="trend-toggle open" data-target="'+bid+'" onclick="toggleTrend(this)"><span class="arrow">&#9650;</span> Hide Trend</div>';
       html += '<div class="trend-chart" id="'+bid+'"><div class="trend-chart-grid">';
       for (var ci=0;ci<sec.charts.length;ci++) {
         var cid = 'tchart_' + (++_chartId);
@@ -493,7 +493,7 @@ function toggleTrend(el) {
   var targetId = el.getAttribute('data-target');
   var panel = document.getElementById(targetId);
   el.classList.toggle('open');
-  panel.classList.toggle('open');
+  panel.classList.toggle('closed');
   if (el.classList.contains('open')) {
     el.querySelector('.arrow').innerHTML = '&#9650;';
     el.childNodes[1].textContent = ' Hide Trend';
