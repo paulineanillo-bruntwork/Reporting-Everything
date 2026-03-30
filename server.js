@@ -1882,6 +1882,8 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       updates['FTE Hires (Existing Client)'] = { col: 43, value: Math.round(existingClientFTEHires * 100) / 100 };
       // Col 42: Headcount Hires (Existing Client)
       updates['Headcount Hires (Existing Client)'] = { col: 42, value: existingClientHC };
+      // Col 48: New Client Hires (from job_source = "New")
+      updates['New Client Hires'] = { col: 48, value: Math.round(newClientFTEHires * 100) / 100 };
 
       console.log('[KPI Generate] FTE Hires: ' + totalFTEHires + ' (backfill=' + backfillFTEHires + ', newClient=' + newClientFTEHires + ', existing=' + existingClientFTEHires + ')');
     } catch (hireErr) {
@@ -2356,11 +2358,10 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       updates['FTE Close Rate Existing Client'] = { col: 46, value: Math.round((_existingClientFTE / prevExistingClientJobs) * 10000) / 10000 };
     }
 
-    // Col 48: New Client Hires = Total FTE - Existing Client FTE - Backfill FTE
-    var newClientHires = _totalFTEHires - _existingClientFTE - _backfillFTE;
-    updates['New Client Hires'] = { col: 48, value: Math.round(newClientHires * 100) / 100 };
+    // Col 48: New Client Hires — now set directly from job_source="New" in hire loop above
 
     // Col 49: New Client FTE Conv Rate = New Client Hires / prev month MQLs
+    var newClientHires = updates['New Client Hires'] ? updates['New Client Hires'].value : 0;
     if (prevMQLs > 0 && newClientHires > 0) {
       updates['New Client FTE Conv Rate'] = { col: 49, value: Math.round((newClientHires / prevMQLs) * 10000) / 10000 };
     }
