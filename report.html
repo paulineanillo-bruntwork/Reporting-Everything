@@ -385,15 +385,6 @@ fetch('/api/kpi-history').then(function(r){return r.json();}).then(function(data
       { label:'New Client FTE Hires', col:C.newClientFTE, color:'#2563eb', type:'bar' },
       { label:'MQL to New Client Job Opened Conversion Rate', col:C.salesConvRate, color:'#d97706', type:'line' },
       { label:'MQL to New Client FTE Conversion Rate', col:C.newClientFTEConv, color:'#7c3aed', type:'line' }
-    ]},
-    { title:'Team', rows:[
-      { label:'Recruitment Team HC', col:C.recruitHC, format:'num' },
-      { label:'BW Admin Staff (excl Digital)', col:C.adminStaff, format:'num' },
-      { label:'Active Staff Per Admin', col:C.perAdmin, format:'dec' }
-    ], charts:[
-      { label:'Recruitment Team HC', col:C.recruitHC, color:'#2563eb', type:'bar' },
-      { label:'BW Admin Staff', col:C.adminStaff, color:'#059669', type:'bar' },
-      { label:'Active Staff Per Admin', col:C.perAdmin, color:'#d97706', type:'line' }
     ]}
   ];
   renderSubBlocks('acqBlocks', acqSections, cur, prev, curSlice, curLabels);
