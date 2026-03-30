@@ -502,8 +502,7 @@ Promise.all([
   var churnSections = [
     { title:'Churn', rows:[
       { label:'Churned Staff (FTE)', col:C.churnedFTE, format:'dec', invert:true },
-      { label:'Role Churn Rate', col:C.churnRate, format:'pct', invert:true },
-      { label:'Staff Churned <1m %', col:C.churnUnder1m, format:'pctR', invert:true }
+      { label:'Role Churn Rate', col:C.churnRate, format:'pct', invert:true }
     ], charts:[
       { label:'Churned Staff (FTE)', col:C.churnedFTE, color:'#dc2626', type:'bar' },
       { label:'Role Churn Rate', col:C.churnRate, color:'#e11d48', type:'line', pct:true }
