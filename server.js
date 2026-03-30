@@ -1792,67 +1792,67 @@ app.post('/api/kpi-history/calc-ratios', async function(req, res) {
       updates['Active Staff Per Admin'] = { col: 2, value: Math.round((startOfPeriodFTE / adminStaff) * 100) / 100 };
 
     // Col 8: Show Rate = Fabius Calls / MQLs
-    if (fabiusCalls > 0 && _mqlCount > 0)
+    if (_mqlCount > 0)
       updates['Show Rate'] = { col: 8, value: Math.round((fabiusCalls / _mqlCount) * 10000) / 10000 };
 
     // Col 10: New Client Jobs vs Discovery Calls
-    if (fabiusCalls > 0 && _newClientJobs > 0)
+    if (fabiusCalls > 0)
       updates['New Client Jobs vs Discovery Calls'] = { col: 10, value: Math.round((_newClientJobs / fabiusCalls) * 10000) / 10000 };
 
     // Col 13: FTE Close Rate = Total FTE Hires / prev month MQLs
-    if (prevMQLs > 0 && _totalFTEHires > 0)
+    if (prevMQLs > 0)
       updates['FTE Close Rate'] = { col: 13, value: Math.round((_totalFTEHires / prevMQLs) * 10000) / 10000 };
 
     // Col 14: FTE Conv from Job = Total FTE Hires / prev month Jobs
-    if (prevNewClientJobs > 0 && _totalFTEHires > 0)
+    if (prevNewClientJobs > 0)
       updates['FTE Conv Close Rate from Job'] = { col: 14, value: Math.round((_totalFTEHires / prevNewClientJobs) * 10000) / 10000 };
 
     // Col 16: Cost Per Discovery Call = Ads Spend / MQLs
-    if (_mqlCount > 0 && _adsSpend > 0)
+    if (_mqlCount > 0)
       updates['Cost Per Discovery Call'] = { col: 16, value: Math.round((_adsSpend / _mqlCount) * 100) / 100 };
 
     // Col 17: Sales Conversion Rate = New Client Jobs / MQLs
-    if (_mqlCount > 0 && _newClientJobs > 0)
+    if (_mqlCount > 0)
       updates['Sales Conversion Rate'] = { col: 17, value: Math.round((_newClientJobs / _mqlCount) * 10000) / 10000 };
 
     // Col 25: Endorsements Per Recruitment HC
-    if (recruitmentHC > 0 && endorsements > 0)
+    if (recruitmentHC > 0)
       updates['Endorsements Per Recruitment HC'] = { col: 25, value: Math.round((endorsements / recruitmentHC) * 100) / 100 };
 
     // Col 27: Staff churned <1m as % of hires
-    if (prevTotalHires > 0 && under30FTE > 0)
+    if (prevTotalHires > 0)
       updates['Staff churned <1m as % of hires'] = { col: 27, value: Math.round((under30FTE / prevTotalHires) * 10000) / 10000 };
 
     // Col 33: Hires Per Sales/Recruitment HC
-    if ((recruitmentHC + salesHC) > 0 && _totalFTEHires > 0)
+    if ((recruitmentHC + salesHC) > 0)
       updates['Hires Per Sales/Recruitment HC'] = { col: 33, value: Math.round((_totalFTEHires / (recruitmentHC + salesHC)) * 100) / 100 };
 
     // Col 35: Role Churn Rate
-    if (startOfPeriodFTE > 0 && _lostFTEs > 0)
+    if (startOfPeriodFTE > 0)
       updates['Role Churn Rate'] = { col: 35, value: Math.round((_lostFTEs / startOfPeriodFTE) * 10000) / 10000 };
 
     // Col 37: Backfill rate
-    if (_lostFTEs > 0 && rolesToBackfill > 0)
+    if (_lostFTEs > 0)
       updates['Backfill rate'] = { col: 37, value: Math.round((rolesToBackfill / _lostFTEs) * 10000) / 10000 };
 
     // Col 39: Backfill Close Rate
-    if (prevChurned > 0 && _backfillFTE > 0)
+    if (prevChurned > 0)
       updates['Backfill Close Rate'] = { col: 39, value: Math.round((_backfillFTE / prevChurned) * 10000) / 10000 };
 
     // Col 44: FTE/Client Expansion Rate
-    if (existingClients > 0 && _existingClientFTE > 0)
+    if (existingClients > 0)
       updates['FTE/Client Expansion Rate'] = { col: 44, value: Math.round((_existingClientFTE / existingClients) * 10000) / 10000 };
 
     // Col 45: Jobs Expansion Rate
-    if (prevExistingClients > 0 && existingClientJobs > 0)
+    if (prevExistingClients > 0)
       updates['Jobs Expansion Rate'] = { col: 45, value: Math.round((existingClientJobs / prevExistingClients) * 10000) / 10000 };
 
     // Col 46: FTE Close Rate Existing Client
-    if (prevExistingClientJobs > 0 && _existingClientFTE > 0)
+    if (prevExistingClientJobs > 0)
       updates['FTE Close Rate Existing Client'] = { col: 46, value: Math.round((_existingClientFTE / prevExistingClientJobs) * 10000) / 10000 };
 
     // Col 49: New Client FTE Conv Rate
-    if (prevMQLs > 0 && newClientHires > 0)
+    if (prevMQLs > 0)
       updates['New Client FTE Conv Rate'] = { col: 49, value: Math.round((newClientHires / prevMQLs) * 10000) / 10000 };
 
     // Write updates
