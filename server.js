@@ -1871,6 +1871,53 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     // Delay to avoid HubSpot rate limits between major API calls
     await sleep(1000);
 
+    // ===== HubSpot Companies: Number of Existing Clients (Col 40) =====
+    // Count companies where total_active_staff_count > 0
+    console.log('[KPI Generate] Counting existing clients (companies with total_active_staff_count > 0)...');
+    try {
+      var existingClientCount = 0;
+      var ecAfter = undefined;
+      var ecHasMore = true;
+      while (ecHasMore) {
+        var ecBody = {
+          filterGroups: [{
+            filters: [
+              { propertyName: 'total_active_staff_count', operator: 'GT', value: '0' }
+            ]
+          }],
+          properties: ['name', 'total_active_staff_count'],
+          limit: 200
+        };
+        if (ecAfter) ecBody.after = ecAfter;
+        if (existingClientCount > 0) await sleep(300);
+        var ecData;
+        try {
+          ecData = await hubspotSearchObject('companies', ecBody);
+        } catch (ecRateErr) {
+          if (ecRateErr.message && ecRateErr.message.indexOf('429') !== -1) {
+            console.log('[KPI Generate] Rate limited on companies, waiting 3s...');
+            await sleep(3000);
+            ecData = await hubspotSearchObject('companies', ecBody);
+          } else {
+            throw ecRateErr;
+          }
+        }
+        existingClientCount += (ecData.results || []).length;
+        if (ecData.paging && ecData.paging.next && ecData.paging.next.after) {
+          ecAfter = ecData.paging.next.after;
+        } else {
+          ecHasMore = false;
+        }
+      }
+      console.log('[KPI Generate] Existing clients (total_active_staff_count > 0): ' + existingClientCount);
+      updates['Number of Existing Clients'] = { col: 40, value: existingClientCount };
+    } catch (ecErr) {
+      console.error('[KPI Generate] Existing clients count failed:', ecErr.message);
+      errors.push('Existing clients count failed: ' + ecErr.message);
+    }
+
+    await sleep(1000);
+
     // ===== HubSpot Tickets: Sales Agent Hired FTE =====
     console.log('[KPI Generate] Fetching Sales Agent Hired FTE for ' + month + '...');
     try {
@@ -2246,7 +2293,8 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     }
 
     // Col 44: FTE/Client Expansion Rate = Existing Client FTE / Existing Clients
-    var existingClients = parseSheetNum(dataRows[targetRowIdx][40]) || 0;
+    // Use freshly fetched value if available, otherwise fall back to sheet
+    var existingClients = (updates['Number of Existing Clients'] ? updates['Number of Existing Clients'].value : 0) || parseSheetNum(dataRows[targetRowIdx][40]) || 0;
     if (existingClients > 0 && _existingClientFTE > 0) {
       updates['FTE/Client Expansion Rate'] = { col: 44, value: Math.round((_existingClientFTE / existingClients) * 10000) / 10000 };
     }
