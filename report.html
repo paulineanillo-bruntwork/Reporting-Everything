@@ -528,7 +528,7 @@ Promise.all([
         }
       };
       var stackOpts = chartOpts();
-      stackOpts.plugins.legend = {display:true, position:'top', labels:{boxWidth:10,font:{size:10}}};
+      stackOpts.plugins.legend = {display:true, position:'bottom', labels:{boxWidth:10,font:{size:10},padding:12}};
       stackOpts.scales.x.stacked = true;
       stackOpts.scales.y.stacked = true;
       new Chart(hCtx.getContext('2d'), {
