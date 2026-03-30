@@ -796,6 +796,7 @@ var REPORT_COLUMNS = [
 ];
 
 var PROJECT_COLUMNS = ['month', 'pillar', 'project', 'status', 'description'];
+var QUARTERLY_COLUMNS = ['quarter', 'goal', 'status', 'notes'];
 
 // Google Sheets API v4 — JWT auth using built-in crypto (zero extra deps)
 var googleTokenCache = { token: null, expiry: 0 };
@@ -909,6 +910,9 @@ async function ensureSheetTabs() {
     if (existingSheets.indexOf('Project Updates') === -1) {
       requests.push({ addSheet: { properties: { title: 'Project Updates' } } });
     }
+    if (existingSheets.indexOf('Quarterly Goals') === -1) {
+      requests.push({ addSheet: { properties: { title: 'Quarterly Goals' } } });
+    }
     if (requests.length > 0) {
       var batchResp = await fetch(
         'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(REPORT_SHEET_ID) + ':batchUpdate',
@@ -943,6 +947,17 @@ async function ensureSheetTabs() {
     } catch (e) {
       // Tab may have just been created, try writing headers
       await sheetsUpdate(REPORT_SHEET_ID, 'Project Updates!A1:E1', [PROJECT_COLUMNS]);
+    }
+
+    // Ensure headers exist in Quarterly Goals
+    try {
+      var qHeaderCheck = await sheetsGet(REPORT_SHEET_ID, 'Quarterly Goals!A1:A1');
+      if (!qHeaderCheck.values || !qHeaderCheck.values[0] || qHeaderCheck.values[0][0] !== 'quarter') {
+        await sheetsUpdate(REPORT_SHEET_ID, 'Quarterly Goals!A1:D1', [QUARTERLY_COLUMNS]);
+        console.log('[Report] Wrote Quarterly Goals headers');
+      }
+    } catch (e) {
+      await sheetsUpdate(REPORT_SHEET_ID, 'Quarterly Goals!A1:D1', [QUARTERLY_COLUMNS]);
     }
 
     sheetsInitialised = true;
@@ -1040,6 +1055,49 @@ async function writeProjectUpdates(month, projects) {
   // Clear and rewrite the entire sheet
   await sheetsUpdate(REPORT_SHEET_ID, 'Project Updates!A1:E' + Math.max(newRows.length, rows.length + 1),
     newRows.concat(Array(Math.max(0, rows.length - newRows.length)).fill(['', '', '', '', '']))
+  );
+}
+
+// Read quarterly goals from sheet
+async function readQuarterlySheet() {
+  if (!REPORT_SHEET_ID) throw new Error('REPORT_SHEET_ID not configured');
+  var data = await sheetsGet(REPORT_SHEET_ID, 'Quarterly Goals!A:D');
+  var rows = data.values || [];
+  if (rows.length < 2) return [];
+  var headers = rows[0];
+  var results = [];
+  for (var i = 1; i < rows.length; i++) {
+    var row = rows[i];
+    if (!row[0]) continue;
+    var obj = {};
+    for (var j = 0; j < headers.length; j++) {
+      obj[headers[j]] = row[j] || '';
+    }
+    results.push(obj);
+  }
+  return results;
+}
+
+// Write quarterly goals for specific quarters (replace all for those quarters)
+async function writeQuarterlyGoals(quarters, goals) {
+  if (!REPORT_SHEET_ID) throw new Error('REPORT_SHEET_ID not configured');
+  var existing = await sheetsGet(REPORT_SHEET_ID, 'Quarterly Goals!A:D');
+  var rows = existing.values || [];
+  // Keep header + rows for quarters NOT being updated
+  var quartersSet = {};
+  for (var q = 0; q < quarters.length; q++) quartersSet[quarters[q]] = true;
+  var newRows = [];
+  if (rows.length > 0) newRows.push(rows[0]);
+  else newRows.push(QUARTERLY_COLUMNS);
+  for (var i = 1; i < rows.length; i++) {
+    if (!quartersSet[rows[i][0]]) newRows.push(rows[i]);
+  }
+  for (var j = 0; j < goals.length; j++) {
+    var g = goals[j];
+    newRows.push([g.quarter || '', g.goal || '', g.status || '', g.notes || '']);
+  }
+  await sheetsUpdate(REPORT_SHEET_ID, 'Quarterly Goals!A1:D' + Math.max(newRows.length, rows.length + 1),
+    newRows.concat(Array(Math.max(0, rows.length - newRows.length)).fill(['', '', '', '']))
   );
 }
 
@@ -1176,6 +1234,45 @@ app.post('/api/report', async function(req, res) {
     res.json({ success: true, month: month });
   } catch (err) {
     console.error('POST /api/report error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/quarterly?quarters=Q3 FY26,Q4 FY26 — return goals for specified quarters
+app.get('/api/quarterly', async function(req, res) {
+  try {
+    var qParam = req.query.quarters;
+    if (!qParam) return res.status(400).json({ error: 'Missing quarters parameter' });
+    if (!REPORT_SHEET_ID || !GOOGLE_SA_KEY) {
+      return res.json({ goals: [] });
+    }
+    await ensureSheetTabs();
+    var allGoals = await readQuarterlySheet();
+    var requested = qParam.split(',').map(function(s) { return s.trim(); });
+    var filtered = allGoals.filter(function(g) { return requested.indexOf(g.quarter) >= 0; });
+    res.json({ goals: filtered });
+  } catch (err) {
+    console.error('GET /api/quarterly error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/quarterly — save quarterly goals
+app.post('/api/quarterly', async function(req, res) {
+  try {
+    if (!REPORT_SHEET_ID || !GOOGLE_SA_KEY) {
+      return res.status(500).json({ error: 'Reports not configured' });
+    }
+    await ensureSheetTabs();
+    var quarters = req.body.quarters; // array of quarter labels being saved
+    var goals = req.body.goals; // array of {quarter, goal, status, notes}
+    if (!quarters || !Array.isArray(quarters) || !goals || !Array.isArray(goals)) {
+      return res.status(400).json({ error: 'Missing quarters and goals arrays' });
+    }
+    await writeQuarterlyGoals(quarters, goals);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('POST /api/quarterly error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

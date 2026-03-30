@@ -107,8 +107,30 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .save-status{font-size:13px;color:var(--text-muted)}
 .edit-hidden{display:none}
 
-@media(max-width:1100px){.highlight-grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:900px){.chart-grid{grid-template-columns:1fr}.header,.main{padding-left:20px;padding-right:20px}.highlight-grid{grid-template-columns:1fr}}
+/* Quarterly Goals */
+.quarterly-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.quarterly-col{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column}
+.quarterly-col.current-quarter{border-color:var(--blue);box-shadow:0 0 0 2px rgba(37,99,235,.15),var(--shadow)}
+.quarterly-col-header{padding:14px 16px;background:#f8fafc;border-bottom:1px solid var(--border);text-align:center}
+.quarterly-col-header h3{font-size:14px;font-weight:700;color:var(--text);margin-bottom:2px}
+.quarterly-col-header .q-dates{font-size:11px;color:var(--text-muted)}
+.quarterly-col-body{padding:12px 16px;flex:1}
+.quarterly-goal-item{padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.quarterly-goal-item:last-child{border-bottom:none}
+.quarterly-goal-item .goal-text{font-weight:500;margin-bottom:3px}
+.quarterly-goal-item .goal-notes{font-size:12px;color:var(--text-muted);line-height:1.4}
+.quarterly-goal-item .goal-status{margin-top:4px}
+.q-empty{text-align:center;color:var(--text-muted);font-size:12px;padding:20px 0}
+.q-goal-input{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;width:100%;margin-bottom:4px}
+.q-goal-input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+.q-notes-input{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;width:100%;min-height:40px;resize:vertical}
+.q-del-btn{float:right;border:none;background:transparent;color:var(--red);font-size:16px;cursor:pointer;opacity:.6;padding:0 4px}
+.q-del-btn:hover{opacity:1}
+.q-add-btn{padding:6px 12px;border:1px dashed var(--border);background:transparent;color:var(--text-muted);border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;margin-top:8px;width:100%;transition:all .15s}
+.q-add-btn:hover{border-color:var(--blue);color:var(--blue)}
+
+@media(max-width:1100px){.quarterly-grid{grid-template-columns:repeat(2,1fr)}.highlight-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:900px){.chart-grid{grid-template-columns:1fr}.header,.main{padding-left:20px;padding-right:20px}.highlight-grid{grid-template-columns:1fr}.quarterly-grid{grid-template-columns:1fr}}
 @media print{.header{background:#1e293b!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.nav-links,.month-nav{display:none!important}.main{padding:16px}}
 </style>
 </head>
@@ -165,6 +187,16 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
   <div id="saveBar" class="save-bar" style="display:none">
     <button class="btn-save" onclick="saveUpdates()">Save Changes</button>
     <span id="saveStatus" class="save-status"></span>
+  </div>
+</div>
+
+<!-- Quarterly Goals Section -->
+<div class="section">
+  <div class="section-title"><span class="dot" style="background:var(--purple)"></span> <span id="quarterlyTitle">Quarterly Goals</span></div>
+  <div class="quarterly-grid" id="quarterlyGrid"></div>
+  <div id="quarterlySaveBar" class="save-bar" style="display:none">
+    <button class="btn-save" onclick="saveQuarterly()">Save Quarterly Goals</button>
+    <span id="quarterlySaveStatus" class="save-status"></span>
   </div>
 </div>
 
@@ -677,12 +709,14 @@ function toggleEditMode() {
   if (_editMode) {
     // Collect data from inputs before exiting
     collectFromInputs();
+    collectQuarterlyInputs();
   }
   _editMode = !_editMode;
   var fab = document.getElementById('editFab');
   fab.classList.toggle('active', _editMode);
   fab.innerHTML = _editMode ? '&#10005;' : '&#9998;';
   renderUpdates(_editMode);
+  renderQuarterly(_editMode);
 }
 
 function collectFromInputs() {
@@ -742,6 +776,185 @@ function saveUpdates() {
     statusEl.textContent = 'Error: '+e.message;
   });
 }
+
+// === Quarterly Goals Section ===
+var Q_STATUSES = ['Not Started', 'In Progress', 'On Track', 'At Risk', 'Completed'];
+var _quarterlyData = {}; // keyed by quarter label
+var _quarterLabels = []; // the 4 quarter labels to display
+var _currentQuarterLabel = '';
+
+function getQuarterInfo(monthKey) {
+  var parts = monthKey.split('-');
+  var yr = parseInt(parts[0]), mo = parseInt(parts[1]);
+  var qNum, fyYear;
+  if (mo >= 7 && mo <= 9) { qNum = 1; fyYear = yr + 1; }
+  else if (mo >= 10 && mo <= 12) { qNum = 2; fyYear = yr + 1; }
+  else if (mo >= 1 && mo <= 3) { qNum = 3; fyYear = yr; }
+  else { qNum = 4; fyYear = yr; }
+  return { quarter: qNum, fy: fyYear };
+}
+
+function quarterLabel(qNum, fyYear) {
+  return 'Q' + qNum + ' FY' + String(fyYear).slice(-2);
+}
+
+function quarterDateRange(qNum, fyYear) {
+  var calYear = fyYear;
+  if (qNum <= 2) calYear = fyYear - 1;
+  var monthRanges = {
+    1: ['Jul', 'Sep'], 2: ['Oct', 'Dec'], 3: ['Jan', 'Mar'], 4: ['Apr', 'Jun']
+  };
+  var r = monthRanges[qNum];
+  return r[0] + ' – ' + r[1] + ' ' + calYear;
+}
+
+function offsetQuarter(qNum, fyYear, offset) {
+  var idx = (qNum - 1) + offset;
+  var fyOff = Math.floor(idx / 4);
+  var newQ = ((idx % 4) + 4) % 4 + 1;
+  return { quarter: newQ, fy: fyYear + fyOff };
+}
+
+function computeDisplayQuarters(monthKey) {
+  var info = getQuarterInfo(monthKey);
+  var labels = [];
+  // Previous quarter, current, next, next+1
+  for (var off = -1; off <= 2; off++) {
+    var q = offsetQuarter(info.quarter, info.fy, off);
+    labels.push(quarterLabel(q.quarter, q.fy));
+  }
+  _currentQuarterLabel = quarterLabel(info.quarter, info.fy);
+  return labels;
+}
+
+function loadQuarterlyGoals() {
+  _quarterLabels = computeDisplayQuarters(currentMonth);
+  fetch('/api/quarterly?quarters=' + encodeURIComponent(_quarterLabels.join(','))).then(function(r){return r.json();}).then(function(data) {
+    var goals = data.goals || [];
+    _quarterlyData = {};
+    for (var i = 0; i < _quarterLabels.length; i++) _quarterlyData[_quarterLabels[i]] = [];
+    for (var j = 0; j < goals.length; j++) {
+      var g = goals[j];
+      if (_quarterlyData[g.quarter]) {
+        _quarterlyData[g.quarter].push({ goal: g.goal || '', status: g.status || '', notes: g.notes || '' });
+      }
+    }
+    renderQuarterly(_editMode);
+  }).catch(function(e) { console.error('Failed to load quarterly goals:', e); });
+}
+
+function renderQuarterly(editMode) {
+  var grid = document.getElementById('quarterlyGrid');
+  var html = '';
+  for (var i = 0; i < _quarterLabels.length; i++) {
+    var ql = _quarterLabels[i];
+    var isCurrent = (ql === _currentQuarterLabel);
+    // Parse quarter info from label for date range
+    var qMatch = ql.match(/Q(\d) FY(\d+)/);
+    var qNum = parseInt(qMatch[1]);
+    var fyYear = 2000 + parseInt(qMatch[2]);
+    var dateRange = quarterDateRange(qNum, fyYear);
+    var goals = _quarterlyData[ql] || [];
+
+    html += '<div class="quarterly-col' + (isCurrent ? ' current-quarter' : '') + '" data-quarter="' + ql + '">';
+    html += '<div class="quarterly-col-header"><h3>' + ql + '</h3><div class="q-dates">' + dateRange + '</div></div>';
+    html += '<div class="quarterly-col-body">';
+
+    if (editMode) {
+      for (var gi = 0; gi < goals.length; gi++) {
+        var g = goals[gi];
+        html += '<div class="quarterly-goal-item" data-qi="' + gi + '">';
+        html += '<button class="q-del-btn" onclick="deleteQuarterlyGoal(\'' + ql + '\',' + gi + ')">&times;</button>';
+        html += '<input class="q-goal-input qg-goal" value="' + escH(g.goal) + '" placeholder="Goal">';
+        html += '<select class="edit-select qg-status">';
+        for (var si = 0; si < Q_STATUSES.length; si++) {
+          html += '<option' + (Q_STATUSES[si] === g.status ? ' selected' : '') + '>' + Q_STATUSES[si] + '</option>';
+        }
+        html += '</select>';
+        html += '<textarea class="q-notes-input qg-notes" placeholder="Notes">' + escH(g.notes) + '</textarea>';
+        html += '</div>';
+      }
+      html += '<button class="q-add-btn" onclick="addQuarterlyGoal(\'' + ql + '\')">+ Add Goal</button>';
+    } else {
+      if (goals.length === 0) {
+        html += '<div class="q-empty">No goals set</div>';
+      }
+      for (var gi2 = 0; gi2 < goals.length; gi2++) {
+        var g2 = goals[gi2];
+        html += '<div class="quarterly-goal-item">';
+        html += '<div class="goal-text">' + escH(g2.goal) + '</div>';
+        html += '<div class="goal-status"><span class="status-badge ' + statusClass(g2.status) + '">' + escH(g2.status || 'Not Started') + '</span></div>';
+        if (g2.notes) html += '<div class="goal-notes">' + escH(g2.notes) + '</div>';
+        html += '</div>';
+      }
+    }
+
+    html += '</div></div>';
+  }
+  grid.innerHTML = html;
+  document.getElementById('quarterlySaveBar').style.display = editMode ? 'flex' : 'none';
+}
+
+function collectQuarterlyInputs() {
+  for (var i = 0; i < _quarterLabels.length; i++) {
+    var ql = _quarterLabels[i];
+    var col = document.querySelector('[data-quarter="' + ql + '"]');
+    if (!col) continue;
+    var items = col.querySelectorAll('.quarterly-goal-item');
+    var goals = [];
+    items.forEach(function(item) {
+      var goalInput = item.querySelector('.qg-goal');
+      var statusSelect = item.querySelector('.qg-status');
+      var notesInput = item.querySelector('.qg-notes');
+      if (goalInput) {
+        goals.push({ goal: goalInput.value.trim(), status: statusSelect ? statusSelect.value : '', notes: notesInput ? notesInput.value.trim() : '' });
+      }
+    });
+    _quarterlyData[ql] = goals;
+  }
+}
+
+function addQuarterlyGoal(quarter) {
+  collectQuarterlyInputs();
+  if (!_quarterlyData[quarter]) _quarterlyData[quarter] = [];
+  _quarterlyData[quarter].push({ goal: '', status: 'Not Started', notes: '' });
+  renderQuarterly(true);
+}
+
+function deleteQuarterlyGoal(quarter, idx) {
+  collectQuarterlyInputs();
+  if (_quarterlyData[quarter]) _quarterlyData[quarter].splice(idx, 1);
+  renderQuarterly(true);
+}
+
+function saveQuarterly() {
+  collectQuarterlyInputs();
+  var allGoals = [];
+  for (var i = 0; i < _quarterLabels.length; i++) {
+    var ql = _quarterLabels[i];
+    var goals = _quarterlyData[ql] || [];
+    for (var j = 0; j < goals.length; j++) {
+      if (goals[j].goal.trim() || goals[j].notes.trim()) {
+        allGoals.push({ quarter: ql, goal: goals[j].goal, status: goals[j].status, notes: goals[j].notes });
+      }
+    }
+  }
+  var statusEl = document.getElementById('quarterlySaveStatus');
+  statusEl.textContent = 'Saving...';
+  fetch('/api/quarterly', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ quarters: _quarterLabels, goals: allGoals })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) { statusEl.textContent = 'Error: ' + d.error; }
+    else { statusEl.textContent = 'Saved!'; setTimeout(function() { statusEl.textContent = ''; }, 3000); }
+  }).catch(function(e) {
+    statusEl.textContent = 'Error: ' + e.message;
+  });
+}
+
+// Load quarterly data on page load
+loadQuarterlyGoals();
 </script>
 </body>
 </html>
