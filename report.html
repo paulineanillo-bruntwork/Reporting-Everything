@@ -66,7 +66,11 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .trend-toggle.open .arrow{transform:rotate(180deg)}
 .trend-chart{display:none;padding:16px;border-top:1px solid var(--border)}
 .trend-chart.open{display:block}
-.trend-chart canvas{width:100%!important;height:220px!important}
+.trend-chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.trend-chart-item{position:relative}
+.trend-chart-item h4{font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px}
+.trend-chart-item canvas{width:100%!important;height:200px!important}
+@media(max-width:900px){.trend-chart-grid{grid-template-columns:1fr}}
 
 
 @media(max-width:1100px){.highlight-grid{grid-template-columns:repeat(2,1fr)}}
@@ -408,9 +412,11 @@ fetch('/api/kpi-history').then(function(r){return r.json();}).then(function(data
 
 // === Sub-block renderer ===
 var _blockId = 0;
+var _chartId = 0;
 function renderSubBlocks(containerId, sections, cur, prev, slice, labels) {
   var container = document.getElementById(containerId);
   var html = '';
+  var chartQueue = [];
   for (var s=0;s<sections.length;s++) {
     var sec = sections[s];
     var bid = 'block_' + (++_blockId);
@@ -426,31 +432,29 @@ function renderSubBlocks(containerId, sections, cur, prev, slice, labels) {
     html += '</tbody></table>';
     if (sec.charts && sec.charts.length > 0) {
       html += '<div class="trend-toggle" data-target="'+bid+'" onclick="toggleTrend(this)"><span class="arrow">&#9660;</span> Show Trend</div>';
-      html += '<div class="trend-chart" id="'+bid+'"><canvas id="canvas_'+bid+'"></canvas></div>';
+      html += '<div class="trend-chart" id="'+bid+'"><div class="trend-chart-grid">';
+      for (var ci=0;ci<sec.charts.length;ci++) {
+        var cid = 'tchart_' + (++_chartId);
+        var ch = sec.charts[ci];
+        html += '<div class="trend-chart-item"><h4>'+ch.label+'</h4><canvas id="'+cid+'"></canvas></div>';
+        chartQueue.push({ canvasId:cid, chart:ch, slice:slice, labels:labels });
+      }
+      html += '</div></div>';
     }
     html += '</div>';
   }
   container.innerHTML = html;
 
-  // Now render charts for each section that has them
-  _blockId -= sections.length;
-  for (var s2=0;s2<sections.length;s2++) {
-    var sec2 = sections[s2];
-    _blockId++;
-    if (!sec2.charts || sec2.charts.length === 0) continue;
-    var canvasId = 'canvas_block_' + _blockId;
-    var datasets = [];
-    for (var ci=0;ci<sec2.charts.length;ci++) {
-      var ch = sec2.charts[ci];
-      var data = slice.map(function(m){return pn(m[ch.col]);});
-      datasets.push(makeDS(ch));
-      datasets[datasets.length-1].data = data;
-    }
-    var ctx = document.getElementById(canvasId);
+  // Render each individual chart
+  for (var q=0;q<chartQueue.length;q++) {
+    var item = chartQueue[q];
+    var ds = makeDS(item.chart);
+    ds.data = item.slice.map(function(m){return pn(m[item.chart.col]);});
+    var ctx = document.getElementById(item.canvasId);
     if (ctx) {
       new Chart(ctx.getContext('2d'), {
-        type:'bar',
-        data:{labels:labels, datasets:datasets},
+        type: item.chart.type==='bar'?'bar':'line',
+        data:{labels:item.labels, datasets:[ds]},
         options:chartOpts()
       });
     }
