@@ -497,7 +497,7 @@ Promise.all([
       { label:'Staff Churned <1m %', col:C.churnUnder1m, format:'pctR', invert:true }
     ], charts:[
       { label:'Churned Staff (FTE)', col:C.churnedFTE, color:'#dc2626', type:'bar' },
-      { label:'Role Churn Rate', col:C.churnRate, color:'#e11d48', type:'line' }
+      { label:'Role Churn Rate', col:C.churnRate, color:'#e11d48', type:'line', pct:true }
     ]},
     { title:'Backfill', rows:[
       { label:'Offboarded Roles to be Backfilled', col:C.rolesToBackfill, format:'num' },
@@ -506,7 +506,7 @@ Promise.all([
       { label:'Backfill Close Rate (1-month conversion window)', col:C.backfillCloseRate, format:'pct' }
     ], charts:[
       { label:'Backfill FTE Hires', col:C.backfillFTE, color:'#059669', type:'bar' },
-      { label:'Backfill Rate', col:C.backfillRate, color:'#d97706', type:'line' }
+      { label:'Backfill Rate', col:C.backfillRate, color:'#d97706', type:'line', pct:true }
     ]}
   ];
   renderSubBlocks('churnBlocks', churnSections, cur, prev, curSlice, curLabels);
