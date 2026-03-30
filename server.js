@@ -1914,6 +1914,12 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     } catch (ecErr) {
       console.error('[KPI Generate] Existing clients count failed:', ecErr.message);
       errors.push('Existing clients count failed: ' + ecErr.message);
+      // Fallback: preserve existing value from sheet so downstream calcs don't break
+      var existingVal = parseSheetNum(dataRows[targetRowIdx][40]);
+      if (existingVal > 0) {
+        updates['Number of Existing Clients'] = { col: 40, value: existingVal };
+        console.log('[KPI Generate] Using existing sheet value for Existing Clients: ' + existingVal);
+      }
     }
 
     await sleep(1000);
