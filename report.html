@@ -90,8 +90,8 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .status-completed{background:#d1fae5;color:#065f46}
 .status-not-started{background:#f1f5f9;color:var(--text-muted)}
 /* Edit mode */
-.edit-fab{position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:var(--blue);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:100;border:none;transition:all .15s}
-.edit-fab:hover{background:var(--blue-dark);transform:scale(1.05)}
+.edit-fab{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:var(--blue);color:#fff;font-size:16px;cursor:pointer;border:none;transition:all .15s;opacity:.5}
+.edit-fab:hover{background:var(--blue-dark);opacity:1}
 .edit-fab.active{background:var(--red)}
 .edit-input{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;width:100%}
 .edit-input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
@@ -209,11 +209,11 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
   </div>
 </div>
 
-<!-- Edit toggle -->
-<div class="edit-fab" id="editFab" onclick="toggleEditMode()">&#9998;</div>
-
 </div><!-- /content -->
 </div><!-- /main -->
+<div style="text-align:center;padding:16px 0 32px;opacity:.7">
+  <div class="edit-fab" id="editFab" onclick="toggleEditMode()" title="Toggle edit mode">&#9998;</div>
+</div>
 <script>
 // Register datalabels but disable globally
 if (typeof ChartDataLabels !== 'undefined') Chart.register(ChartDataLabels);
