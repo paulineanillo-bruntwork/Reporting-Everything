@@ -101,6 +101,10 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 
 <!-- Highlight Panels -->
 <div class="highlight-grid" id="highlightPanels"></div>
+<div class="sub-block" style="margin-bottom:28px">
+  <div class="trend-toggle" data-target="highlightTrends" onclick="toggleTrend(this)"><span class="arrow">&#9660;</span> Show Trend</div>
+  <div class="trend-chart" id="highlightTrends"><div class="trend-chart-grid" id="highlightCharts"></div></div>
+</div>
 
 <!-- New Client FTE Acquisition Section -->
 <div class="section">
@@ -326,6 +330,38 @@ fetch('/api/kpi-history').then(function(r){return r.json();}).then(function(data
   var startFTE = Math.max(0, endFTE-13);
   var fteSlice = allMonths.slice(startFTE, endFTE);
   var fteLabels = fteSlice.map(function(m){return shortLabel(m[0]);});
+
+  // === Highlight trend charts ===
+  var hlCharts = [
+    { label:'Active Staff FTE', col:C.activeFTE, color:'#2563eb', type:'bar', slice:fteSlice, labels:fteLabels },
+    { label:'FTEs Hired', col:C.totalHires, color:'#059669', type:'bar', slice:curSlice, labels:curLabels },
+    { label:'Lost FTEs', col:C.churnedFTE, color:'#dc2626', type:'bar', slice:curSlice, labels:curLabels },
+    { label:'Net FTE Gain/Loss', col:null, color:'#7c3aed', type:'bar', slice:curSlice, labels:curLabels, compute:function(m){ var h=pn(m[C.totalHires]),l=pn(m[C.churnedFTE]); return (h!==null&&l!==null)?Math.round((h-l)*100)/100:null; } }
+  ];
+  var hlHtml = '';
+  for (var hi=0;hi<hlCharts.length;hi++) {
+    hlHtml += '<div class="trend-chart-item"><h4>'+hlCharts[hi].label+'</h4><canvas id="hlchart_'+hi+'"></canvas></div>';
+  }
+  document.getElementById('highlightCharts').innerHTML = hlHtml;
+  for (var hj=0;hj<hlCharts.length;hj++) {
+    var hc = hlCharts[hj];
+    var hData = hc.compute ? hc.slice.map(hc.compute) : hc.slice.map(function(m){return pn(m[hc.col]);});
+    var hds = makeDS(hc);
+    hds.data = hData;
+    // For net FTE, color bars green/red based on value
+    if (hc.label === 'Net FTE Gain/Loss') {
+      hds.backgroundColor = hData.map(function(v){ return v>=0 ? 'rgba(5,150,105,0.65)' : 'rgba(220,38,38,0.65)'; });
+      hds.borderColor = hData.map(function(v){ return v>=0 ? '#059669' : '#dc2626'; });
+    }
+    var hCtx = document.getElementById('hlchart_'+hj);
+    if (hCtx) {
+      new Chart(hCtx.getContext('2d'), {
+        type: hc.type==='bar'?'bar':'line',
+        data:{labels:hc.labels, datasets:[hds]},
+        options:chartOpts()
+      });
+    }
+  }
 
   // === Acquisition sub-blocks ===
   var acqSections = [
