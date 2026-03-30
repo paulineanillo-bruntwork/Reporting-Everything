@@ -416,10 +416,10 @@ fetch('/api/kpi-history').then(function(r){return r.json();}).then(function(data
       { label:'Role Churn Rate', col:C.churnRate, color:'#e11d48', type:'line' }
     ]},
     { title:'Backfill', rows:[
-      { label:'Roles to be Backfilled', col:C.rolesToBackfill, format:'num' },
+      { label:'Offboarded Roles to be Backfilled', col:C.rolesToBackfill, format:'num' },
       { label:'Backfill Rate', col:C.backfillRate, format:'pct' },
       { label:'Backfill FTE Hires', col:C.backfillFTE, format:'dec' },
-      { label:'Backfill Close Rate', col:C.backfillCloseRate, format:'pct' }
+      { label:'Backfill Close Rate (1-month conversion window)', col:C.backfillCloseRate, format:'pct' }
     ], charts:[
       { label:'Backfill FTE Hires', col:C.backfillFTE, color:'#059669', type:'bar' },
       { label:'Backfill Rate', col:C.backfillRate, color:'#d97706', type:'line' }
