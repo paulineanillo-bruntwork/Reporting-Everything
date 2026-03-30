@@ -149,6 +149,16 @@ td[data-qk].drag-over{background:rgba(37,99,235,.08);outline:2px dashed var(--bl
 .q-color-tag:hover{opacity:.8}
 .q-color-tag.selected{opacity:1;border-color:var(--text);box-shadow:0 0 0 1px rgba(0,0,0,.08)}
 
+/* Backlog column */
+.q-backlog-col{transition:width .2s ease}
+.q-backlog-collapsed{width:36px!important;cursor:pointer;position:relative}
+.q-backlog-collapsed>*{display:none}
+.q-backlog-tab{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-90deg);white-space:nowrap;font-size:11px;font-weight:700;color:var(--text-muted);letter-spacing:.5px;text-transform:uppercase;pointer-events:none}
+th.q-backlog-collapsed{background:#f1f5f9!important;cursor:pointer}
+th.q-backlog-collapsed .q-backlog-tab{display:block}
+td.q-backlog-collapsed{background:#f8fafc}
+.q-backlog-expanded{min-width:180px}
+
 @media(max-width:1100px){.q-cat-header{width:120px!important}.highlight-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:900px){.chart-grid{grid-template-columns:1fr}.header,.main{padding-left:20px;padding-right:20px}.highlight-grid{grid-template-columns:1fr}.quarterly-grid{grid-template-columns:1fr}}
 @media print{.header{background:#1e293b!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.nav-links,.month-nav{display:none!important}.main{padding:16px}}
@@ -896,15 +906,19 @@ function getQColor(status) {
   leg.innerHTML = html;
 })();
 
+var BACKLOG_KEY = 'Backlog';
+var _backlogOpen = false;
+
 function loadQuarterlyGoals() {
   _quarterLabels = computeDisplayQuarters(currentMonth);
-  fetch('/api/quarterly?quarters=' + encodeURIComponent(_quarterLabels.join(','))).then(function(r){return r.json();}).then(function(data) {
+  var fetchLabels = _quarterLabels.concat([BACKLOG_KEY]);
+  fetch('/api/quarterly?quarters=' + encodeURIComponent(fetchLabels.join(','))).then(function(r){return r.json();}).then(function(data) {
     var goals = data.goals || [];
     _quarterlyData = {};
-    // Init all cells
-    for (var i = 0; i < _quarterLabels.length; i++) {
+    // Init all cells (including Backlog)
+    for (var i = 0; i < fetchLabels.length; i++) {
       for (var c = 0; c < Q_CATEGORIES.length; c++) {
-        _quarterlyData[qKey(_quarterLabels[i], Q_CATEGORIES[c])] = [];
+        _quarterlyData[qKey(fetchLabels[i], Q_CATEGORIES[c])] = [];
       }
     }
     for (var j = 0; j < goals.length; j++) {
@@ -912,7 +926,7 @@ function loadQuarterlyGoals() {
       var cat = g.category || 'Other';
       var k = qKey(g.quarter, cat);
       if (_quarterlyData[k]) {
-        _quarterlyData[k].push({ goal: g.goal || '', status: g.status || 'grey', notes: g.notes || '' });
+        _quarterlyData[k].push({ goal: g.goal || '', status: g.status || 'lightgreen', notes: g.notes || '' });
       }
     }
     renderQuarterly(_editMode);
@@ -932,18 +946,29 @@ function renderQuarterly(editMode) {
     var dateRange = quarterDateRange(qNum, fyYear);
     html += '<th' + (isCurrent ? ' class="q-current"' : '') + '>' + ql + '<span class="q-dates">' + dateRange + '</span></th>';
   }
+  // Backlog column header
+  var blCollapsed = _backlogOpen ? '' : ' q-backlog-collapsed';
+  html += '<th class="q-backlog-col' + blCollapsed + '" onclick="toggleBacklog()" style="cursor:pointer">';
+  if (_backlogOpen) html += 'Backlog<span class="q-dates">click to hide</span>';
+  else html += '<span class="q-backlog-tab">Backlog</span>';
+  html += '</th>';
   html += '</tr></thead><tbody>';
 
   // One row per category
   for (var ci = 0; ci < Q_CATEGORIES.length; ci++) {
     var cat = Q_CATEGORIES[ci];
     html += '<tr><td class="q-cat-cell">' + cat + '</td>';
-    for (var qi2 = 0; qi2 < _quarterLabels.length; qi2++) {
-      var ql2 = _quarterLabels[qi2];
+    var allCols = _quarterLabels.concat([BACKLOG_KEY]);
+    for (var qi2 = 0; qi2 < allCols.length; qi2++) {
+      var ql2 = allCols[qi2];
       var isCur = (ql2 === _currentQuarterLabel);
+      var isBacklog = (ql2 === BACKLOG_KEY);
       var k = qKey(ql2, cat);
       var goals = _quarterlyData[k] || [];
-      html += '<td' + (isCur ? ' class="q-current-col"' : '') + ' data-qk="' + escH(k) + '">';
+      var tdClass = isCur ? 'q-current-col' : '';
+      if (isBacklog) tdClass += (tdClass ? ' ' : '') + 'q-backlog-col' + (_backlogOpen ? ' q-backlog-expanded' : ' q-backlog-collapsed');
+      html += '<td' + (tdClass ? ' class="' + tdClass + '"' : '') + ' data-qk="' + escH(k) + '">';
+      if (isBacklog && !_backlogOpen) { html += '</td>'; continue; }
 
       if (editMode) {
         for (var gi = 0; gi < goals.length; gi++) {
@@ -1071,6 +1096,12 @@ function initQDragDrop() {
   });
 }
 
+function toggleBacklog() {
+  if (_editMode) collectQuarterlyInputs();
+  _backlogOpen = !_backlogOpen;
+  renderQuarterly(_editMode);
+}
+
 function selectQColor(el) {
   var parent = el.parentElement;
   var tags = parent.querySelectorAll('.q-color-tag');
@@ -1151,10 +1182,11 @@ function copyPrevQuarterly() {
 function saveQuarterly() {
   collectQuarterlyInputs();
   var allGoals = [];
+  var allQuarters = _quarterLabels.concat([BACKLOG_KEY]);
   for (var ci = 0; ci < Q_CATEGORIES.length; ci++) {
     var cat = Q_CATEGORIES[ci];
-    for (var qi = 0; qi < _quarterLabels.length; qi++) {
-      var ql = _quarterLabels[qi];
+    for (var qi = 0; qi < allQuarters.length; qi++) {
+      var ql = allQuarters[qi];
       var k = qKey(ql, cat);
       var goals = _quarterlyData[k] || [];
       for (var j = 0; j < goals.length; j++) {
@@ -1169,7 +1201,7 @@ function saveQuarterly() {
   fetch('/api/quarterly', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ quarters: _quarterLabels, goals: allGoals })
+    body: JSON.stringify({ quarters: allQuarters, goals: allGoals })
   }).then(function(r) { return r.json(); }).then(function(d) {
     if (d.error) { statusEl.textContent = 'Error: ' + d.error; }
     else { statusEl.textContent = 'Saved!'; setTimeout(function() { statusEl.textContent = ''; }, 3000); }
