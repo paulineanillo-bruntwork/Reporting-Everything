@@ -11,16 +11,17 @@
 :root{--bg:#f4f6fb;--surface:#fff;--border:#e2e8f0;--text:#1e293b;--text-muted:#64748b;--blue:#2563eb;--blue-dark:#1e40af;--green:#059669;--green-light:#d1fae5;--red:#dc2626;--red-light:#fee2e2;--orange:#d97706;--orange-light:#fef3c7;--purple:#7c3aed;--radius:16px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
-.header{background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:28px 40px 20px;display:flex;justify-content:space-between;align-items:flex-start}
-.header h1{font-size:26px;font-weight:700;letter-spacing:-.5px;margin-bottom:4px}
-.header .subtitle{color:#94a3b8;font-size:13px}
-.back-link{display:inline-block;padding:8px 16px;background:rgba(255,255,255,.1);color:#cbd5e1;border:1px solid rgba(255,255,255,.2);border-radius:6px;font-size:13px;font-weight:500;text-decoration:none}
-.back-link:hover{background:rgba(255,255,255,.2)}
-.nav-links{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.month-nav{display:flex;gap:8px;align-items:center}
-.month-nav a{padding:6px 14px;background:rgba(255,255,255,.1);color:#cbd5e1;border:1px solid rgba(255,255,255,.2);border-radius:6px;font-size:13px;text-decoration:none;cursor:pointer}
-.month-nav a:hover{background:rgba(255,255,255,.2)}
-.month-nav .current{background:rgba(37,99,235,.3);border-color:rgba(37,99,235,.5);color:#93c5fd}
+.header{background:#fff;color:var(--text);padding:28px 40px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)}
+.header-left{display:flex;align-items:center;gap:16px}
+.header-logo{height:36px}
+.header h1{font-size:22px;font-weight:700;letter-spacing:-.3px;color:var(--text)}
+.header-right{display:flex;gap:12px;align-items:center}
+.header-link{font-size:12px;color:var(--text-muted);text-decoration:none;padding:4px 8px;border-radius:4px;transition:all .15s}
+.header-link:hover{color:var(--text);background:#f1f5f9}
+.month-nav{display:flex;gap:8px;align-items:center;margin-top:8px}
+.month-nav a{padding:6px 14px;background:#f1f5f9;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;font-size:13px;text-decoration:none;cursor:pointer;transition:all .15s}
+.month-nav a:hover{background:#e2e8f0;color:var(--text)}
+.month-nav .current{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
 .main{padding:28px 40px 60px;max-width:1400px;margin:0 auto}
 .loading{text-align:center;padding:80px 20px;color:var(--text-muted)}
 .loading .spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
@@ -168,19 +169,16 @@ td.q-backlog-collapsed{background:#f8fafc}
 </head>
 <body>
 <div class="header">
-  <div>
-    <h1 id="reportTitle">Monthly KPI Report</h1>
-    <div class="subtitle" id="reportSubtitle">Loading...</div>
-  </div>
-  <div>
-    <div class="month-nav" id="monthNav"></div>
-    <div class="nav-links" style="margin-top:8px">
-      <a href="/reports" class="back-link">Trends</a>
-      <a href="/kpi" class="back-link">KPI Tracker</a>
-      <a href="/" class="back-link">FTE Dashboard</a>
-      <a href="/adspend" class="back-link">Ad Spend</a>
-      <a href="/logout" class="back-link">Log out</a>
+  <div class="header-left">
+    <img src="https://www.bruntwork.co/wp-content/uploads/2023/01/BruntWork-logo-website.png" alt="BruntWork" class="header-logo">
+    <div>
+      <h1 id="reportTitle">Management KPI Report</h1>
+      <div class="month-nav" id="monthNav"></div>
     </div>
+  </div>
+  <div class="header-right">
+    <a href="/kpi" class="header-link">KPI Tracker</a>
+    <a href="/logout" class="header-link">Log out</a>
   </div>
 </div>
 <div class="main">
@@ -348,7 +346,7 @@ var C = {
 var MIN_MONTH = '2026-02';
 var currentMonth = getMonthParam();
 if (currentMonth < MIN_MONTH) { window.location.href = '/report?month='+MIN_MONTH; }
-document.getElementById('reportSubtitle').textContent = monthLabel(currentMonth);
+document.getElementById('reportTitle').textContent = monthLabel(currentMonth) + ' Management KPI Report';
 
 // Month nav
 var nav = document.getElementById('monthNav');
