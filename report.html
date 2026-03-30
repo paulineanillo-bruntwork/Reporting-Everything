@@ -495,12 +495,12 @@ Promise.all([
     ]},
     { title:'Sales', rows:[
       { label:'New Client Jobs Opened', col:C.newClientJobs, format:'num' },
-      { label:'New Client FTE Hires', col:C.newClientFTE, format:'dec' },
+      { label:'New Client FTE Hires', col:C.newClientHires, format:'dec' },
       { label:'MQL to New Client Job Opened Conversion Rate', col:C.salesConvRate, format:'pctR' },
       { label:'MQL to New Client FTE Conversion Rate (1 Month Conversion Window)', col:C.newClientFTEConv, format:'pctR' }
     ], charts:[
       { label:'New Client Jobs Opened', col:C.newClientJobs, color:'#059669', type:'bar' },
-      { label:'New Client FTE Hires', col:C.newClientFTE, color:'#2563eb', type:'bar' },
+      { label:'New Client FTE Hires', col:C.newClientHires, color:'#2563eb', type:'bar' },
       { label:'MQL to New Client Job Opened Conversion Rate', col:C.salesConvRate, color:'#d97706', type:'line', pct:true },
       { label:'MQL to New Client FTE Conversion Rate', col:C.newClientFTEConv, color:'#7c3aed', type:'line', pct:true }
     ]}
