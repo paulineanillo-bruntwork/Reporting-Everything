@@ -151,11 +151,13 @@ td[data-qk].drag-over{background:rgba(37,99,235,.08);outline:2px dashed var(--bl
 
 /* Backlog column */
 .q-backlog-col{transition:width .2s ease}
-.q-backlog-collapsed{width:36px!important;cursor:pointer;position:relative}
+.q-backlog-collapsed{width:40px!important;cursor:pointer;position:relative;overflow:hidden}
 .q-backlog-collapsed>*{display:none}
-.q-backlog-tab{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-90deg);white-space:nowrap;font-size:11px;font-weight:700;color:var(--text-muted);letter-spacing:.5px;text-transform:uppercase;pointer-events:none}
-th.q-backlog-collapsed{background:#f1f5f9!important;cursor:pointer}
-th.q-backlog-collapsed .q-backlog-tab{display:block}
+.q-backlog-tab{position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;text-orientation:mixed;font-size:10px;font-weight:700;color:var(--blue);letter-spacing:.5px;text-transform:uppercase;pointer-events:none;opacity:.7}
+th.q-backlog-collapsed{background:#f1f5f9!important;cursor:pointer;height:48px}
+th.q-backlog-collapsed .q-backlog-tab{display:flex}
+th.q-backlog-collapsed:hover{background:#e2e8f0!important}
+th.q-backlog-collapsed:hover .q-backlog-tab{opacity:1}
 td.q-backlog-collapsed{background:#f8fafc}
 .q-backlog-expanded{min-width:180px}
 
@@ -938,7 +940,7 @@ function renderQuarterly(editMode) {
   var blCollapsed = _backlogOpen ? '' : ' q-backlog-collapsed';
   html += '<th class="q-backlog-col' + blCollapsed + '" onclick="toggleBacklog()" style="cursor:pointer">';
   if (_backlogOpen) html += 'Backlog<span class="q-dates">click to hide</span>';
-  else html += '<span class="q-backlog-tab">Backlog</span>';
+  else html += '<span class="q-backlog-tab">Click to show Backlog</span>';
   html += '</th>';
   html += '</tr></thead><tbody>';
 
