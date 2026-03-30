@@ -189,6 +189,10 @@ td.q-backlog-collapsed{background:#f8fafc}
 
 <!-- Highlight Panels -->
 <div class="highlight-grid" id="highlightPanels"></div>
+<div style="display:flex;gap:10px;margin-bottom:20px">
+  <a href="#monthlyUpdates" style="padding:6px 14px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:12px;font-weight:600;color:var(--orange);text-decoration:none;box-shadow:var(--shadow);transition:all .15s" onmouseover="this.style.background='#fffbeb'" onmouseout="this.style.background='var(--surface)'"><span style="margin-right:4px">&#9660;</span> Monthly Updates</a>
+  <a href="#quarterlyRoadmap" style="padding:6px 14px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:12px;font-weight:600;color:var(--purple);text-decoration:none;box-shadow:var(--shadow);transition:all .15s" onmouseover="this.style.background='#f5f3ff'" onmouseout="this.style.background='var(--surface)'"><span style="margin-right:4px">&#9660;</span> Quarterly Roadmap</a>
+</div>
 <div class="sub-block" style="margin-bottom:28px">
   <div class="trend-toggle open" data-target="highlightTrends" onclick="toggleTrend(this)"><span class="arrow">&#9650;</span> Hide Trend</div>
   <div class="trend-chart" id="highlightTrends"><div class="trend-chart-grid" id="highlightCharts"></div></div>
@@ -213,7 +217,7 @@ td.q-backlog-collapsed{background:#f8fafc}
 </div>
 
 <!-- Monthly Updates Section -->
-<div class="section">
+<div class="section" id="monthlyUpdates">
   <div class="section-title"><span class="dot" style="background:var(--orange)"></span> <span id="updatesTitle">Updates</span></div>
   <div id="updatesSection"></div>
   <div id="saveBar" class="save-bar" style="display:none">
@@ -224,7 +228,7 @@ td.q-backlog-collapsed{background:#f8fafc}
 </div>
 
 <!-- Quarterly Roadmap Section -->
-<div class="section">
+<div class="section" id="quarterlyRoadmap">
   <div class="section-title"><span class="dot" style="background:var(--purple)"></span> Quarterly Roadmap</div>
   <div class="q-table-wrap" id="quarterlyGrid"></div>
   <div id="quarterlySaveBar" class="save-bar" style="display:none">
