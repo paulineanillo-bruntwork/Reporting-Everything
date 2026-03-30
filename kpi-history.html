@@ -59,6 +59,9 @@ td.editable:hover{background:#eff6ff !important}
 td.editing{padding:2px 4px}
 td.editing input{width:80px;padding:3px 6px;border:1px solid var(--blue);border-radius:3px;font-size:12px;text-align:right;outline:none;font-family:inherit}
 td.override-cell{background:var(--orange-light) !important;border-bottom-color:var(--orange) !important}
+tr.report-row td:first-child{border-left:3px solid var(--blue);background:#eff6ff}
+tr.report-row:hover td:first-child{background:#e0ecff}
+.report-badge{display:inline-block;font-size:9px;font-weight:700;color:var(--blue);background:#dbeafe;border-radius:3px;padding:1px 5px;margin-left:6px;vertical-align:middle;letter-spacing:.3px}
 @media(max-width:900px){.header,.main{padding-left:16px;padding-right:16px}}
 </style>
 </head>
@@ -145,6 +148,9 @@ td.override-cell{background:var(--orange-light) !important;border-bottom-color:v
 <script>
 var editingRows = {}; // colIndex -> true when row is in edit mode
 var monthLabels = []; // month labels from data
+
+// Columns used in the monthly report template (charts/tables)
+var REPORT_COLS = {4:1,6:1,9:1,12:1,15:1,16:1,17:1,34:1,35:1,36:1,37:1,38:1,39:1,40:1,41:1,42:1,44:1,45:1,48:1,49:1};
 
 function formatCell(val) {
   if (val === undefined || val === null || val === '') return '<span class="empty-cell">-</span>';
@@ -394,7 +400,8 @@ fetch('/api/kpi-history').then(function(r) { return r.json(); })
       h += '<tr><td colspan="' + (months.length + 1) + '" style="padding:8px 10px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;background:' + getTeamBg(currentTeam) + ';color:' + getTeamColor(currentTeam) + ';border-bottom:2px solid ' + getTeamColor(currentTeam) + '">' + escHtml(currentTeam) + '</td></tr>';
     }
 
-    h += '<tr id="row-' + ci + '"><td title="' + escAttr(col.source) + '"><span class="edit-toggle" id="edit-btn-' + ci + '" title="Click to edit this row" onclick="toggleEdit(' + ci + ')">&#9998;</span>' + escHtml(col.name) + '</td>';
+    var isReport = REPORT_COLS[ci] ? true : false;
+    h += '<tr id="row-' + ci + '"' + (isReport ? ' class="report-row"' : '') + '><td title="' + escAttr(col.source) + '"><span class="edit-toggle" id="edit-btn-' + ci + '" title="Click to edit this row" onclick="toggleEdit(' + ci + ')">&#9998;</span>' + escHtml(col.name) + (isReport ? '<span class="report-badge">REPORT</span>' : '') + '</td>';
     for (var mj = 0; mj < months.length; mj++) {
       var rawVal = months[mj][ci];
       var rawStr = (rawVal === undefined || rawVal === null) ? '' : String(rawVal);
