@@ -497,7 +497,16 @@
 
 <!-- ==================== HISTORICAL RECORDS ==================== -->
 <div id="tab-history" class="tab-content">
-  <div class="year-btns" id="yearBtns"></div>
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+    <div class="year-btns" id="yearBtns" style="margin-bottom:0"></div>
+    <select id="histJobSourceFilter" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;background:#fff">
+      <option value="all">All Job Sources</option>
+      <option value="New">New</option>
+      <option value="Existing">Existing</option>
+      <option value="Backfill">Backfill</option>
+      <option value="Back Up">Back Up</option>
+    </select>
+  </div>
   <div class="chart-panel">
     <div class="chart-title">Historical FTE - New Hires vs Churn by Contract Type</div>
     <div class="chart-wrap"><canvas id="histChart" height="120"></canvas></div>
@@ -713,6 +722,12 @@ function renderRunningUpdate() {
     renderRunningUpdate();
     render();
   });
+  document.getElementById('histJobSourceFilter').addEventListener('change', function() {
+    if (histRendered) {
+      updateHistCharts();
+      updateHistTable();
+    }
+  });
 })();
 
 var fteChart, netChart;
@@ -924,6 +939,9 @@ var activeYears = {};
 function getHistYears() {
   var years = {};
   HIST_DATA.forEach(function(d) { years[d.m.slice(0,4)] = true; });
+  // Also include years from live data in case filtered view has different range
+  RAW_DATA.forEach(function(r) { var mk = getMonthKey(r.d); years[mk.slice(0,4)] = true; });
+  OFFBOARD_DATA.forEach(function(r) { var mk = getMonthKey(r.o + 'T00:00:00Z'); years[mk.slice(0,4)] = true; });
   return Object.keys(years).sort();
 }
 
@@ -949,8 +967,58 @@ function renderHistory() {
   updateHistTable();
 }
 
+function getSelectedHistJobSource() {
+  var el = document.getElementById('histJobSourceFilter');
+  return el ? el.value : 'all';
+}
+
+function buildHistFromLive(jsFilter) {
+  // Build monthly aggregates from RAW_DATA/OFFBOARD_DATA filtered by job source
+  var buckets = {};
+  RAW_DATA.forEach(function(r) {
+    if (!matchesJobSource(r, jsFilter)) return;
+    var mk = getMonthKey(r.d);
+    if (!buckets[mk]) buckets[mk] = { h:{ft:0,pt:0,pt20:0,ob:0,pb:0,hc:0,fte:0}, c:{ft:0,pt:0,pt20:0,ob:0,pb:0,hc:0,fte:0} };
+    var w = getFTEWeight(r.t);
+    var b = buckets[mk];
+    b.h.hc++;
+    b.h.fte += w;
+    if (r.t === 'Full-Time') b.h.ft++;
+    else if (r.t === 'Part-Time') b.h.pt++;
+    else if (r.t === 'Part-Time-Under-20-Hours') b.h.pt20++;
+    else if (r.t === 'Output-Based') b.h.ob++;
+    else if (r.t === 'Project-Based') b.h.pb++;
+  });
+  OFFBOARD_DATA.forEach(function(r) {
+    if (!matchesJobSource(r, jsFilter)) return;
+    var mk = getMonthKey(r.o + 'T00:00:00Z');
+    if (!buckets[mk]) buckets[mk] = { h:{ft:0,pt:0,pt20:0,ob:0,pb:0,hc:0,fte:0}, c:{ft:0,pt:0,pt20:0,ob:0,pb:0,hc:0,fte:0} };
+    var w = getFTEWeight(r.t);
+    var b = buckets[mk];
+    b.c.hc++;
+    b.c.fte += w;
+    if (r.t === 'Full-Time') b.c.ft++;
+    else if (r.t === 'Part-Time') b.c.pt++;
+    else if (r.t === 'Part-Time-Under-20-Hours') b.c.pt20++;
+    else if (r.t === 'Output-Based') b.c.ob++;
+    else if (r.t === 'Project-Based') b.c.pb++;
+  });
+  var r2 = function(v) { return Math.round(v * 100) / 100; };
+  return Object.keys(buckets).sort().map(function(mk) {
+    var b = buckets[mk];
+    return {
+      m: mk,
+      h: { ft:b.h.ft, pt:b.h.pt, pt20:b.h.pt20, ob:b.h.ob, pb:b.h.pb, hc:b.h.hc, fte:r2(b.h.fte) },
+      c: { ft:b.c.ft, pt:b.c.pt, pt20:b.c.pt20, ob:b.c.ob, pb:b.c.pb, hc:b.c.hc, fte:r2(b.c.fte) },
+      net: r2(b.h.fte - b.c.fte)
+    };
+  });
+}
+
 function getFilteredHist() {
-  return HIST_DATA.filter(function(d) { return activeYears[d.m.slice(0,4)]; });
+  var jsFilter = getSelectedHistJobSource();
+  var sourceData = (jsFilter === 'all') ? HIST_DATA : buildHistFromLive(jsFilter);
+  return sourceData.filter(function(d) { return activeYears[d.m.slice(0,4)]; });
 }
 
 function updateHistCharts() {
