@@ -7,15 +7,17 @@ function getFTEWeight(contractType) {
 
 function getSundayOfWeek(dateStr) {
   var d = new Date(dateStr);
-  var day = d.getUTCDay();
-  d.setUTCDate(d.getUTCDate() - day);
-  d.setUTCHours(0, 0, 0, 0);
-  return d.toISOString().slice(0, 10);
+  var gmt8 = new Date(d.getTime() + (8 * 60 * 60 * 1000));
+  var day = gmt8.getUTCDay();
+  gmt8.setUTCDate(gmt8.getUTCDate() - day);
+  gmt8.setUTCHours(0, 0, 0, 0);
+  return gmt8.toISOString().slice(0, 10);
 }
 
 function getMonthKey(dateStr) {
   var d = new Date(dateStr);
-  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+  var gmt8 = new Date(d.getTime() + (8 * 60 * 60 * 1000));
+  return gmt8.getUTCFullYear() + '-' + String(gmt8.getUTCMonth() + 1).padStart(2, '0');
 }
 
 function formatWeek(dateStr) {

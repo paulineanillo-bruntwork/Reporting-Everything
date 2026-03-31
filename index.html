@@ -541,7 +541,8 @@ function getSundayOfWeek(dateStr) {
 
 function getMonthKey(dateStr) {
   var d = new Date(dateStr);
-  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+  var gmt8 = new Date(d.getTime() + (8 * 60 * 60 * 1000));
+  return gmt8.getUTCFullYear() + '-' + String(gmt8.getUTCMonth() + 1).padStart(2, '0');
 }
 
 function formatWeek(dateStr) {
