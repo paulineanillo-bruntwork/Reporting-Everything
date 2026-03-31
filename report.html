@@ -162,7 +162,12 @@ th.q-backlog-collapsed:hover .q-backlog-tab{opacity:1}
 td.q-backlog-collapsed{background:#f8fafc}
 .q-backlog-expanded{min-width:180px}
 
-@media(max-width:1100px){.q-cat-header{width:120px!important}.highlight-grid{grid-template-columns:repeat(2,1fr)}}
+.side-nav{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:100;display:flex;flex-direction:column;gap:2px;padding:8px 0}
+.side-nav a{display:block;padding:8px 14px 8px 12px;font-size:11px;font-weight:600;color:var(--text-muted);text-decoration:none;border-left:3px solid transparent;transition:all .15s;white-space:nowrap;background:rgba(255,255,255,.9);backdrop-filter:blur(8px)}
+.side-nav a:hover{color:var(--text);background:#f1f5f9;border-left-color:var(--blue)}
+.side-nav a.active{color:var(--blue);border-left-color:var(--blue);background:#eff6ff}
+.side-nav .nav-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
+@media(max-width:1100px){.q-cat-header{width:120px!important}.highlight-grid{grid-template-columns:repeat(2,1fr)}.side-nav{display:none}}
 @media(max-width:900px){.chart-grid{grid-template-columns:1fr}.header,.main{padding-left:20px;padding-right:20px}.highlight-grid{grid-template-columns:1fr}.quarterly-grid{grid-template-columns:1fr}}
 @media print{.header{background:#1e293b!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.nav-links,.month-nav{display:none!important}.main{padding:16px}}
 </style>
@@ -182,33 +187,37 @@ td.q-backlog-collapsed{background:#f8fafc}
 </div>
 <div class="main">
 <div id="loading" class="loading"><div class="spinner"></div><div>Loading report data...</div></div>
+<nav class="side-nav" id="sideNav">
+  <a href="#" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;" data-section="top"><span class="nav-dot" style="background:var(--text-muted)"></span>Company KPI Summary</a>
+  <a href="#salesAcquisition" data-section="salesAcquisition"><span class="nav-dot" style="background:var(--blue)"></span>Sales &amp; New FTE Acquisition</a>
+  <a href="#clientExpansion" data-section="clientExpansion"><span class="nav-dot" style="background:var(--green)"></span>Client FTE Expansion</a>
+  <a href="#churnRetention" data-section="churnRetention"><span class="nav-dot" style="background:var(--red)"></span>Churn &amp; Backfill Retention</a>
+  <a href="#monthlyUpdates" data-section="monthlyUpdates"><span class="nav-dot" style="background:var(--orange)"></span>Monthly Updates</a>
+  <a href="#quarterlyRoadmap" data-section="quarterlyRoadmap"><span class="nav-dot" style="background:var(--purple)"></span>Quarterly Roadmap</a>
+</nav>
 <div id="content" style="display:none">
 
 <!-- Highlight Panels -->
 <div class="highlight-grid" id="highlightPanels"></div>
-<div style="display:flex;gap:10px;margin-bottom:20px">
-  <a href="#monthlyUpdates" style="padding:6px 14px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:12px;font-weight:600;color:var(--orange);text-decoration:none;box-shadow:var(--shadow);transition:all .15s" onmouseover="this.style.background='#fffbeb'" onmouseout="this.style.background='var(--surface)'"><span style="margin-right:4px">&#9660;</span> Monthly Updates</a>
-  <a href="#quarterlyRoadmap" style="padding:6px 14px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:12px;font-weight:600;color:var(--purple);text-decoration:none;box-shadow:var(--shadow);transition:all .15s" onmouseover="this.style.background='#f5f3ff'" onmouseout="this.style.background='var(--surface)'"><span style="margin-right:4px">&#9660;</span> Quarterly Roadmap</a>
-</div>
 <div class="sub-block" style="margin-bottom:28px">
   <div class="trend-toggle open" data-target="highlightTrends" onclick="toggleTrend(this)"><span class="arrow">&#9650;</span> Hide Trend</div>
   <div class="trend-chart" id="highlightTrends"><div class="trend-chart-grid" id="highlightCharts"></div></div>
 </div>
 
 <!-- New Client FTE Acquisition Section -->
-<div class="section">
+<div class="section" id="salesAcquisition">
   <div class="section-title"><span class="dot" style="background:var(--blue)"></span> New Client FTE Acquisition</div>
   <div id="acqBlocks"></div>
 </div>
 
 <!-- Client Expansion Section -->
-<div class="section">
+<div class="section" id="clientExpansion">
   <div class="section-title"><span class="dot" style="background:var(--green)"></span> Existing Client FTE Expansion</div>
   <div id="expBlocks"></div>
 </div>
 
 <!-- Churn & Backfill Retention Section -->
-<div class="section">
+<div class="section" id="churnRetention">
   <div class="section-title"><span class="dot" style="background:var(--red)"></span> Churn &amp; Backfill Retention</div>
   <div id="churnBlocks"></div>
 </div>
@@ -1275,6 +1284,26 @@ function saveQuarterly() {
 
 // Load quarterly data on page load
 loadQuarterlyGoals();
+
+// === Scroll spy for side nav ===
+(function() {
+  var sections = ['salesAcquisition','clientExpansion','churnRetention','monthlyUpdates','quarterlyRoadmap'];
+  var navLinks = document.querySelectorAll('.side-nav a');
+  function updateActive() {
+    var scrollY = window.scrollY + 120;
+    var active = 'top';
+    for (var i = 0; i < sections.length; i++) {
+      var el = document.getElementById(sections[i]);
+      if (el && el.offsetTop <= scrollY) active = sections[i];
+    }
+    for (var j = 0; j < navLinks.length; j++) {
+      var link = navLinks[j];
+      link.classList.toggle('active', link.getAttribute('data-section') === active);
+    }
+  }
+  window.addEventListener('scroll', updateActive);
+  updateActive();
+})();
 </script>
 </body>
 </html>
