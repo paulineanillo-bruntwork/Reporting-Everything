@@ -701,11 +701,12 @@ function renderRunningUpdate() {
   document.getElementById('ruTable').innerHTML = html;
 }
 
-// Populate month dropdown - format: "Current Month - 2026 March"
+// Populate month dropdown - format: "Current Month - 2026 March" (using GMT+8)
 (function initRUDropdown() {
   var now = new Date();
-  var curMonth = now.getUTCFullYear() + '-' + String(now.getUTCMonth() + 1).padStart(2, '0');
-  var prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  var gmt8 = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+  var curMonth = gmt8.getUTCFullYear() + '-' + String(gmt8.getUTCMonth() + 1).padStart(2, '0');
+  var prev = new Date(Date.UTC(gmt8.getUTCFullYear(), gmt8.getUTCMonth() - 1, 1));
   var prevMonth = prev.getUTCFullYear() + '-' + String(prev.getUTCMonth() + 1).padStart(2, '0');
 
   var sel = document.getElementById('ruMonth');
