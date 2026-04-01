@@ -237,6 +237,38 @@
   }
   .weight-legend span strong { color: var(--text-muted); }
 
+  /* === DATE RANGE BUTTONS === */
+  .date-range-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0 4px;
+  }
+  .dr-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-right: 4px;
+  }
+  .dr-btn {
+    padding: 6px 16px;
+    border: 1px solid #cbd5e1;
+    border-radius: 20px;
+    background: #fff;
+    color: var(--text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .dr-btn:hover {
+    border-color: var(--blue);
+    color: var(--blue);
+  }
+  .dr-btn.active {
+    background: var(--blue);
+    color: #fff;
+    border-color: var(--blue);
+  }
+
   /* === CHARTS === */
   .chart-panel {
     background: var(--surface);
@@ -479,6 +511,14 @@
   </div>
 </div>
 
+<!-- Date Range Filter -->
+<div class="date-range-buttons">
+  <span class="dr-label">Show data:</span>
+  <button class="dr-btn" data-range="until-today">Until Today</button>
+  <button class="dr-btn active" data-range="until-eom">Until End of Month</button>
+  <button class="dr-btn" data-range="all">All Data (incl. future)</button>
+</div>
+
 <!-- Summary Cards -->
 <div class="cards" id="summaryCards"></div>
 
@@ -572,12 +612,31 @@ function emptyBucket() {
   };
 }
 
-function buildGroupedData(numPeriods, groupBy) {
+function getDateCutoff(dateFilter) {
+  if (dateFilter === 'all') return null;
+  var now = new Date();
+  var gmt8 = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+  if (dateFilter === 'until-today') {
+    // End of today in GMT+8: set to 23:59:59 then convert back to UTC timestamp
+    var eod = new Date(Date.UTC(gmt8.getUTCFullYear(), gmt8.getUTCMonth(), gmt8.getUTCDate(), 23, 59, 59));
+    return new Date(eod.getTime() - (8 * 60 * 60 * 1000)); // convert GMT+8 back to UTC
+  }
+  if (dateFilter === 'until-eom') {
+    // End of current month in GMT+8
+    var eom = new Date(Date.UTC(gmt8.getUTCFullYear(), gmt8.getUTCMonth() + 1, 0, 23, 59, 59));
+    return new Date(eom.getTime() - (8 * 60 * 60 * 1000));
+  }
+  return null;
+}
+
+function buildGroupedData(numPeriods, groupBy, dateFilter) {
   var jsFilter = getSelectedJobSource();
+  var cutoff = getDateCutoff(dateFilter || 'all');
   var buckets = {};
 
   RAW_DATA.forEach(function(r) {
     if (!matchesJobSource(r, jsFilter)) return;
+    if (cutoff && new Date(r.d) > cutoff) return;
     var key = groupBy === 'month' ? getMonthKey(r.d) : getSundayOfWeek(r.d);
     if (!buckets[key]) buckets[key] = emptyBucket();
     var w = getFTEWeight(r.t);
@@ -592,6 +651,7 @@ function buildGroupedData(numPeriods, groupBy) {
 
   OFFBOARD_DATA.forEach(function(r) {
     if (!matchesJobSource(r, jsFilter)) return;
+    if (cutoff && new Date(r.o + 'T00:00:00Z') > cutoff) return;
     var key = groupBy === 'month' ? getMonthKey(r.o + 'T00:00:00Z') : getSundayOfWeek(r.o + 'T00:00:00Z');
     if (!buckets[key]) buckets[key] = emptyBucket();
     var w = getFTEWeight(r.t);
@@ -734,10 +794,16 @@ function renderRunningUpdate() {
 
 var fteChart, netChart;
 
+function getActiveDateRange() {
+  var btn = document.querySelector('.dr-btn.active');
+  return btn ? btn.getAttribute('data-range') : 'until-eom';
+}
+
 function render() {
   var numPeriods = parseInt(document.getElementById('periodCount').value);
   var groupBy = document.getElementById('groupBy').value;
-  var data = buildGroupedData(numPeriods, groupBy);
+  var dateFilter = getActiveDateRange();
+  var data = buildGroupedData(numPeriods, groupBy, dateFilter);
 
   var periodLabel = groupBy === 'month' ? 'Monthly' : 'Weekly';
   document.getElementById('chartTitle').textContent = periodLabel + ' FTE - Created vs Offboarded';
@@ -863,6 +929,15 @@ function render() {
 
 document.getElementById('periodCount').addEventListener('change', render);
 document.getElementById('groupBy').addEventListener('change', render);
+
+// Date range toggle buttons
+document.querySelectorAll('.dr-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.dr-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    render();
+  });
+});
 
 // === LIVE DATA LOADING (auto-refresh every 5 minutes) ===
 var REFRESH_INTERVAL = 5 * 60 * 1000;

@@ -47,10 +47,27 @@ function emptyBucket() {
   };
 }
 
-function buildGroupedData(numPeriods, groupBy) {
+function getDateCutoff(dateFilter) {
+  if (dateFilter === 'all') return null;
+  var now = new Date();
+  var gmt8 = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+  if (dateFilter === 'until-today') {
+    var eod = new Date(Date.UTC(gmt8.getUTCFullYear(), gmt8.getUTCMonth(), gmt8.getUTCDate(), 23, 59, 59));
+    return new Date(eod.getTime() - (8 * 60 * 60 * 1000));
+  }
+  if (dateFilter === 'until-eom') {
+    var eom = new Date(Date.UTC(gmt8.getUTCFullYear(), gmt8.getUTCMonth() + 1, 0, 23, 59, 59));
+    return new Date(eom.getTime() - (8 * 60 * 60 * 1000));
+  }
+  return null;
+}
+
+function buildGroupedData(numPeriods, groupBy, dateFilter) {
+  var cutoff = getDateCutoff(dateFilter || 'all');
   var buckets = {};
 
   RAW_DATA.forEach(function(r) {
+    if (cutoff && new Date(r.d) > cutoff) return;
     var key = groupBy === 'month' ? getMonthKey(r.d) : getSundayOfWeek(r.d);
     if (!buckets[key]) buckets[key] = emptyBucket();
     var w = getFTEWeight(r.t);
@@ -64,6 +81,7 @@ function buildGroupedData(numPeriods, groupBy) {
   });
 
   OFFBOARD_DATA.forEach(function(r) {
+    if (cutoff && new Date(r.o + 'T00:00:00Z') > cutoff) return;
     var key = groupBy === 'month' ? getMonthKey(r.o + 'T00:00:00Z') : getSundayOfWeek(r.o + 'T00:00:00Z');
     if (!buckets[key]) buckets[key] = emptyBucket();
     var w = getFTEWeight(r.t);
@@ -181,10 +199,16 @@ function renderRunningUpdate() {
 
 var fteChart, netChart;
 
+function getActiveDateRange() {
+  var btn = document.querySelector('.dr-btn.active');
+  return btn ? btn.getAttribute('data-range') : 'until-eom';
+}
+
 function render() {
   var numPeriods = parseInt(document.getElementById('periodCount').value);
   var groupBy = document.getElementById('groupBy').value;
-  var data = buildGroupedData(numPeriods, groupBy);
+  var dateFilter = getActiveDateRange();
+  var data = buildGroupedData(numPeriods, groupBy, dateFilter);
 
   var periodLabel = groupBy === 'month' ? 'Monthly' : 'Weekly';
   document.getElementById('chartTitle').textContent = periodLabel + ' FTE - Created vs Offboarded';
@@ -323,6 +347,15 @@ function render() {
 
 document.getElementById('periodCount').addEventListener('change', render);
 document.getElementById('groupBy').addEventListener('change', render);
+
+// Date range toggle buttons
+document.querySelectorAll('.dr-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.dr-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    render();
+  });
+});
 
 // === LIVE DATA LOADING (auto-refresh every 5 minutes) ===
 var REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
