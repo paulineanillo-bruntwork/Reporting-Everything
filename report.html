@@ -436,20 +436,22 @@ Promise.all([
   }
   document.getElementById('highlightPanels').innerHTML = hHtml;
 
-  // === Build 13-month trend slices ===
-  var gmt8 = new Date(Date.now() + 8*60*60*1000);
-  var nowYear = gmt8.getUTCFullYear(), nowMonth = gmt8.getUTCMonth();
-  var nowIdx = -1;
+  // === Build 13-month trend slices based on report month ===
+  var rp = currentMonth.split('-');
+  var reportYear = parseInt(rp[0]), reportMonth = parseInt(rp[1]) - 1; // 0-indexed
+  var reportIdx = -1;
   for (var si=0;si<allMonths.length;si++) {
     var spm = parseMonth(allMonths[si][0]);
-    if (spm && spm.year===nowYear && spm.month===nowMonth) { nowIdx=si; break; }
+    if (spm && spm.year===reportYear && spm.month===reportMonth) { reportIdx=si; break; }
   }
-  var endCur = nowIdx>=0 ? nowIdx+1 : allMonths.length;
+  // curSlice: up to and including the report month
+  var endCur = reportIdx>=0 ? reportIdx+1 : allMonths.length;
   var startCur = Math.max(0, endCur-13);
   var curSlice = allMonths.slice(startCur, endCur);
   var curLabels = curSlice.map(function(m){return shortLabel(m[0]);});
 
-  var endFTE = nowIdx>=0 ? nowIdx+2 : allMonths.length;
+  // fteSlice: includes one month AFTER the report month (start of next month FTE)
+  var endFTE = reportIdx>=0 ? reportIdx+2 : allMonths.length;
   var startFTE = Math.max(0, endFTE-13);
   var fteSlice = allMonths.slice(startFTE, endFTE);
   var fteLabels = fteSlice.map(function(m){return shortLabel(m[0]);});
