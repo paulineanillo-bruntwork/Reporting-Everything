@@ -555,7 +555,7 @@ Promise.all([
       var hData = hc.compute ? hc.slice.map(hc.compute) : hc.slice.map(function(m){return pn(m[hc.col]);});
       var hds = makeDS(hc);
       hds.data = hData;
-      hds.datalabels = { display:true, anchor:'end', align:'end', color:hc.color, font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?Number(v).toLocaleString():'';} };
+      hds.datalabels = { display:true, anchor:'end', align:'end', color:hc.color, font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?Number(Math.round(v)).toLocaleString():'';} };
       // For net FTE, color bars green/red based on value
       if (hc.label === 'Net FTE Gain/Loss') {
         hds.backgroundColor = hData.map(function(v){ return v>=0 ? 'rgba(5,150,105,0.65)' : 'rgba(220,38,38,0.65)'; });
@@ -612,7 +612,7 @@ Promise.all([
   // === Churn & Backfill sub-blocks ===
   var churnSections = [
     { title:'Churn', rows:[
-      { label:'Churned Staff (FTE)', col:C.churnedFTE, format:'dec', invert:true },
+      { label:'Churned Staff (FTE)', col:C.churnedFTE, format:'num', invert:true },
       { label:'Role Churn Rate', col:C.churnRate, format:'pctR', invert:true }
     ], charts:[
       { label:'Churned Staff (FTE)', col:C.churnedFTE, color:'#dc2626', type:'bar' },
@@ -621,7 +621,7 @@ Promise.all([
     { title:'Backfill', rows:[
       { label:'Offboarded Roles to be Backfilled', col:C.rolesToBackfill, format:'num' },
       { label:'Backfill Rate', col:C.backfillRate, format:'pctR' },
-      { label:'Backfill FTE Hires', col:C.backfillFTE, format:'dec' },
+      { label:'Backfill FTE Hires', col:C.backfillFTE, format:'num' },
       { label:'Backfill Close Rate (1-month conversion window)', col:C.backfillCloseRate, format:'pctR' }
     ], charts:[
       { label:'Backfill FTE Hires', col:C.backfillFTE, color:'#059669', type:'bar' },
@@ -686,7 +686,7 @@ function renderSubBlocks(containerId, sections, cur, prev, slice, labels) {
     } else if (item.chart.money) {
       ds.datalabels = { display:true, anchor:'end', align:'end', color:item.chart.color, font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?'$'+Number(Math.round(v)).toLocaleString():'';} };
     } else {
-      ds.datalabels = { display:true, anchor:'end', align:'end', color:item.chart.color, font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?Number(v).toLocaleString():'';} };
+      ds.datalabels = { display:true, anchor:'end', align:'end', color:item.chart.color, font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?Number(Math.round(v)).toLocaleString():'';} };
     }
     var ctx = document.getElementById(item.canvasId);
     if (ctx) {
