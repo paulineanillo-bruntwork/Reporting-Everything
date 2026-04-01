@@ -391,27 +391,29 @@ Promise.all([
 
   var cur = curIdx>=0 ? allMonths[curIdx] : null;
   var prev = prevIdx>=0 ? allMonths[prevIdx] : null;
+  var next = (curIdx >= 0 && curIdx + 1 < allMonths.length) ? allMonths[curIdx + 1] : null;
 
   function cv(col) { return cur ? pn(cur[col]) : null; }
   function pv(col) { return prev ? pn(prev[col]) : null; }
 
 
   // === Highlight Panels ===
-  var activeFTE = cv(C.activeFTE);
+  // Active FTE: show next month's start-of-period (= end of report month)
+  var activeFTE = next ? pn(next[C.activeFTE]) : cv(C.activeFTE);
   var hiredFTE = cv(C.totalHires);
   var lostFTE = cv(C.churnedFTE);
   var netFTE = (hiredFTE!==null && lostFTE!==null) ? Math.round((hiredFTE - lostFTE)*100)/100 : null;
 
-  var prevActiveFTE = pv(C.activeFTE);
+  var prevActiveFTE = cv(C.activeFTE); // current month's start becomes "previous"
   var prevHiredFTE = pv(C.totalHires);
   var prevLostFTE = pv(C.churnedFTE);
   var prevNetFTE = (prevHiredFTE!==null && prevLostFTE!==null) ? Math.round((prevHiredFTE - prevLostFTE)*100)/100 : null;
 
   var highlights = [
     { label:'Total Active FTE Headcount (Outsource)', value:activeFTE, prev:prevActiveFTE, format:'num', color:'var(--blue)' },
-    { label:'FTEs Hired', value:hiredFTE, prev:prevHiredFTE, format:'dec', color:'var(--green)' },
-    { label:'Lost FTEs', value:lostFTE, prev:prevLostFTE, format:'dec', color:'var(--red)', invert:true },
-    { label:'Net FTE Gain/Loss', value:netFTE, prev:prevNetFTE, format:'dec', color:'var(--purple)' }
+    { label:'FTEs Hired', value:hiredFTE, prev:prevHiredFTE, format:'num', color:'var(--green)' },
+    { label:'Lost FTEs', value:lostFTE, prev:prevLostFTE, format:'num', color:'var(--red)', invert:true },
+    { label:'Net FTE Gain/Loss', value:netFTE, prev:prevNetFTE, format:'num', color:'var(--purple)' }
   ];
 
   var hHtml = '';
@@ -419,10 +421,10 @@ Promise.all([
     var h = highlights[t];
     var valStr = '—';
     if (h.value!==null) {
-      if (h.format==='dec') valStr = fmtD(h.value);
-      else valStr = fmt(h.value);
+      var rv = Math.round(h.value);
+      valStr = fmt(rv);
       // Add +/- prefix for Net FTE
-      if (h.label.indexOf('Net')===0 && h.value>0) valStr = '+'+valStr;
+      if (h.label.indexOf('Net')===0 && rv>0) valStr = '+'+valStr;
     }
     var changeBadge = '';
     if (h.value!==null && h.prev!==null && h.prev!==0) {
@@ -431,7 +433,7 @@ Promise.all([
       var cls = diff===0?'neutral': (h.invert ? (diff>0?'neg':'pos') : (diff>0?'pos':'neg'));
       changeBadge = '<span class="change '+cls+'">'+(pctC>=0?'+':'')+pctC.toFixed(1)+'%</span>';
     }
-    var prevStr = h.prev!==null ? '<span class="prev-val">Prev: '+(h.format==='dec'?fmtD(h.prev):fmt(h.prev))+'</span>' : '';
+    var prevStr = h.prev!==null ? '<span class="prev-val">Prev: '+fmt(Math.round(h.prev))+'</span>' : '';
     hHtml += '<div class="highlight-panel"><div class="accent" style="background:'+h.color+'"></div><div class="label">'+h.label+'</div><div class="value">'+valStr+'</div><div class="meta">'+changeBadge+prevStr+'</div></div>';
   }
   document.getElementById('highlightPanels').innerHTML = hHtml;
@@ -576,7 +578,7 @@ Promise.all([
       { label:'Cost Per Discovery Call', col:C.costPerCall, format:'money' },
       { label:'Number of Active Clients', col:C.existingClients, format:'num' }
     ], charts:[
-      { label:'Google Ads Spend', col:C.adsSpend, color:'#0891b2', type:'bar' },
+      { label:'Google Ads Spend', col:C.adsSpend, color:'#0891b2', type:'bar', money:true },
       { label:'Discovery Calls (MQLs) Booked', col:C.mqls, color:'#7c3aed', type:'bar' },
       { label:'Cost Per Discovery Call', col:C.costPerCall, color:'#e11d48', type:'line', money:true },
       { label:'Number of Active Clients', col:C.existingClients, color:'#d97706', type:'bar' }
