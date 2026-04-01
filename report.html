@@ -907,11 +907,14 @@ function saveUpdates() {
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({month:currentMonth, projects:allProjects})
-  }).then(function(r){return r.json();}).then(function(d){
+  }).then(function(r){
+    if (r.status === 401) { alert('Your session has expired. The page will reload so you can log in again.'); window.location.href='/auth/login'; throw new Error('Session expired'); }
+    return r.json();
+  }).then(function(d){
     if (d.error) { statusEl.textContent = 'Error: '+d.error; }
     else { statusEl.textContent = 'Saved!'; setTimeout(function(){statusEl.textContent='';},3000); }
   }).catch(function(e){
-    statusEl.textContent = 'Error: '+e.message;
+    if (e.message !== 'Session expired') statusEl.textContent = 'Error: '+e.message;
   });
 }
 
@@ -1274,11 +1277,14 @@ function saveQuarterly() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ quarters: allQuarters, goals: allGoals })
-  }).then(function(r) { return r.json(); }).then(function(d) {
+  }).then(function(r) {
+    if (r.status === 401) { alert('Your session has expired. The page will reload so you can log in again.'); window.location.href='/auth/login'; throw new Error('Session expired'); }
+    return r.json();
+  }).then(function(d) {
     if (d.error) { statusEl.textContent = 'Error: ' + d.error; }
     else { statusEl.textContent = 'Saved!'; setTimeout(function() { statusEl.textContent = ''; }, 3000); }
   }).catch(function(e) {
-    statusEl.textContent = 'Error: ' + e.message;
+    if (e.message !== 'Session expired') statusEl.textContent = 'Error: ' + e.message;
   });
 }
 

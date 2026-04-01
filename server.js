@@ -35,11 +35,12 @@ app.use(session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  rolling: true,
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
     secure: APP_URL.startsWith('https'),
-    maxAge: 8 * 60 * 60 * 1000 // 8 hours
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
 
