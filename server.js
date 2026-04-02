@@ -430,8 +430,19 @@ async function fetchAllPages(baseBody) {
   return results;
 }
 
+// Cache ticket data for 3 minutes to avoid slow repeated HubSpot fetches
+var ticketCache = { data: null, timestamp: 0 };
+var CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+
 app.get('/api/tickets', async function(req, res) {
   try {
+    // Return cached data if fresh
+    if (ticketCache.data && (Date.now() - ticketCache.timestamp) < CACHE_TTL) {
+      console.log('[Cache] Returning cached ticket data (' + Math.round((Date.now() - ticketCache.timestamp) / 1000) + 's old)');
+      return res.json(ticketCache.data);
+    }
+
+    console.log('[HubSpot] Fetching fresh ticket data...');
     var cutoff = Date.now() - (120 * 24 * 60 * 60 * 1000);
     var cutoffStr = String(cutoff);
 
@@ -483,12 +494,19 @@ app.get('/api/tickets', async function(req, res) {
     var h12 = h % 12 || 12;
     var timestamp = months[pht.getUTCMonth()] + ' ' + pht.getUTCDate() + ', ' + pht.getUTCFullYear() + ' ' + h12 + ':' + String(pht.getUTCMinutes()).padStart(2, '0') + ' ' + ampm + ' (GMT+8)';
 
-    res.json({
+    var responseData = {
       raw: raw,
       offboard: offboard,
       timestamp: timestamp,
       counts: { created: raw.length, offboarded: offboard.length }
-    });
+    };
+
+    // Cache the response
+    ticketCache.data = responseData;
+    ticketCache.timestamp = Date.now();
+    console.log('[Cache] Ticket data cached (' + raw.length + ' created, ' + offboard.length + ' offboarded)');
+
+    res.json(responseData);
   } catch (err) {
     console.error('API Error:', err.message);
     res.status(500).json({ error: err.message });
