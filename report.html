@@ -169,8 +169,11 @@ td.q-backlog-collapsed{background:#f8fafc}
 .side-nav .nav-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
 .side-nav{transition:transform .2s}
 .side-nav.collapsed{transform:translateY(-50%) translateX(-100%)}
-.side-nav-toggle{position:fixed;left:0;top:50%;z-index:101;border:1px solid var(--border);border-left:none;border-radius:0 6px 6px 0;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);cursor:pointer;font-size:10px;font-weight:600;color:var(--text-muted);white-space:nowrap;padding:6px 10px;transition:all .2s}
-.side-nav-toggle:hover{color:var(--blue);background:#f1f5f9}
+.side-nav .nav-hide{display:block;padding:6px 12px;border:none;border-bottom:1px solid var(--border);background:transparent;cursor:pointer;font-size:10px;font-weight:600;color:var(--text-muted);text-align:center;width:100%;white-space:nowrap}
+.side-nav .nav-hide:hover{color:var(--blue);background:#f1f5f9}
+.nav-show{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:101;width:24px;height:32px;border:1px solid var(--border);border-left:none;border-radius:0 6px 6px 0;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);cursor:pointer;display:none;align-items:center;justify-content:center;font-size:11px;color:var(--text-muted);padding:0}
+.nav-show:hover{color:var(--blue);background:#f1f5f9}
+.nav-show.visible{display:flex}
 @media(max-width:1100px){.q-cat-header{width:120px!important}.highlight-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:900px){.chart-grid{grid-template-columns:1fr}.header,.main{padding-left:20px;padding-right:20px}.highlight-grid{grid-template-columns:1fr}.quarterly-grid{grid-template-columns:1fr}}
 @media print{.header{background:#1e293b!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.nav-links,.month-nav{display:none!important}.main{padding:16px}}
@@ -192,6 +195,7 @@ td.q-backlog-collapsed{background:#f8fafc}
 <div class="main">
 <div id="loading" class="loading"><div class="spinner"></div><div>Loading report data...</div></div>
 <nav class="side-nav" id="sideNav">
+  <button class="nav-hide" id="navHide">Hide Menu &#9664;</button>
   <a href="#" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;" data-section="top"><span class="nav-dot" style="background:var(--text-muted)"></span>Company KPI Summary</a>
   <a href="#salesAcquisition" data-section="salesAcquisition"><span class="nav-dot" style="background:var(--blue)"></span>Sales &amp; New FTE Acquisition</a>
   <a href="#clientExpansion" data-section="clientExpansion"><span class="nav-dot" style="background:var(--green)"></span>Client FTE Expansion</a>
@@ -199,7 +203,7 @@ td.q-backlog-collapsed{background:#f8fafc}
   <a href="#monthlyUpdates" data-section="monthlyUpdates"><span class="nav-dot" style="background:var(--orange)"></span>Monthly Updates</a>
   <a href="#quarterlyRoadmap" data-section="quarterlyRoadmap"><span class="nav-dot" style="background:var(--purple)"></span>Quarterly Roadmap</a>
 </nav>
-<button class="side-nav-toggle" id="sideNavToggle" title="Toggle menu"><span id="toggleLabel">Hide Menu</span> <span id="toggleArrow">&#9664;</span></button>
+<button class="nav-show" id="navShow" title="Show menu">&#9654;</button>
 <div id="content" style="display:none">
 
 <!-- Highlight Panels -->
@@ -1324,23 +1328,17 @@ loadQuarterlyGoals();
 
 // === Side nav toggle ===
 (function() {
-  var navToggle = document.getElementById('sideNavToggle');
   var sideNav = document.getElementById('sideNav');
-  var toggleLabel = document.getElementById('toggleLabel');
-  var toggleArrow = document.getElementById('toggleArrow');
-  function positionToggle() {
-    var isCollapsed = sideNav.classList.contains('collapsed');
-    navToggle.style.left = isCollapsed ? '0' : sideNav.offsetWidth + 'px';
-    navToggle.style.transform = 'translateY(-50%)';
-  }
-  navToggle.addEventListener('click', function() {
-    sideNav.classList.toggle('collapsed');
-    var isCollapsed = sideNav.classList.contains('collapsed');
-    toggleArrow.innerHTML = isCollapsed ? '&#9654;' : '&#9664;';
-    toggleLabel.textContent = isCollapsed ? 'Menu' : 'Hide Menu';
-    positionToggle();
+  var navHide = document.getElementById('navHide');
+  var navShow = document.getElementById('navShow');
+  navHide.addEventListener('click', function() {
+    sideNav.classList.add('collapsed');
+    navShow.classList.add('visible');
   });
-  positionToggle();
+  navShow.addEventListener('click', function() {
+    sideNav.classList.remove('collapsed');
+    navShow.classList.remove('visible');
+  });
 })();
 </script>
 </body>
