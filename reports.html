@@ -85,7 +85,7 @@ fetch('/api/reports').then(function(r) { return r.json(); }).then(function(repor
     return;
   }
 
-  var months = reportData.months || [];
+  var months = (reportData.months || []).filter(function(m) { return m.month >= '2026-03'; });
   if (months.length === 0) {
     document.getElementById('reportsEmpty').style.display = 'block';
     return;
