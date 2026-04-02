@@ -167,7 +167,11 @@ td.q-backlog-collapsed{background:#f8fafc}
 .side-nav a:hover{color:var(--text);background:#f1f5f9;border-left-color:var(--blue)}
 .side-nav a.active{color:var(--blue);border-left-color:var(--blue);background:#eff6ff}
 .side-nav .nav-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
-@media(max-width:1100px){.q-cat-header{width:120px!important}.highlight-grid{grid-template-columns:repeat(2,1fr)}.side-nav{display:none}}
+.side-nav{transition:transform .2s}
+.side-nav.collapsed{transform:translateY(-50%) translateX(-100%)}
+.side-nav-toggle{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:101;margin-top:-120px;width:22px;height:36px;border:1px solid var(--border);border-left:none;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border-radius:0 6px 6px 0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-muted);transition:left .2s;padding:0}
+.side-nav-toggle:hover{color:var(--blue);background:#f1f5f9}
+@media(max-width:1100px){.q-cat-header{width:120px!important}.highlight-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:900px){.chart-grid{grid-template-columns:1fr}.header,.main{padding-left:20px;padding-right:20px}.highlight-grid{grid-template-columns:1fr}.quarterly-grid{grid-template-columns:1fr}}
 @media print{.header{background:#1e293b!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.nav-links,.month-nav{display:none!important}.main{padding:16px}}
 </style>
@@ -195,6 +199,7 @@ td.q-backlog-collapsed{background:#f8fafc}
   <a href="#monthlyUpdates" data-section="monthlyUpdates"><span class="nav-dot" style="background:var(--orange)"></span>Monthly Updates</a>
   <a href="#quarterlyRoadmap" data-section="quarterlyRoadmap"><span class="nav-dot" style="background:var(--purple)"></span>Quarterly Roadmap</a>
 </nav>
+<button class="side-nav-toggle" id="sideNavToggle" title="Toggle menu">&#9664;</button>
 <div id="content" style="display:none">
 
 <!-- Highlight Panels -->
@@ -1315,6 +1320,21 @@ loadQuarterlyGoals();
   }
   window.addEventListener('scroll', updateActive);
   updateActive();
+})();
+
+// === Side nav toggle ===
+(function() {
+  var navToggle = document.getElementById('sideNavToggle');
+  var sideNav = document.getElementById('sideNav');
+  function positionToggle() {
+    navToggle.style.left = sideNav.classList.contains('collapsed') ? '0' : sideNav.offsetWidth + 'px';
+  }
+  navToggle.addEventListener('click', function() {
+    sideNav.classList.toggle('collapsed');
+    navToggle.innerHTML = sideNav.classList.contains('collapsed') ? '&#9654;' : '&#9664;';
+    positionToggle();
+  });
+  positionToggle();
 })();
 </script>
 </body>
