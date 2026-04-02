@@ -169,9 +169,8 @@ td.q-backlog-collapsed{background:#f8fafc}
 .side-nav .nav-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
 .side-nav{transition:transform .2s}
 .side-nav.collapsed{transform:translateY(-50%) translateX(-100%)}
-.side-nav-toggle{display:block;width:100%;padding:6px 12px;border:none;border-bottom:1px solid var(--border);background:rgba(255,255,255,.95);cursor:pointer;font-size:10px;font-weight:600;color:var(--text-muted);text-align:center;white-space:nowrap}
+.side-nav-toggle{position:fixed;left:0;top:50%;z-index:101;border:1px solid var(--border);border-left:none;border-radius:0 6px 6px 0;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);cursor:pointer;font-size:10px;font-weight:600;color:var(--text-muted);white-space:nowrap;padding:6px 10px;transition:all .2s}
 .side-nav-toggle:hover{color:var(--blue);background:#f1f5f9}
-.side-nav.collapsed .side-nav-toggle{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:101;border:1px solid var(--border);border-left:none;border-radius:0 6px 6px 0;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);width:auto;padding:6px 10px}
 @media(max-width:1100px){.q-cat-header{width:120px!important}.highlight-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:900px){.chart-grid{grid-template-columns:1fr}.header,.main{padding-left:20px;padding-right:20px}.highlight-grid{grid-template-columns:1fr}.quarterly-grid{grid-template-columns:1fr}}
 @media print{.header{background:#1e293b!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.nav-links,.month-nav{display:none!important}.main{padding:16px}}
@@ -199,8 +198,8 @@ td.q-backlog-collapsed{background:#f8fafc}
   <a href="#churnRetention" data-section="churnRetention"><span class="nav-dot" style="background:var(--red)"></span>Churn &amp; Backfill Retention</a>
   <a href="#monthlyUpdates" data-section="monthlyUpdates"><span class="nav-dot" style="background:var(--orange)"></span>Monthly Updates</a>
   <a href="#quarterlyRoadmap" data-section="quarterlyRoadmap"><span class="nav-dot" style="background:var(--purple)"></span>Quarterly Roadmap</a>
-<button class="side-nav-toggle" id="sideNavToggle" title="Toggle menu"><span id="toggleLabel">Hide Menu</span> <span id="toggleArrow">&#9664;</span></button>
 </nav>
+<button class="side-nav-toggle" id="sideNavToggle" title="Toggle menu"><span id="toggleLabel">Hide Menu</span> <span id="toggleArrow">&#9664;</span></button>
 <div id="content" style="display:none">
 
 <!-- Highlight Panels -->
@@ -1329,12 +1328,19 @@ loadQuarterlyGoals();
   var sideNav = document.getElementById('sideNav');
   var toggleLabel = document.getElementById('toggleLabel');
   var toggleArrow = document.getElementById('toggleArrow');
+  function positionToggle() {
+    var isCollapsed = sideNav.classList.contains('collapsed');
+    navToggle.style.left = isCollapsed ? '0' : sideNav.offsetWidth + 'px';
+    navToggle.style.transform = 'translateY(-50%)';
+  }
   navToggle.addEventListener('click', function() {
     sideNav.classList.toggle('collapsed');
     var isCollapsed = sideNav.classList.contains('collapsed');
     toggleArrow.innerHTML = isCollapsed ? '&#9654;' : '&#9664;';
     toggleLabel.textContent = isCollapsed ? 'Menu' : 'Hide Menu';
+    positionToggle();
   });
+  positionToggle();
 })();
 </script>
 </body>
