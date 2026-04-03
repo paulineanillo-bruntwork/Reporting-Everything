@@ -621,11 +621,11 @@ Promise.all([
   // === Churn & Backfill sub-blocks ===
   var churnSections = [
     { title:'Churn', rows:[
-      { label:'Churned Staff (FTE)', col:C.churnedFTE, format:'num', invert:true },
-      { label:'Role Churn Rate', col:C.churnRate, format:'pctR', invert:true }
+      { label:'Lost FTE', col:C.churnedFTE, format:'num', invert:true },
+      { label:'Churn Rate', col:C.churnRate, format:'pctR', invert:true }
     ], charts:[
-      { label:'Churned Staff (FTE)', col:C.churnedFTE, color:'#dc2626', type:'bar' },
-      { label:'Role Churn Rate', col:C.churnRate, color:'#e11d48', type:'line', pct:true }
+      { label:'Lost FTE', col:C.churnedFTE, color:'#dc2626', type:'bar' },
+      { label:'Churn Rate', col:C.churnRate, color:'#e11d48', type:'line', pct:true }
     ]},
     { title:'Backfill', rows:[
       { label:'Offboarded Roles to be Backfilled', col:C.rolesToBackfill, format:'num' },
