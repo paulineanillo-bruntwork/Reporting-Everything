@@ -412,27 +412,54 @@ app.get('/api/debug/schemas', async function(req, res) {
   }
 });
 
+function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+
 async function fetchAllPages(baseBody) {
   var results = [];
   var after = undefined;
   var hasMore = true;
+  var page = 0;
   while (hasMore) {
     var body = Object.assign({}, baseBody, { limit: 200 });
     if (after) body.after = after;
-    var data = await hubspotSearch(body);
+    // Rate limit: wait 500ms between pages to avoid HubSpot 429 errors
+    if (page > 0) await sleep(500);
+    var data;
+    try {
+      data = await hubspotSearch(body);
+    } catch (err) {
+      if (err.message && err.message.indexOf('429') !== -1) {
+        console.log('[HubSpot] Rate limited on page ' + page + ', waiting 5s and retrying...');
+        await sleep(5000);
+        try {
+          data = await hubspotSearch(body);
+        } catch (err2) {
+          if (err2.message && err2.message.indexOf('429') !== -1) {
+            console.log('[HubSpot] Still rate limited, waiting 10s...');
+            await sleep(10000);
+            data = await hubspotSearch(body);
+          } else {
+            throw err2;
+          }
+        }
+      } else {
+        throw err;
+      }
+    }
     results = results.concat(data.results || []);
     if (data.paging && data.paging.next && data.paging.next.after) {
       after = data.paging.next.after;
     } else {
       hasMore = false;
     }
+    page++;
   }
   return results;
 }
 
 // Cache ticket data for 3 minutes to avoid slow repeated HubSpot fetches
 var ticketCache = { data: null, timestamp: 0 };
-var CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+var CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 app.get('/api/tickets', async function(req, res) {
   try {
