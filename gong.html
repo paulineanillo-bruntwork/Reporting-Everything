@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
-<title>Gong Data</title>
+<title>Gong — Discovery Calls</title>
 <style>
 :root{--bg:#f4f6fb;--surface:#fff;--border:#e2e8f0;--text:#1e293b;--text-muted:#64748b;--blue:#2563eb;--blue-dark:#1e40af;--green:#059669;--green-light:#d1fae5;--red:#dc2626;--red-light:#fee2e2;--orange:#d97706;--purple:#7c3aed;--radius:16px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -24,12 +24,17 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .controls button{padding:8px 20px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;background:var(--blue);color:#fff;transition:background .15s}
 .controls button:hover{background:var(--blue-dark)}
 .controls button:disabled{opacity:.5;cursor:wait}
-.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:28px}
+.pill-group{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.pill-group button{border:none;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;background:var(--surface);color:var(--text-muted);transition:all .15s;border-right:1px solid var(--border)}
+.pill-group button:last-child{border-right:none}
+.pill-group button.active{background:var(--blue);color:#fff}
+.pill-group button:hover:not(.active){background:#f1f5f9}
+.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:28px}
 .summary-card{background:var(--surface);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);border:1px solid var(--border);text-align:center}
 .summary-card .val{font-size:28px;font-weight:800;color:var(--text)}
 .summary-card .lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-top:4px}
 .tbl-wrap{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden}
-.tbl-scroll{overflow-x:auto;max-height:calc(100vh - 340px);overflow-y:auto}
+.tbl-scroll{overflow-x:auto;max-height:calc(100vh - 380px);overflow-y:auto}
 table{border-collapse:collapse;font-size:12px;white-space:nowrap;width:100%}
 thead{position:sticky;top:0;z-index:10}
 th{padding:10px 12px;font-weight:600;font-size:11px;color:var(--text-muted);border-bottom:2px solid var(--border);background:#f8fafc;text-align:left;cursor:pointer;user-select:none}
@@ -41,6 +46,7 @@ td{padding:8px 12px;border-bottom:1px solid var(--border);border-right:1px solid
 td.ar{text-align:right;font-variant-numeric:tabular-nums}
 tbody tr:hover td{background:#f8fafc}
 .empty-cell{color:#cbd5e1}
+.progress-text{font-size:12px;color:var(--text-muted);margin-top:8px}
 .status-toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:500;color:#fff;z-index:1000;opacity:0;transition:opacity .3s;pointer-events:none}
 .status-toast.show{opacity:1}
 .status-toast.error{background:var(--red)}
@@ -51,26 +57,36 @@ tbody tr:hover td{background:#f8fafc}
 <body>
 <div class="header">
   <div>
-    <h1>Gong Data</h1>
-    <div class="subtitle">Call activity and stats from Gong</div>
+    <h1>Discovery Calls</h1>
+    <div class="subtitle">Sales team call data from Gong</div>
   </div>
   <div class="nav-links">
     <a href="/" class="back-link">FTE Dashboard</a>
-    <a href="/kpi" class="back-link">KPI Tracker</a>
     <a href="/reports" class="back-link">Reports</a>
+    <a href="/kpi" class="back-link">KPI Tracker</a>
     <a href="/logout" class="back-link">Log out</a>
   </div>
 </div>
 <div class="main">
 
 <div class="controls">
-  <label style="font-size:13px;font-weight:600">Month:</label>
+  <div class="pill-group" id="rangeGroup">
+    <button onclick="setRange('day')" data-range="day">Day</button>
+    <button onclick="setRange('week')" data-range="week">Week</button>
+    <button class="active" onclick="setRange('month')" data-range="month">Month</button>
+  </div>
+  <input type="date" id="datePicker" style="display:none" />
+  <input type="week" id="weekPicker" style="display:none" />
   <input type="month" id="monthPicker" />
   <button id="loadBtn" onclick="loadData()">Load</button>
   <span id="statusText" style="font-size:12px;color:var(--text-muted)"></span>
 </div>
 
-<div id="loading" class="loading" style="display:none"><div class="spinner"></div><div>Fetching Gong data...</div></div>
+<div id="loading" class="loading" style="display:none">
+  <div class="spinner"></div>
+  <div>Fetching discovery calls from Gong...</div>
+  <div class="progress-text" id="progressText"></div>
+</div>
 
 <div id="content" style="display:none">
   <div class="summary-grid" id="summaryCards"></div>
@@ -88,16 +104,78 @@ tbody tr:hover td{background:#f8fafc}
 <div class="status-toast" id="toast"></div>
 
 <script>
-// Set default month to previous month
+// Defaults
+var rangeMode = 'month';
 var now = new Date();
 var yr = now.getFullYear();
-var mo = now.getMonth(); // 0-indexed, so this is "previous" month
+var mo = now.getMonth();
 if (mo === 0) { yr--; mo = 12; }
 document.getElementById('monthPicker').value = yr + '-' + String(mo).padStart(2, '0');
 
+// Set week default to current week
+var weekStart = new Date(now);
+weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
+var wk = getWeekNumber(weekStart);
+document.getElementById('weekPicker').value = weekStart.getFullYear() + '-W' + String(wk).padStart(2, '0');
+
+// Set day default to yesterday
+var yesterday = new Date(now);
+yesterday.setDate(yesterday.getDate() - 1);
+document.getElementById('datePicker').value = yesterday.toISOString().split('T')[0];
+
+function getWeekNumber(d) {
+  var onejan = new Date(d.getFullYear(), 0, 1);
+  var days = Math.floor((d - onejan) / 86400000);
+  return Math.ceil((days + onejan.getDay() + 1) / 7);
+}
+
+function setRange(mode) {
+  rangeMode = mode;
+  var btns = document.querySelectorAll('#rangeGroup button');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].classList.toggle('active', btns[i].getAttribute('data-range') === mode);
+  }
+  document.getElementById('datePicker').style.display = mode === 'day' ? '' : 'none';
+  document.getElementById('weekPicker').style.display = mode === 'week' ? '' : 'none';
+  document.getElementById('monthPicker').style.display = mode === 'month' ? '' : 'none';
+}
+
+function getDateRange() {
+  if (rangeMode === 'day') {
+    var d = document.getElementById('datePicker').value;
+    if (!d) return null;
+    var next = new Date(d);
+    next.setDate(next.getDate() + 1);
+    return { from: d, to: next.toISOString().split('T')[0], label: new Date(d).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) };
+  }
+  if (rangeMode === 'week') {
+    var w = document.getElementById('weekPicker').value;
+    if (!w) return null;
+    var parts = w.split('-W');
+    var jan1 = new Date(parseInt(parts[0]), 0, 1);
+    var weekNum = parseInt(parts[1]);
+    var dayOffset = (weekNum - 1) * 7 - jan1.getDay() + 1;
+    var start = new Date(parseInt(parts[0]), 0, 1 + dayOffset);
+    var end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    return { from: start.toISOString().split('T')[0], to: end.toISOString().split('T')[0], label: 'Week of ' + start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) };
+  }
+  // month
+  var m = document.getElementById('monthPicker').value;
+  if (!m) return null;
+  var mp = m.split('-');
+  var y = parseInt(mp[0]), mn = parseInt(mp[1]);
+  var from = y + '-' + String(mn).padStart(2, '0') + '-01';
+  var nextMn = mn === 12 ? 1 : mn + 1;
+  var nextY = mn === 12 ? y + 1 : y;
+  var to = nextY + '-' + String(nextMn).padStart(2, '0') + '-01';
+  var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return { from: from, to: to, label: MONTH_NAMES[mn - 1] + ' ' + y };
+}
+
 var currentData = null;
-var sortCol = null;
-var sortAsc = true;
+var sortCol = 'calls';
+var sortAsc = false;
 
 function showToast(msg, type) {
   var t = document.getElementById('toast');
@@ -107,16 +185,17 @@ function showToast(msg, type) {
 }
 
 function loadData() {
-  var month = document.getElementById('monthPicker').value;
-  if (!month) return;
+  var range = getDateRange();
+  if (!range) return;
   var btn = document.getElementById('loadBtn');
   btn.disabled = true;
   btn.textContent = 'Loading...';
   document.getElementById('loading').style.display = 'block';
   document.getElementById('content').style.display = 'none';
   document.getElementById('statusText').textContent = '';
+  document.getElementById('progressText').textContent = '';
 
-  fetch('/api/gong/activity?month=' + month)
+  fetch('/api/gong/discovery-calls?from=' + range.from + '&to=' + range.to)
     .then(function(r) {
       if (r.status === 401) { alert('Session expired. Redirecting to login.'); window.location.href = '/login'; return; }
       return r.json();
@@ -125,12 +204,10 @@ function loadData() {
       if (!data) return;
       if (data.error) { showToast(data.error, 'error'); return; }
       currentData = data;
-      renderSummary(data);
-      sortCol = 'callsAsHost';
-      sortAsc = false;
+      renderSummary(data, range.label);
       renderTable(data);
       document.getElementById('content').style.display = 'block';
-      document.getElementById('statusText').textContent = data.totalUsers + ' users, ' + data.totalCalls + ' calls';
+      document.getElementById('statusText').textContent = range.label + ' — ' + data.totalDiscoveryCalls + ' discovery calls from ' + data.agents.length + ' agents';
     })
     .catch(function(err) { showToast('Error: ' + err.message, 'error'); })
     .finally(function() {
@@ -140,13 +217,12 @@ function loadData() {
     });
 }
 
-function renderSummary(data) {
+function renderSummary(data, label) {
   var cards = [
-    { val: data.totalCalls.toLocaleString(), lbl: 'Total Calls' },
-    { val: data.totalUsers.toLocaleString(), lbl: 'Active Users' },
-    { val: data.totalHosted.toLocaleString(), lbl: 'Calls Hosted' },
-    { val: data.totalAttended.toLocaleString(), lbl: 'Calls Attended' },
-    { val: Math.round(data.avgDuration / 60).toLocaleString() + 'm', lbl: 'Avg Call Duration' }
+    { val: data.totalDiscoveryCalls.toLocaleString(), lbl: 'Discovery Calls' },
+    { val: data.agents.length.toLocaleString(), lbl: 'Sales Agents' },
+    { val: Math.round(data.avgDuration / 60) + 'm', lbl: 'Avg Duration' },
+    { val: data.totalCallsScanned.toLocaleString(), lbl: 'Total Gong Calls' }
   ];
   var h = '';
   for (var i = 0; i < cards.length; i++) {
@@ -156,21 +232,23 @@ function renderSummary(data) {
 }
 
 var COLS = [
-  { key: 'name', label: 'Name', align: 'left' },
-  { key: 'email', label: 'Email', align: 'left' },
-  { key: 'callsAsHost', label: 'Hosted', align: 'right' },
-  { key: 'callsAttended', label: 'Attended', align: 'right' },
-  { key: 'othersCallsListenedTo', label: 'Listened', align: 'right' },
-  { key: 'callsGaveFeedback', label: 'Gave Feedback', align: 'right' },
-  { key: 'callsReceivedFeedback', label: 'Received Feedback', align: 'right' },
-  { key: 'callsScorecardsFilled', label: 'Scorecards Filled', align: 'right' },
-  { key: 'callsSharedInternally', label: 'Shared Int.', align: 'right' },
-  { key: 'callsSharedExternally', label: 'Shared Ext.', align: 'right' }
+  { key: 'agent', label: 'Sales Agent', align: 'left' },
+  { key: 'calls', label: 'Discovery Calls', align: 'right' },
+  { key: 'avgDuration', label: 'Avg Duration', align: 'right', fmt: 'dur' },
+  { key: 'totalDuration', label: 'Total Time', align: 'right', fmt: 'dur' },
+  { key: 'shortest', label: 'Shortest', align: 'right', fmt: 'dur' },
+  { key: 'longest', label: 'Longest', align: 'right', fmt: 'dur' }
 ];
 
+function fmtDur(secs) {
+  if (!secs && secs !== 0) return '—';
+  var m = Math.floor(secs / 60);
+  var s = secs % 60;
+  return m + 'm ' + s + 's';
+}
+
 function renderTable(data) {
-  // Sort
-  var rows = data.users.slice();
+  var rows = data.agents.slice();
   if (sortCol) {
     rows.sort(function(a, b) {
       var av = a[sortCol], bv = b[sortCol];
@@ -183,10 +261,12 @@ function renderTable(data) {
   var th = '<tr>';
   for (var c = 0; c < COLS.length; c++) {
     var col = COLS[c];
-    var cls = col.align === 'right' ? ' class="ar"' : '';
     var sorted = sortCol === col.key;
     var arrow = sorted ? (sortAsc ? '&#9650;' : '&#9660;') : '&#9650;';
-    th += '<th' + cls + (sorted ? ' class="sorted' + (col.align === 'right' ? ' ar' : '') + '"' : '') + ' onclick="doSort(\'' + col.key + '\')">' + col.label + '<span class="sort-arrow">' + arrow + '</span></th>';
+    var cls = [];
+    if (col.align === 'right') cls.push('ar');
+    if (sorted) cls.push('sorted');
+    th += '<th' + (cls.length ? ' class="' + cls.join(' ') + '"' : '') + ' onclick="doSort(\'' + col.key + '\')">' + col.label + '<span class="sort-arrow">' + arrow + '</span></th>';
   }
   th += '</tr>';
   document.getElementById('tableHead').innerHTML = th;
@@ -200,24 +280,34 @@ function renderTable(data) {
       var col = COLS[j];
       var v = r[col.key];
       var tdCls = col.align === 'right' ? ' class="ar"' : '';
-      if (v === 0 && col.align === 'right') {
-        h += '<td' + tdCls + '><span class="empty-cell">0</span></td>';
+      if (col.fmt === 'dur') {
+        h += '<td' + tdCls + '>' + fmtDur(v) + '</td>';
+      } else if (typeof v === 'number') {
+        h += '<td' + tdCls + '>' + v.toLocaleString() + '</td>';
       } else {
-        h += '<td' + tdCls + '>' + (typeof v === 'number' ? v.toLocaleString() : (v || '')) + '</td>';
+        h += '<td' + tdCls + '>' + (v || '') + '</td>';
       }
     }
     h += '</tr>';
   }
+
+  // Totals row
+  if (rows.length > 0) {
+    var totCalls = 0, totDur = 0;
+    for (var t = 0; t < rows.length; t++) { totCalls += rows[t].calls; totDur += rows[t].totalDuration; }
+    h += '<tr style="font-weight:700;background:#f8fafc"><td>Total</td><td class="ar">' + totCalls.toLocaleString() + '</td><td class="ar">' + fmtDur(Math.round(totDur / totCalls)) + '</td><td class="ar">' + fmtDur(totDur) + '</td><td class="ar"></td><td class="ar"></td></tr>';
+  }
+
   document.getElementById('tableBody').innerHTML = h;
 }
 
 function doSort(key) {
   if (sortCol === key) { sortAsc = !sortAsc; }
-  else { sortCol = key; sortAsc = key === 'name' || key === 'email'; }
+  else { sortCol = key; sortAsc = key === 'agent'; }
   if (currentData) renderTable(currentData);
 }
 
-// Auto-load on page ready
+// Auto-load
 loadData();
 </script>
 </body>

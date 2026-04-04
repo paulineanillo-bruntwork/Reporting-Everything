@@ -2674,70 +2674,77 @@ async function getGongUsers() {
   return map;
 }
 
-app.get('/api/gong/activity', async function(req, res) {
+var DISCOVERY_TITLE_PATTERN = /Strategy Call/i;
+var MIN_CALL_DURATION = 240; // 4 minutes
+
+function parseAgentFromTitle(title) {
+  // Title format: "BruntWork Offshore Staffing Strategy Call w/ [Agent] & [Client]"
+  var match = title.match(/w\/\s*([^&]+)/i);
+  if (match) return match[1].trim();
+  return null;
+}
+
+app.get('/api/gong/discovery-calls', async function(req, res) {
   try {
-    var month = req.query.month;
-    if (!month) return res.status(400).json({ error: 'month parameter required (YYYY-MM)' });
-    var parts = month.split('-');
-    var y = parseInt(parts[0]), m = parseInt(parts[1]);
-    var fromDate = y + '-' + String(m).padStart(2, '0') + '-01';
-    var nextM = m === 12 ? 1 : m + 1;
-    var nextY = m === 12 ? y + 1 : y;
-    var toDate = nextY + '-' + String(nextM).padStart(2, '0') + '-01';
+    var from = req.query.from;
+    var to = req.query.to;
+    if (!from || !to) return res.status(400).json({ error: 'from and to date parameters required (YYYY-MM-DD)' });
 
-    // Fetch activity stats and calls in parallel
-    var [statsRecords, calls, usersMap] = await Promise.all([
-      gongFetchAllPages('/stats/activity/aggregate', {
-        method: 'POST',
-        body: JSON.stringify({ filter: { fromDate: fromDate, toDate: toDate } })
-      }, function(d) { return d.usersAggregateActivityStats || []; }),
-      gongFetch('/calls?fromDateTime=' + fromDate + 'T00:00:00Z&toDateTime=' + toDate + 'T00:00:00Z'),
-      getGongUsers()
-    ]);
+    // Fetch all calls for the date range (paginated)
+    var allCalls = await gongFetchAllPages(
+      '/calls?fromDateTime=' + from + 'T00:00:00Z&toDateTime=' + to + 'T00:00:00Z',
+      {},
+      function(d) { return d.calls || []; }
+    );
 
-    var totalCalls = calls.records ? calls.records.totalRecords : 0;
-    var callsList = calls.calls || [];
+    var totalScanned = allCalls.length;
+
+    // Filter: title matches pattern AND duration > 4 minutes
+    var discoveryCalls = [];
+    for (var i = 0; i < allCalls.length; i++) {
+      var call = allCalls[i];
+      if (DISCOVERY_TITLE_PATTERN.test(call.title || '') && (call.duration || 0) > MIN_CALL_DURATION) {
+        discoveryCalls.push(call);
+      }
+    }
+
+    // Aggregate by agent
+    var agentMap = {};
     var totalDuration = 0;
-    for (var ci = 0; ci < callsList.length; ci++) {
-      totalDuration += callsList[ci].duration || 0;
+    for (var j = 0; j < discoveryCalls.length; j++) {
+      var c = discoveryCalls[j];
+      var agent = parseAgentFromTitle(c.title) || 'Unknown';
+      totalDuration += c.duration || 0;
+      if (!agentMap[agent]) {
+        agentMap[agent] = { agent: agent, calls: 0, totalDuration: 0, shortest: Infinity, longest: 0 };
+      }
+      agentMap[agent].calls++;
+      agentMap[agent].totalDuration += c.duration || 0;
+      if (c.duration < agentMap[agent].shortest) agentMap[agent].shortest = c.duration;
+      if (c.duration > agentMap[agent].longest) agentMap[agent].longest = c.duration;
     }
 
-    // Build user rows
-    var users = [];
-    var totalHosted = 0, totalAttended = 0;
-    for (var i = 0; i < statsRecords.length; i++) {
-      var s = statsRecords[i];
-      var stats = s.userAggregateActivityStats || {};
-      if (stats.callsAsHost === 0 && stats.callsAttended === 0 && stats.othersCallsListenedTo === 0) continue;
-      var user = usersMap[s.userId];
-      var name = user ? (user.firstName + ' ' + user.lastName) : s.userEmailAddress;
-      totalHosted += stats.callsAsHost || 0;
-      totalAttended += stats.callsAttended || 0;
-      users.push({
-        name: name,
-        email: s.userEmailAddress,
-        callsAsHost: stats.callsAsHost || 0,
-        callsAttended: stats.callsAttended || 0,
-        othersCallsListenedTo: stats.othersCallsListenedTo || 0,
-        callsGaveFeedback: stats.callsGaveFeedback || 0,
-        callsReceivedFeedback: stats.callsReceivedFeedback || 0,
-        callsScorecardsFilled: stats.callsScorecardsFilled || 0,
-        callsSharedInternally: stats.callsSharedInternally || 0,
-        callsSharedExternally: stats.callsSharedExternally || 0
-      });
-    }
+    var agents = Object.values(agentMap).map(function(a) {
+      return {
+        agent: a.agent,
+        calls: a.calls,
+        avgDuration: Math.round(a.totalDuration / a.calls),
+        totalDuration: a.totalDuration,
+        shortest: a.shortest === Infinity ? 0 : a.shortest,
+        longest: a.longest
+      };
+    });
 
     res.json({
-      month: month,
-      totalCalls: totalCalls,
-      totalUsers: users.length,
-      totalHosted: totalHosted,
-      totalAttended: totalAttended,
-      avgDuration: totalCalls > 0 ? Math.round(totalDuration / callsList.length) : 0,
-      users: users
+      from: from,
+      to: to,
+      totalCallsScanned: totalScanned,
+      totalDiscoveryCalls: discoveryCalls.length,
+      avgDuration: discoveryCalls.length > 0 ? Math.round(totalDuration / discoveryCalls.length) : 0,
+      agents: agents
     });
   } catch (err) {
-    console.error('Gong activity error:', err.message);
+    console.error('Gong discovery calls error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
