@@ -125,7 +125,7 @@ tbody tr:hover td{background:#f8fafc}
   <input type="month" id="convMonthPicker" />
   <button id="convLoadBtn" onclick="loadConversion()">Load</button>
   <span id="convStatusText" style="font-size:12px;color:var(--text-muted)"></span>
-  <span style="font-size:11px;color:var(--text-muted);margin-left:auto">Closed deals in selected month vs Gong calls in prior month</span>
+  <span style="font-size:11px;color:var(--text-muted);margin-left:auto">Closed FTE in selected month vs Gong calls in prior month (Full-Time=1, Part-Time=0.5, Other=0.25)</span>
 </div>
 
 <div id="convLoading" class="loading" style="display:none">
@@ -406,7 +406,7 @@ function loadConversion() {
 function renderConvSummary(data) {
   var convPct = data.overallConversion !== null ? data.overallConversion + '%' : '—';
   var cards = [
-    { val: data.totalClosures.toLocaleString(), lbl: 'Closed Deals (' + data.closeMonth + ')' },
+    { val: data.totalClosures.toLocaleString(), lbl: 'Closed FTE (' + data.closeMonth + ')' },
     { val: data.totalGongCalls.toLocaleString(), lbl: 'Discovery Calls (' + data.callsMonth + ')' },
     { val: convPct, lbl: 'Overall Conversion Rate' },
     { val: data.totalTickets.toLocaleString(), lbl: 'Onboarding Tickets' }
@@ -421,7 +421,7 @@ function renderConvSummary(data) {
 var CONV_COLS = [
   { key: 'agent', label: 'Sales Agent', align: 'left' },
   { key: 'gongCalls', label: 'Discovery Calls (Prior Month)', align: 'right' },
-  { key: 'closures', label: 'Closed Deals', align: 'right' },
+  { key: 'closures', label: 'Closed FTE', align: 'right' },
   { key: 'conversionRate', label: 'Conversion Rate', align: 'right' }
 ];
 

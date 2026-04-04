@@ -2861,10 +2861,23 @@ app.get('/api/gong/conversion', async function(req, res) {
           { propertyName: 'createdate', operator: 'LT', value: closeToMs }
         ]
       }],
-      properties: ['createdate', 'hs_pipeline', 'subject'],
+      properties: ['createdate', 'hs_pipeline', 'subject', 'assignment_type'],
       sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }]
     });
     console.log('[Conversion] Tickets found: ' + tickets.length);
+
+    // FTE weighting by assignment type
+    function convFteWeight(type) {
+      if (type === 'Full-Time') return 1;
+      if (type === 'Part-Time') return 0.5;
+      return 0.25; // PT-Under-20, Project-Based, Output-Based
+    }
+
+    // Build ticket FTE weight map
+    var ticketFteMap = {};
+    for (var tw = 0; tw < tickets.length; tw++) {
+      ticketFteMap[String(tickets[tw].id)] = convFteWeight(tickets[tw].properties.assignment_type || '');
+    }
 
     // 2. Get associated deals for each ticket
     var ticketIds = tickets.map(function(t) { return t.id; });
@@ -2875,15 +2888,16 @@ app.get('/api/gong/conversion', async function(req, res) {
     Object.values(ticketDealMap).forEach(function(ids) { allDealIds = allDealIds.concat(ids); });
     var dealAgentMap = await getSalesAgentForDeals(allDealIds);
 
-    // 4. Aggregate closures per sales agent
+    // 4. Aggregate closures (FTE-weighted) per sales agent
     var closuresByAgent = {};
     for (var ti = 0; ti < ticketIds.length; ti++) {
       var tid = String(ticketIds[ti]);
+      var fte = ticketFteMap[tid] || 1;
       var dealIds = ticketDealMap[tid] || [];
       for (var di = 0; di < dealIds.length; di++) {
         var agent = dealAgentMap[String(dealIds[di])];
         if (agent) {
-          closuresByAgent[agent] = (closuresByAgent[agent] || 0) + 1;
+          closuresByAgent[agent] = (closuresByAgent[agent] || 0) + fte;
         }
       }
     }
@@ -2953,10 +2967,11 @@ app.get('/api/gong/conversion', async function(req, res) {
         return; // skip duplicate
       }
 
+      var closuresRound = Math.round(closures * 10) / 10;
       agents.push({
         agent: name,
         gongCalls: gongCalls,
-        closures: closures,
+        closures: closuresRound,
         conversionRate: gongCalls > 0 ? Math.round((closures / gongCalls) * 1000) / 10 : null
       });
     });
@@ -2965,7 +2980,7 @@ app.get('/api/gong/conversion', async function(req, res) {
     agents.sort(function(a, b) { return b.closures - a.closures; });
 
     var totalGong = discoveryCalls.length;
-    var totalClosures = Object.values(closuresByAgent).reduce(function(s, v) { return s + v; }, 0);
+    var totalClosures = Math.round(Object.values(closuresByAgent).reduce(function(s, v) { return s + v; }, 0) * 10) / 10;
 
     res.json({
       month: month,
