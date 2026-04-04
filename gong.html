@@ -354,6 +354,7 @@ function doSort(key) {
 }
 
 // === Tab switching ===
+var convLoaded = false;
 function switchTab(tab) {
   var btns = document.querySelectorAll('.tab-btn');
   for (var i = 0; i < btns.length; i++) {
@@ -361,6 +362,10 @@ function switchTab(tab) {
   }
   document.getElementById('panelCalls').classList.toggle('active', tab === 'calls');
   document.getElementById('panelConversion').classList.toggle('active', tab === 'conversion');
+  if (tab === 'conversion' && !convLoaded) {
+    convLoaded = true;
+    loadConversion();
+  }
 }
 
 // === Conversion rates ===
@@ -392,8 +397,9 @@ function loadConversion() {
       renderConvSummary(data);
       renderConvTable(data);
       document.getElementById('convContent').style.display = 'block';
+      var cacheNote = data.cached ? ' (cached ' + new Date(data.cachedAt).toLocaleString() + ')' : ' (fresh)';
       document.getElementById('convStatusText').textContent =
-        'Closures in ' + data.closeMonth + ' vs calls in ' + data.callsMonth;
+        'Closures in ' + data.closeMonth + ' vs calls in ' + data.callsMonth + cacheNote;
     })
     .catch(function(err) { showToast('Error: ' + err.message, 'error'); })
     .finally(function() {

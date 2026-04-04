@@ -2830,10 +2830,22 @@ async function getSalesAgentForDeals(dealIds) {
   return agentMap;
 }
 
+// Cache conversion data per month for 24 hours
+var conversionCache = {}; // { 'YYYY-MM': { data, ts } }
+var CONVERSION_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
 app.get('/api/gong/conversion', async function(req, res) {
   try {
     var month = req.query.month;
     if (!month) return res.status(400).json({ error: 'month parameter required (YYYY-MM)' });
+
+    // Check cache
+    var cached = conversionCache[month];
+    if (cached && (Date.now() - cached.ts) < CONVERSION_CACHE_TTL) {
+      console.log('[Conversion] Returning cached data for ' + month + ' (' + Math.round((Date.now() - cached.ts) / 3600000) + 'h old)');
+      return res.json(Object.assign({}, cached.data, { cached: true, cachedAt: new Date(cached.ts).toISOString() }));
+    }
+
     var parts = month.split('-');
     var y = parseInt(parts[0]), m = parseInt(parts[1]);
 
@@ -2982,7 +2994,7 @@ app.get('/api/gong/conversion', async function(req, res) {
     var totalGong = discoveryCalls.length;
     var totalClosures = Math.round(Object.values(closuresByAgent).reduce(function(s, v) { return s + v; }, 0) * 10) / 10;
 
-    res.json({
+    var result = {
       month: month,
       closeMonth: MONTH_NAMES[m - 1] + ' ' + y,
       callsMonth: MONTH_NAMES[prevM - 1] + ' ' + prevY,
@@ -2991,7 +3003,13 @@ app.get('/api/gong/conversion', async function(req, res) {
       totalGongCalls: totalGong,
       overallConversion: totalGong > 0 ? Math.round((totalClosures / totalGong) * 1000) / 10 : null,
       agents: agents
-    });
+    };
+
+    // Cache the result
+    conversionCache[month] = { data: result, ts: Date.now() };
+    console.log('[Conversion] Cached result for ' + month);
+
+    res.json(Object.assign({}, result, { cached: false }));
   } catch (err) {
     console.error('Conversion rate error:', err.message);
     res.status(500).json({ error: err.message });
