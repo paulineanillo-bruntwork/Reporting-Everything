@@ -51,6 +51,16 @@ tbody tr:hover td{background:#f8fafc}
 .status-toast.show{opacity:1}
 .status-toast.error{background:var(--red)}
 .status-toast.success{background:var(--green)}
+.tab-bar{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:24px}
+.tab-btn{padding:12px 24px;font-size:14px;font-weight:600;border:none;background:none;color:var(--text-muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+.conv-rate{font-weight:700}
+.conv-rate.good{color:var(--green)}
+.conv-rate.medium{color:var(--orange)}
+.conv-rate.low{color:var(--red)}
 @media(max-width:900px){.header,.main{padding-left:20px;padding-right:20px}.summary-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
@@ -69,6 +79,12 @@ tbody tr:hover td{background:#f8fafc}
 </div>
 <div class="main">
 
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('calls')" data-tab="calls">Discovery Calls</button>
+  <button class="tab-btn" onclick="switchTab('conversion')" data-tab="conversion">Conversion Rates</button>
+</div>
+
+<div class="tab-panel active" id="panelCalls">
 <div class="controls">
   <div class="pill-group" id="rangeGroup">
     <button onclick="setRange('day')" data-range="day">Day</button>
@@ -100,6 +116,35 @@ tbody tr:hover td{background:#f8fafc}
     </div>
   </div>
 </div>
+
+</div><!-- end panelCalls -->
+
+<div class="tab-panel" id="panelConversion">
+<div class="controls">
+  <label style="font-size:13px;font-weight:600">Close Month:</label>
+  <input type="month" id="convMonthPicker" />
+  <button id="convLoadBtn" onclick="loadConversion()">Load</button>
+  <span id="convStatusText" style="font-size:12px;color:var(--text-muted)"></span>
+  <span style="font-size:11px;color:var(--text-muted);margin-left:auto">Closed deals in selected month vs Gong calls in prior month</span>
+</div>
+
+<div id="convLoading" class="loading" style="display:none">
+  <div class="spinner"></div>
+  <div>Matching sales agents across Gong &amp; HubSpot...</div>
+</div>
+
+<div id="convContent" style="display:none">
+  <div class="summary-grid" id="convSummaryCards"></div>
+  <div class="tbl-wrap">
+    <div class="tbl-scroll">
+      <table>
+        <thead id="convTableHead"></thead>
+        <tbody id="convTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div><!-- end panelConversion -->
 
 </div>
 <div class="status-toast" id="toast"></div>
@@ -306,6 +351,132 @@ function doSort(key) {
   if (sortCol === key) { sortAsc = !sortAsc; }
   else { sortCol = key; sortAsc = key === 'agent'; }
   if (currentData) renderTable(currentData);
+}
+
+// === Tab switching ===
+function switchTab(tab) {
+  var btns = document.querySelectorAll('.tab-btn');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].classList.toggle('active', btns[i].getAttribute('data-tab') === tab);
+  }
+  document.getElementById('panelCalls').classList.toggle('active', tab === 'calls');
+  document.getElementById('panelConversion').classList.toggle('active', tab === 'conversion');
+}
+
+// === Conversion rates ===
+document.getElementById('convMonthPicker').value = yr + '-' + String(mo).padStart(2, '0');
+
+var convData = null;
+var convSortCol = 'closures';
+var convSortAsc = false;
+
+function loadConversion() {
+  var month = document.getElementById('convMonthPicker').value;
+  if (!month) return;
+  var btn = document.getElementById('convLoadBtn');
+  btn.disabled = true;
+  btn.textContent = 'Loading...';
+  document.getElementById('convLoading').style.display = 'block';
+  document.getElementById('convContent').style.display = 'none';
+  document.getElementById('convStatusText').textContent = '';
+
+  fetch('/api/gong/conversion?month=' + month)
+    .then(function(r) {
+      if (r.status === 401) { alert('Session expired.'); window.location.href = '/login'; return; }
+      return r.json();
+    })
+    .then(function(data) {
+      if (!data) return;
+      if (data.error) { showToast(data.error, 'error'); return; }
+      convData = data;
+      renderConvSummary(data);
+      renderConvTable(data);
+      document.getElementById('convContent').style.display = 'block';
+      document.getElementById('convStatusText').textContent =
+        'Closures in ' + data.closeMonth + ' vs calls in ' + data.callsMonth;
+    })
+    .catch(function(err) { showToast('Error: ' + err.message, 'error'); })
+    .finally(function() {
+      btn.disabled = false;
+      btn.textContent = 'Load';
+      document.getElementById('convLoading').style.display = 'none';
+    });
+}
+
+function renderConvSummary(data) {
+  var convPct = data.overallConversion !== null ? data.overallConversion + '%' : '—';
+  var cards = [
+    { val: data.totalClosures.toLocaleString(), lbl: 'Closed Deals (' + data.closeMonth + ')' },
+    { val: data.totalGongCalls.toLocaleString(), lbl: 'Discovery Calls (' + data.callsMonth + ')' },
+    { val: convPct, lbl: 'Overall Conversion Rate' },
+    { val: data.totalTickets.toLocaleString(), lbl: 'Onboarding Tickets' }
+  ];
+  var h = '';
+  for (var i = 0; i < cards.length; i++) {
+    h += '<div class="summary-card"><div class="val">' + cards[i].val + '</div><div class="lbl">' + cards[i].lbl + '</div></div>';
+  }
+  document.getElementById('convSummaryCards').innerHTML = h;
+}
+
+var CONV_COLS = [
+  { key: 'agent', label: 'Sales Agent', align: 'left' },
+  { key: 'gongCalls', label: 'Discovery Calls (Prior Month)', align: 'right' },
+  { key: 'closures', label: 'Closed Deals', align: 'right' },
+  { key: 'conversionRate', label: 'Conversion Rate', align: 'right' }
+];
+
+function renderConvTable(data) {
+  var rows = data.agents.slice();
+  if (convSortCol) {
+    rows.sort(function(a, b) {
+      var av = a[convSortCol], bv = b[convSortCol];
+      if (av === null) av = -1;
+      if (bv === null) bv = -1;
+      if (typeof av === 'string') return convSortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+      return convSortAsc ? (av - bv) : (bv - av);
+    });
+  }
+
+  var th = '<tr>';
+  for (var c = 0; c < CONV_COLS.length; c++) {
+    var col = CONV_COLS[c];
+    var sorted = convSortCol === col.key;
+    var arrow = sorted ? (convSortAsc ? '&#9650;' : '&#9660;') : '&#9650;';
+    var cls = [];
+    if (col.align === 'right') cls.push('ar');
+    if (sorted) cls.push('sorted');
+    th += '<th' + (cls.length ? ' class="' + cls.join(' ') + '"' : '') + ' onclick="doConvSort(\'' + col.key + '\')">' + col.label + '<span class="sort-arrow">' + arrow + '</span></th>';
+  }
+  th += '</tr>';
+  document.getElementById('convTableHead').innerHTML = th;
+
+  var h = '';
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var rateStr = r.conversionRate !== null ? r.conversionRate + '%' : '—';
+    var rateClass = r.conversionRate === null ? '' : (r.conversionRate >= 100 ? 'good' : (r.conversionRate >= 50 ? 'medium' : 'low'));
+    h += '<tr>';
+    h += '<td>' + r.agent + '</td>';
+    h += '<td class="ar">' + r.gongCalls.toLocaleString() + '</td>';
+    h += '<td class="ar">' + r.closures.toLocaleString() + '</td>';
+    h += '<td class="ar"><span class="conv-rate ' + rateClass + '">' + rateStr + '</span></td>';
+    h += '</tr>';
+  }
+
+  // Totals
+  if (rows.length > 0) {
+    var totG = 0, totC = 0;
+    for (var t = 0; t < rows.length; t++) { totG += rows[t].gongCalls; totC += rows[t].closures; }
+    var totRate = totG > 0 ? Math.round((totC / totG) * 1000) / 10 + '%' : '—';
+    h += '<tr style="font-weight:700;background:#f8fafc"><td>Total</td><td class="ar">' + totG.toLocaleString() + '</td><td class="ar">' + totC.toLocaleString() + '</td><td class="ar">' + totRate + '</td></tr>';
+  }
+  document.getElementById('convTableBody').innerHTML = h;
+}
+
+function doConvSort(key) {
+  if (convSortCol === key) { convSortAsc = !convSortAsc; }
+  else { convSortCol = key; convSortAsc = key === 'agent'; }
+  if (convData) renderConvTable(convData);
 }
 
 // Auto-load

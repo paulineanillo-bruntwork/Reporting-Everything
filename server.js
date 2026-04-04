@@ -2749,6 +2749,240 @@ app.get('/api/gong/discovery-calls', async function(req, res) {
   }
 });
 
+// ===== Gong + HubSpot: Sales Agent Conversion Rates =====
+var CLOSE_PIPELINES = ['4483329', '3857063', '20565603'];
+
+async function hubspotGet(url) {
+  var resp = await fetch(url, {
+    headers: { Authorization: 'Bearer ' + HUBSPOT_KEY, 'Content-Type': 'application/json' }
+  });
+  if (!resp.ok) {
+    var body = await resp.text();
+    throw new Error('HubSpot GET error ' + resp.status + ': ' + body.slice(0, 200));
+  }
+  return resp.json();
+}
+
+async function hubspotPost(url, body) {
+  var resp = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + HUBSPOT_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!resp.ok) {
+    var text = await resp.text();
+    throw new Error('HubSpot POST error ' + resp.status + ': ' + text.slice(0, 200));
+  }
+  return resp.json();
+}
+
+// Get deals associated with a batch of ticket IDs
+async function getDealsForTickets(ticketIds) {
+  var dealMap = {}; // ticketId -> [dealIds]
+  // Batch API allows up to 100 at a time
+  for (var i = 0; i < ticketIds.length; i += 100) {
+    var batch = ticketIds.slice(i, i + 100);
+    var inputs = batch.map(function(id) { return { id: String(id) }; });
+    if (i > 0) await sleep(300);
+    try {
+      var data = await hubspotPost(
+        'https://api.hubapi.com/crm/v4/associations/tickets/deals/batch/read',
+        { inputs: inputs }
+      );
+      var results = data.results || [];
+      for (var r = 0; r < results.length; r++) {
+        var from = results[r].from ? results[r].from.id : null;
+        var to = results[r].to || [];
+        if (from && to.length > 0) {
+          dealMap[from] = to.map(function(t) { return t.toObjectId; });
+        }
+      }
+    } catch (err) {
+      console.error('[Conversion] Associations batch error:', err.message);
+    }
+  }
+  return dealMap;
+}
+
+// Get sales_agent for a batch of deal IDs
+async function getSalesAgentForDeals(dealIds) {
+  var agentMap = {}; // dealId -> sales_agent
+  var unique = [...new Set(dealIds)];
+  for (var i = 0; i < unique.length; i += 100) {
+    var batch = unique.slice(i, i + 100);
+    if (i > 0) await sleep(300);
+    try {
+      var data = await hubspotPost(
+        'https://api.hubapi.com/crm/v3/objects/deals/batch/read',
+        { inputs: batch.map(function(id) { return { id: String(id) }; }), properties: ['sales_agent', 'dealname'] }
+      );
+      var results = data.results || [];
+      for (var r = 0; r < results.length; r++) {
+        var deal = results[r];
+        if (deal.properties && deal.properties.sales_agent) {
+          agentMap[deal.id] = deal.properties.sales_agent;
+        }
+      }
+    } catch (err) {
+      console.error('[Conversion] Deals batch read error:', err.message);
+    }
+  }
+  return agentMap;
+}
+
+app.get('/api/gong/conversion', async function(req, res) {
+  try {
+    var month = req.query.month;
+    if (!month) return res.status(400).json({ error: 'month parameter required (YYYY-MM)' });
+    var parts = month.split('-');
+    var y = parseInt(parts[0]), m = parseInt(parts[1]);
+
+    // Date range for ticket creation (the "close" month)
+    var closeFrom = new Date(Date.UTC(y, m - 1, 1));
+    var closeTo = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1));
+    var closeFromMs = String(closeFrom.getTime());
+    var closeToMs = String(closeTo.getTime());
+
+    // Prior month for Gong calls
+    var prevM = m === 1 ? 12 : m - 1;
+    var prevY = m === 1 ? y - 1 : y;
+    var gongFrom = prevY + '-' + String(prevM).padStart(2, '0') + '-01';
+    var gongTo = y + '-' + String(m).padStart(2, '0') + '-01';
+
+    console.log('[Conversion] Tickets: ' + closeFrom.toISOString().slice(0, 10) + ' to ' + closeTo.toISOString().slice(0, 10));
+    console.log('[Conversion] Gong calls: ' + gongFrom + ' to ' + gongTo);
+
+    // 1. Fetch tickets created in close month from the 3 pipelines
+    var tickets = await fetchAllPages({
+      filterGroups: [{
+        filters: [
+          { propertyName: 'hs_pipeline', operator: 'IN', values: CLOSE_PIPELINES },
+          { propertyName: 'createdate', operator: 'GTE', value: closeFromMs },
+          { propertyName: 'createdate', operator: 'LT', value: closeToMs }
+        ]
+      }],
+      properties: ['createdate', 'hs_pipeline', 'subject'],
+      sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }]
+    });
+    console.log('[Conversion] Tickets found: ' + tickets.length);
+
+    // 2. Get associated deals for each ticket
+    var ticketIds = tickets.map(function(t) { return t.id; });
+    var ticketDealMap = await getDealsForTickets(ticketIds);
+
+    // 3. Collect all deal IDs and fetch sales_agent
+    var allDealIds = [];
+    Object.values(ticketDealMap).forEach(function(ids) { allDealIds = allDealIds.concat(ids); });
+    var dealAgentMap = await getSalesAgentForDeals(allDealIds);
+
+    // 4. Aggregate closures per sales agent
+    var closuresByAgent = {};
+    for (var ti = 0; ti < ticketIds.length; ti++) {
+      var tid = String(ticketIds[ti]);
+      var dealIds = ticketDealMap[tid] || [];
+      for (var di = 0; di < dealIds.length; di++) {
+        var agent = dealAgentMap[String(dealIds[di])];
+        if (agent) {
+          closuresByAgent[agent] = (closuresByAgent[agent] || 0) + 1;
+        }
+      }
+    }
+
+    // 5. Fetch Gong discovery calls from the prior month
+    var allCalls = await gongFetchAllPages(
+      '/calls?fromDateTime=' + gongFrom + 'T00:00:00Z&toDateTime=' + gongTo + 'T00:00:00Z',
+      {},
+      function(d) { return d.calls || []; }
+    );
+    var discoveryCalls = allCalls.filter(function(c) {
+      return DISCOVERY_TITLE_PATTERN.test(c.title || '') && (c.duration || 0) > MIN_CALL_DURATION;
+    });
+
+    // Aggregate Gong calls by agent
+    var gongByAgent = {};
+    for (var gi = 0; gi < discoveryCalls.length; gi++) {
+      var gAgent = parseAgentFromTitle(discoveryCalls[gi].title) || 'Unknown';
+      gongByAgent[gAgent] = (gongByAgent[gAgent] || 0) + 1;
+    }
+
+    // 6. Build name-matching map (Gong first names -> HubSpot full names)
+    // Gong titles use first names (e.g. "Ace"), HubSpot uses full names (e.g. "Ace Barcelona")
+    var hsAgentNames = Object.keys(closuresByAgent);
+    var gongAgentNames = Object.keys(gongByAgent);
+
+    function matchGongToHS(gongName) {
+      var gLower = gongName.toLowerCase().trim();
+      // Try exact match first
+      for (var h = 0; h < hsAgentNames.length; h++) {
+        if (hsAgentNames[h].toLowerCase() === gLower) return hsAgentNames[h];
+      }
+      // Try first-name match
+      for (var h2 = 0; h2 < hsAgentNames.length; h2++) {
+        var hFirst = hsAgentNames[h2].split(' ')[0].toLowerCase();
+        var gFirst = gLower.split(' ')[0];
+        if (hFirst === gFirst) return hsAgentNames[h2];
+      }
+      return null;
+    }
+
+    // 7. Build combined results
+    var allAgents = new Set([...hsAgentNames, ...gongAgentNames]);
+    var agents = [];
+    var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    allAgents.forEach(function(name) {
+      var gongCalls = gongByAgent[name] || 0;
+      var closures = closuresByAgent[name] || 0;
+
+      // Try matching if one side is zero
+      if (gongCalls === 0 && closures > 0) {
+        // This is an HS name, find matching Gong name
+        for (var g = 0; g < gongAgentNames.length; g++) {
+          if (matchGongToHS(gongAgentNames[g]) === name) {
+            gongCalls = gongByAgent[gongAgentNames[g]];
+            break;
+          }
+        }
+      }
+      if (closures === 0 && gongCalls > 0) {
+        var hsMatch = matchGongToHS(name);
+        if (hsMatch) closures = closuresByAgent[hsMatch] || 0;
+      }
+
+      // Skip if this is a duplicate (Gong name that matched an HS name already in the set)
+      if (gongByAgent[name] && matchGongToHS(name) && matchGongToHS(name) !== name && allAgents.has(matchGongToHS(name))) {
+        return; // skip duplicate
+      }
+
+      agents.push({
+        agent: name,
+        gongCalls: gongCalls,
+        closures: closures,
+        conversionRate: gongCalls > 0 ? Math.round((closures / gongCalls) * 1000) / 10 : null
+      });
+    });
+
+    // Sort by closures desc
+    agents.sort(function(a, b) { return b.closures - a.closures; });
+
+    var totalGong = discoveryCalls.length;
+    var totalClosures = Object.values(closuresByAgent).reduce(function(s, v) { return s + v; }, 0);
+
+    res.json({
+      month: month,
+      closeMonth: MONTH_NAMES[m - 1] + ' ' + y,
+      callsMonth: MONTH_NAMES[prevM - 1] + ' ' + prevY,
+      totalTickets: tickets.length,
+      totalClosures: totalClosures,
+      totalGongCalls: totalGong,
+      overallConversion: totalGong > 0 ? Math.round((totalClosures / totalGong) * 1000) / 10 : null,
+      agents: agents
+    });
+  } catch (err) {
+    console.error('Conversion rate error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 initOIDC().then(function() {
   app.listen(PORT, function() {
     console.log('FTE Dashboard server running at http://localhost:' + PORT);
