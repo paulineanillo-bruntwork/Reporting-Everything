@@ -8,6 +8,9 @@ const { Issuer, generators } = require('openid-client');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HUBSPOT_KEY = process.env.HUBSPOT_TOKEN;
+const GONG_API_KEY = process.env.GONG_API_KEY || 'IVZIJZ5HRXUX2YGVVOVIBYFK6MQJJFI3';
+const GONG_API_SECRET = process.env.GONG_API_SECRET || 'eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjIwOTA2NDA2NTgsImFjY2Vzc0tleSI6IklWWklKWjVIUlhVWDJZR1ZWT1ZJQllGSzZNUUpKRkkzIn0.JJVRHRxOvza9mNYZ-gJM5Wjw_UDeSSQMneq5SES-_Ys';
+const GONG_BASE_URL = 'https://us-66463.api.gong.io/v2';
 const HUBSPOT_API = 'https://api.hubapi.com/crm/v3/objects/tickets/search';
 const PIPELINES = ['4483329', '3857063', '20565603'];
 
@@ -2624,6 +2627,119 @@ app.post('/api/kpi-history/generate', async function(req, res) {
 
 app.get('/kpi', function(req, res) {
   res.sendFile(path.join(__dirname, 'kpi-history.html'));
+});
+
+// ===== Gong API =====
+app.get('/gong', function(req, res) {
+  res.sendFile(path.join(__dirname, 'gong.html'));
+});
+
+async function gongFetch(endpoint, options) {
+  var opts = Object.assign({
+    headers: {
+      'Authorization': 'Basic ' + Buffer.from(GONG_API_KEY + ':' + GONG_API_SECRET).toString('base64'),
+      'Content-Type': 'application/json'
+    }
+  }, options || {});
+  var resp = await fetch(GONG_BASE_URL + endpoint, opts);
+  if (!resp.ok) throw new Error('Gong API error: ' + resp.status + ' ' + resp.statusText);
+  return resp.json();
+}
+
+async function gongFetchAllPages(endpoint, options, getRecords) {
+  var allRecords = [];
+  var cursor = null;
+  do {
+    var url = endpoint;
+    if (cursor) url += (url.includes('?') ? '&' : '?') + 'cursor=' + encodeURIComponent(cursor);
+    var data = await gongFetch(url, options);
+    var records = getRecords(data);
+    allRecords = allRecords.concat(records);
+    cursor = data.records && data.records.cursor ? data.records.cursor : null;
+  } while (cursor);
+  return allRecords;
+}
+
+// Cache users for 1 hour
+var gongUsersCache = { data: null, ts: 0 };
+async function getGongUsers() {
+  var now = Date.now();
+  if (gongUsersCache.data && (now - gongUsersCache.ts) < 3600000) return gongUsersCache.data;
+  var users = await gongFetchAllPages('/users', {}, function(d) { return d.users || []; });
+  var map = {};
+  for (var i = 0; i < users.length; i++) {
+    map[users[i].id] = users[i];
+  }
+  gongUsersCache = { data: map, ts: now };
+  return map;
+}
+
+app.get('/api/gong/activity', async function(req, res) {
+  try {
+    var month = req.query.month;
+    if (!month) return res.status(400).json({ error: 'month parameter required (YYYY-MM)' });
+    var parts = month.split('-');
+    var y = parseInt(parts[0]), m = parseInt(parts[1]);
+    var fromDate = y + '-' + String(m).padStart(2, '0') + '-01';
+    var nextM = m === 12 ? 1 : m + 1;
+    var nextY = m === 12 ? y + 1 : y;
+    var toDate = nextY + '-' + String(nextM).padStart(2, '0') + '-01';
+
+    // Fetch activity stats and calls in parallel
+    var [statsRecords, calls, usersMap] = await Promise.all([
+      gongFetchAllPages('/stats/activity/aggregate', {
+        method: 'POST',
+        body: JSON.stringify({ filter: { fromDate: fromDate, toDate: toDate } })
+      }, function(d) { return d.usersAggregateActivityStats || []; }),
+      gongFetch('/calls?fromDateTime=' + fromDate + 'T00:00:00Z&toDateTime=' + toDate + 'T00:00:00Z'),
+      getGongUsers()
+    ]);
+
+    var totalCalls = calls.records ? calls.records.totalRecords : 0;
+    var callsList = calls.calls || [];
+    var totalDuration = 0;
+    for (var ci = 0; ci < callsList.length; ci++) {
+      totalDuration += callsList[ci].duration || 0;
+    }
+
+    // Build user rows
+    var users = [];
+    var totalHosted = 0, totalAttended = 0;
+    for (var i = 0; i < statsRecords.length; i++) {
+      var s = statsRecords[i];
+      var stats = s.userAggregateActivityStats || {};
+      if (stats.callsAsHost === 0 && stats.callsAttended === 0 && stats.othersCallsListenedTo === 0) continue;
+      var user = usersMap[s.userId];
+      var name = user ? (user.firstName + ' ' + user.lastName) : s.userEmailAddress;
+      totalHosted += stats.callsAsHost || 0;
+      totalAttended += stats.callsAttended || 0;
+      users.push({
+        name: name,
+        email: s.userEmailAddress,
+        callsAsHost: stats.callsAsHost || 0,
+        callsAttended: stats.callsAttended || 0,
+        othersCallsListenedTo: stats.othersCallsListenedTo || 0,
+        callsGaveFeedback: stats.callsGaveFeedback || 0,
+        callsReceivedFeedback: stats.callsReceivedFeedback || 0,
+        callsScorecardsFilled: stats.callsScorecardsFilled || 0,
+        callsSharedInternally: stats.callsSharedInternally || 0,
+        callsSharedExternally: stats.callsSharedExternally || 0
+      });
+    }
+
+    res.json({
+      month: month,
+      totalCalls: totalCalls,
+      totalUsers: users.length,
+      totalHosted: totalHosted,
+      totalAttended: totalAttended,
+      avgDuration: totalCalls > 0 ? Math.round(totalDuration / callsList.length) : 0,
+      users: users
+    });
+  } catch (err) {
+    console.error('Gong activity error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 initOIDC().then(function() {
