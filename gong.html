@@ -94,7 +94,7 @@ tbody tr:hover td{background:#f8fafc}
   <input type="date" id="datePicker" style="display:none" onchange="loadDataCached()" />
   <input type="week" id="weekPicker" style="display:none" onchange="loadDataCached()" />
   <input type="month" id="monthPicker" onchange="loadDataCached()" />
-  <button id="loadBtn" onclick="loadData()">Load</button>
+  <button id="loadBtn" onclick="loadData()">Load latest data</button>
   <span id="statusText" style="font-size:12px;color:var(--text-muted)"></span>
   <span style="font-size:11px;color:var(--text-muted);margin-left:auto">Only sales discovery calls longer than 4 minutes are included</span>
 </div>
@@ -123,7 +123,7 @@ tbody tr:hover td{background:#f8fafc}
 <div class="controls">
   <label style="font-size:13px;font-weight:600">Close Month:</label>
   <input type="month" id="convMonthPicker" onchange="loadConversionCached()" />
-  <button id="convLoadBtn" onclick="loadConversion()">Load</button>
+  <button id="convLoadBtn" onclick="loadConversion()">Load latest data</button>
   <span id="convStatusText" style="font-size:12px;color:var(--text-muted)"></span>
   <span style="font-size:11px;color:var(--text-muted);margin-left:auto">Closed FTE in selected month vs Gong calls in prior month (Full-Time=1, Part-Time=0.5, Other=0.25)</span>
 </div>
@@ -264,7 +264,7 @@ function loadData() {
     .catch(function(err) { showToast('Error: ' + err.message, 'error'); })
     .finally(function() {
       btn.disabled = false;
-      btn.textContent = 'Load';
+      btn.textContent = 'Load latest data';
       document.getElementById('loading').style.display = 'none';
     });
 }
@@ -468,7 +468,7 @@ function fetchConversionFromServer(month, refresh) {
     .catch(function(err) { showToast('Error: ' + err.message, 'error'); })
     .finally(function() {
       btn.disabled = false;
-      btn.textContent = 'Load';
+      btn.textContent = 'Load latest data';
       document.getElementById('convLoading').style.display = 'none';
     });
 }
