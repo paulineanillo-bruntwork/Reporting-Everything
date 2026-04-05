@@ -663,10 +663,10 @@ Promise.all([
   _projectsData = groupProjects(projectsData);
   renderUpdates(false);
 
-  // Fetch Gong discovery call counts and re-render acquisition blocks with data
+  // Fetch Gong discovery call counts for trend window only (curSlice)
   var monthKeys = [];
-  for (var gi = 0; gi < allMonths.length; gi++) {
-    var mk = monthToKey(allMonths[gi][0]);
+  for (var gi = 0; gi < curSlice.length; gi++) {
+    var mk = monthToKey(curSlice[gi][0]);
     if (mk) monthKeys.push(mk);
   }
   if (monthKeys.length > 0) {
@@ -674,12 +674,12 @@ Promise.all([
       .then(function(r){return r.json();})
       .then(function(gongData) {
         var gongCounts = gongData.counts || {};
-        for (var gi2 = 0; gi2 < allMonths.length; gi2++) {
-          var mk2 = monthToKey(allMonths[gi2][0]);
+        for (var gi2 = 0; gi2 < curSlice.length; gi2++) {
+          var mk2 = monthToKey(curSlice[gi2][0]);
           var gongCount = (mk2 && gongCounts[mk2] != null) ? gongCounts[mk2] : null;
-          var mqlsBooked = pn(allMonths[gi2][C.mqls]);
-          allMonths[gi2][C.gongCalls] = gongCount;
-          allMonths[gi2][C.gongShowRate] = (gongCount !== null && mqlsBooked) ? ((gongCount / mqlsBooked) * 100).toFixed(1) : '';
+          var mqlsBooked = pn(curSlice[gi2][C.mqls]);
+          curSlice[gi2][C.gongCalls] = gongCount;
+          curSlice[gi2][C.gongShowRate] = (gongCount !== null && mqlsBooked) ? ((gongCount / mqlsBooked) * 100).toFixed(1) : '';
         }
         // Re-render acquisition sub-blocks with Gong data now available
         renderSubBlocks('acqBlocks', acqSections, cur, prev, curSlice, curLabels);

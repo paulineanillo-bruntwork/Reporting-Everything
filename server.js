@@ -2804,16 +2804,16 @@ app.get('/api/gong/monthly-discovery-counts', async function(req, res) {
     var months = monthsParam.split(',').filter(function(m) { return /^\d{4}-\d{2}$/.test(m); });
     if (months.length === 0) return res.status(400).json({ error: 'no valid months provided' });
 
-    // Fetch all months concurrently
+    // Fetch months sequentially to avoid Gong rate limits
     var results = {};
-    await Promise.all(months.map(async function(m) {
+    for (var i = 0; i < months.length; i++) {
       try {
-        results[m] = await getDiscoveryCountForMonth(m);
+        results[months[i]] = await getDiscoveryCountForMonth(months[i]);
       } catch (e) {
-        console.error('Error fetching Gong count for ' + m + ':', e.message);
-        results[m] = null;
+        console.error('Error fetching Gong count for ' + months[i] + ':', e.message);
+        results[months[i]] = null;
       }
-    }));
+    }
 
     res.json({ counts: results });
   } catch (err) {
