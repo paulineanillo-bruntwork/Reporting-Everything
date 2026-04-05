@@ -365,7 +365,7 @@ function switchTab(tab) {
   document.getElementById('panelConversion').classList.toggle('active', tab === 'conversion');
   if (tab === 'conversion' && !convLoaded) {
     convLoaded = true;
-    loadConversion();
+    loadConversionCached();
   }
 }
 
@@ -376,6 +376,41 @@ var convData = null;
 var convSortCol = 'closures';
 var convSortAsc = false;
 
+function renderConvResult(data) {
+  convData = data;
+  renderConvSummary(data);
+  renderConvTable(data);
+  document.getElementById('convContent').style.display = 'block';
+  var cacheNote = data.cached ? ' (cached ' + new Date(data.cachedAt).toLocaleString() + ')' : ' (fresh)';
+  document.getElementById('convStatusText').textContent =
+    'Closures in ' + data.closeMonth + ' vs calls in ' + data.callsMonth + cacheNote;
+}
+
+// Load from persistent Google Sheet cache (instant)
+function loadConversionCached() {
+  var month = document.getElementById('convMonthPicker').value;
+  if (!month) return;
+  document.getElementById('convLoading').style.display = 'block';
+  document.getElementById('convContent').style.display = 'none';
+  document.getElementById('convStatusText').textContent = '';
+
+  fetch('/api/gong/conversion-cached?month=' + month)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data && !data.empty && !data.error) {
+        renderConvResult(data);
+        document.getElementById('convLoading').style.display = 'none';
+      } else {
+        // No cached data — fall back to live fetch
+        loadConversion();
+      }
+    })
+    .catch(function() {
+      loadConversion();
+    });
+}
+
+// Load fresh from Gong + HubSpot APIs (slow, persists to cache)
 function loadConversion() {
   var month = document.getElementById('convMonthPicker').value;
   if (!month) return;
@@ -394,13 +429,7 @@ function loadConversion() {
     .then(function(data) {
       if (!data) return;
       if (data.error) { showToast(data.error, 'error'); return; }
-      convData = data;
-      renderConvSummary(data);
-      renderConvTable(data);
-      document.getElementById('convContent').style.display = 'block';
-      var cacheNote = data.cached ? ' (cached ' + new Date(data.cachedAt).toLocaleString() + ')' : ' (fresh)';
-      document.getElementById('convStatusText').textContent =
-        'Closures in ' + data.closeMonth + ' vs calls in ' + data.callsMonth + cacheNote;
+      renderConvResult(data);
     })
     .catch(function(err) { showToast('Error: ' + err.message, 'error'); })
     .finally(function() {

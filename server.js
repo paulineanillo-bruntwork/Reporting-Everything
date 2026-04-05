@@ -969,6 +969,9 @@ async function ensureSheetTabs() {
     if (existingSheets.indexOf('Gong Cache') === -1) {
       requests.push({ addSheet: { properties: { title: 'Gong Cache' } } });
     }
+    if (existingSheets.indexOf('Conversion Cache') === -1) {
+      requests.push({ addSheet: { properties: { title: 'Conversion Cache' } } });
+    }
     if (requests.length > 0) {
       var batchResp = await fetch(
         'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(REPORT_SHEET_ID) + ':batchUpdate',
@@ -1027,6 +1030,18 @@ async function ensureSheetTabs() {
       }
     } catch (e) {
       await sheetsUpdate(REPORT_SHEET_ID, 'Gong Cache!A1:C1', [['month', 'discovery_calls', 'updated_at']]);
+    }
+
+    // Ensure headers exist in Conversion Cache
+    try {
+      var convHeaderCheck = await sheetsGet(REPORT_SHEET_ID, 'Conversion Cache!A1:C1');
+      var convHeaders = (convHeaderCheck.values && convHeaderCheck.values[0]) || [];
+      if (convHeaders[0] !== 'month') {
+        await sheetsUpdate(REPORT_SHEET_ID, 'Conversion Cache!A1:C1', [['month', 'data_json', 'updated_at']]);
+        console.log('[Report] Wrote Conversion Cache headers');
+      }
+    } catch (e) {
+      await sheetsUpdate(REPORT_SHEET_ID, 'Conversion Cache!A1:C1', [['month', 'data_json', 'updated_at']]);
     }
 
     sheetsInitialised = true;
@@ -3001,6 +3016,65 @@ async function getSalesAgentForDeals(dealIds) {
   return agentMap;
 }
 
+// ===== Conversion Cache Sheet persistence =====
+async function saveConversionToSheet(month, data) {
+  if (!REPORT_SHEET_ID) return;
+  try {
+    await ensureSheetTabs();
+    var existing = await sheetsGet(REPORT_SHEET_ID, 'Conversion Cache!A:A');
+    var rows = (existing.values || []);
+    var rowIdx = -1;
+    for (var i = 1; i < rows.length; i++) {
+      if (rows[i][0] === month) { rowIdx = i; break; }
+    }
+    var now = new Date().toISOString();
+    var json = JSON.stringify(data);
+    if (rowIdx >= 0) {
+      var range = 'Conversion Cache!A' + (rowIdx + 1) + ':C' + (rowIdx + 1);
+      await sheetsUpdate(REPORT_SHEET_ID, range, [[month, json, now]]);
+    } else {
+      await sheetsAppend(REPORT_SHEET_ID, 'Conversion Cache!A:C', [[month, json, now]]);
+    }
+    console.log('[Conversion Cache] Saved ' + month);
+  } catch (e) {
+    console.error('[Conversion Cache] Failed to save:', e.message);
+  }
+}
+
+async function readConversionFromSheet(month) {
+  if (!REPORT_SHEET_ID) return null;
+  try {
+    await ensureSheetTabs();
+    var data = await sheetsGet(REPORT_SHEET_ID, 'Conversion Cache!A:C');
+    var rows = (data.values || []);
+    for (var i = 1; i < rows.length; i++) {
+      if (rows[i][0] === month && rows[i][1]) {
+        return { data: JSON.parse(rows[i][1]), updatedAt: rows[i][2] || null };
+      }
+    }
+    return null;
+  } catch (e) {
+    console.error('[Conversion Cache] Failed to read:', e.message);
+    return null;
+  }
+}
+
+// Endpoint to read cached conversion data from sheet (no Gong/HubSpot calls)
+app.get('/api/gong/conversion-cached', async function(req, res) {
+  try {
+    var month = req.query.month;
+    if (!month) return res.status(400).json({ error: 'month parameter required (YYYY-MM)' });
+    var cached = await readConversionFromSheet(month);
+    if (cached) {
+      res.json(Object.assign({}, cached.data, { cached: true, cachedAt: cached.updatedAt }));
+    } else {
+      res.json({ empty: true, month: month });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Cache conversion data per month for 24 hours
 var conversionCache = {}; // { 'YYYY-MM': { data, ts } }
 var CONVERSION_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
@@ -3181,8 +3255,9 @@ app.get('/api/gong/conversion', async function(req, res) {
       agents: agents
     };
 
-    // Cache the result
+    // Cache the result in memory and persist to Google Sheet
     conversionCache[month] = { data: result, ts: Date.now() };
+    saveConversionToSheet(month, result).catch(function() {});
     console.log('[Conversion] Cached result for ' + month);
 
     res.json(Object.assign({}, result, { cached: false }));
