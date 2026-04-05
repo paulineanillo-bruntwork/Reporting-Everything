@@ -3023,20 +3023,25 @@ app.get('/api/gong/conversion', async function(req, res) {
 
     // 6. Build name-matching map (Gong first names -> HubSpot full names)
     // Gong titles use first names (e.g. "Ace"), HubSpot uses full names (e.g. "Ace Barcelona")
+    // Nickname aliases: Gong name -> canonical first name used in HubSpot
+    var NAME_ALIASES = {
+      'anthony': 'tony'
+    };
     var hsAgentNames = Object.keys(closuresByAgent);
     var gongAgentNames = Object.keys(gongByAgent);
 
     function matchGongToHS(gongName) {
       var gLower = gongName.toLowerCase().trim();
+      var gFirst = gLower.split(' ')[0];
+      var gFirstAliased = NAME_ALIASES[gFirst] || gFirst;
       // Try exact match first
       for (var h = 0; h < hsAgentNames.length; h++) {
         if (hsAgentNames[h].toLowerCase() === gLower) return hsAgentNames[h];
       }
-      // Try first-name match
+      // Try first-name match (including aliases)
       for (var h2 = 0; h2 < hsAgentNames.length; h2++) {
         var hFirst = hsAgentNames[h2].split(' ')[0].toLowerCase();
-        var gFirst = gLower.split(' ')[0];
-        if (hFirst === gFirst) return hsAgentNames[h2];
+        if (hFirst === gFirst || hFirst === gFirstAliased) return hsAgentNames[h2];
       }
       return null;
     }
