@@ -613,6 +613,7 @@ Promise.all([
       { label:'MQL to New Client Job Opened Conversion Rate', col:C.salesConvRate, format:'pctR' },
       { label:'MQL to New Client FTE Conversion Rate (1 Month Conversion Window)', col:C.newClientFTEConv, format:'pctR' }
     ], charts:[
+      { label:'Discovery Calls Completed', col:C.gongCalls, color:'#0891b2', type:'bar' },
       { label:'New Client Jobs Opened', col:C.newClientJobs, color:'#059669', type:'bar' },
       { label:'MQL to New Client Job Opened Conversion Rate', col:C.salesConvRate, color:'#d97706', type:'line', pct:true },
       { label:'MQL to New Client FTE Conversion Rate', col:C.newClientFTEConv, color:'#7c3aed', type:'line', pct:true }
@@ -661,48 +662,22 @@ Promise.all([
   _projectsData = groupProjects(projectsData);
   renderUpdates(false);
 
-  // Fetch Gong discovery call counts for current + previous month ONLY
-  // Uses the same /api/gong/discovery-calls endpoint as /sales page
-  // Only 2 fetches (sequential) to avoid Gong rate limits
-  function gongMonthRange(ym) {
-    var p = ym.split('-'), y = parseInt(p[0]), m = parseInt(p[1]);
-    var from = ym + '-01';
-    var nm = m === 12 ? (y+1)+'-01' : y + '-' + String(m+1).padStart(2,'0');
-    return { from: from, to: nm + '-01' };
-  }
-  var gongMonths = [];
-  if (cur) { var ck = monthToKey(cur[0]); if (ck) gongMonths.push(ck); }
-  if (prev) { var pk = monthToKey(prev[0]); if (pk) gongMonths.push(pk); }
-
-  function fetchGongSequential(months, idx, counts) {
-    if (idx >= months.length) {
-      // All done — inject into cur/prev and re-render
+  // Fetch Gong discovery call counts from persistent Google Sheet cache
+  // (populated by /sales page when it loads from Gong API)
+  fetch('/api/gong/sheet-counts')
+    .then(function(r) { return r.json(); })
+    .then(function(gongData) {
+      var gongCounts = gongData.counts || {};
       for (var gi2 = 0; gi2 < curSlice.length; gi2++) {
         var mk2 = monthToKey(curSlice[gi2][0]);
-        var gongCount = (mk2 && counts[mk2] != null) ? counts[mk2] : null;
+        var gongCount = (mk2 && gongCounts[mk2] != null) ? gongCounts[mk2] : null;
         var mqlsBooked = pn(curSlice[gi2][C.mqls]);
         curSlice[gi2][C.gongCalls] = gongCount;
         curSlice[gi2][C.gongShowRate] = (gongCount !== null && mqlsBooked) ? ((gongCount / mqlsBooked) * 100).toFixed(1) : '';
       }
       renderSubBlocks('acqBlocks', acqSections, cur, prev, curSlice, curLabels);
-      return;
-    }
-    var ym = months[idx];
-    var r = gongMonthRange(ym);
-    fetch('/api/gong/discovery-calls?from=' + r.from + '&to=' + r.to)
-      .then(function(resp) { return resp.json(); })
-      .then(function(d) {
-        counts[ym] = d.totalDiscoveryCalls || 0;
-        fetchGongSequential(months, idx + 1, counts);
-      })
-      .catch(function() {
-        counts[ym] = null;
-        fetchGongSequential(months, idx + 1, counts);
-      });
-  }
-  if (gongMonths.length > 0) {
-    fetchGongSequential(gongMonths, 0, {});
-  }
+    })
+    .catch(function(e) { console.error('Gong sheet data fetch failed:', e); });
 
 }).catch(function(err){
   document.getElementById('loading').innerHTML = '<div style="color:var(--red)">Error: '+err.message+'</div>';

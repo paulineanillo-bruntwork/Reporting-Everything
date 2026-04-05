@@ -966,6 +966,9 @@ async function ensureSheetTabs() {
     if (existingSheets.indexOf('Quarterly Goals') === -1) {
       requests.push({ addSheet: { properties: { title: 'Quarterly Goals' } } });
     }
+    if (existingSheets.indexOf('Gong Cache') === -1) {
+      requests.push({ addSheet: { properties: { title: 'Gong Cache' } } });
+    }
     if (requests.length > 0) {
       var batchResp = await fetch(
         'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(REPORT_SHEET_ID) + ':batchUpdate',
@@ -1012,6 +1015,18 @@ async function ensureSheetTabs() {
       }
     } catch (e) {
       await sheetsUpdate(REPORT_SHEET_ID, 'Quarterly Goals!A1:E1', [QUARTERLY_COLUMNS]);
+    }
+
+    // Ensure headers exist in Gong Cache
+    try {
+      var gongHeaderCheck = await sheetsGet(REPORT_SHEET_ID, 'Gong Cache!A1:C1');
+      var gongHeaders = (gongHeaderCheck.values && gongHeaderCheck.values[0]) || [];
+      if (gongHeaders[0] !== 'month' || gongHeaders[1] !== 'discovery_calls') {
+        await sheetsUpdate(REPORT_SHEET_ID, 'Gong Cache!A1:C1', [['month', 'discovery_calls', 'updated_at']]);
+        console.log('[Report] Wrote Gong Cache headers');
+      }
+    } catch (e) {
+      await sheetsUpdate(REPORT_SHEET_ID, 'Gong Cache!A1:C1', [['month', 'discovery_calls', 'updated_at']]);
     }
 
     sheetsInitialised = true;
@@ -2687,6 +2702,54 @@ function parseAgentFromTitle(title) {
   return null;
 }
 
+// ===== Gong Cache Sheet: persist discovery call counts =====
+// Save a monthly count to the "Gong Cache" sheet tab
+async function saveGongCountToSheet(month, count) {
+  if (!REPORT_SHEET_ID) return;
+  try {
+    await ensureSheetTabs();
+    // Read existing rows to find if month already exists
+    var existing = await sheetsGet(REPORT_SHEET_ID, 'Gong Cache!A:C');
+    var rows = (existing.values || []);
+    var rowIdx = -1;
+    for (var i = 1; i < rows.length; i++) { // skip header
+      if (rows[i][0] === month) { rowIdx = i; break; }
+    }
+    var now = new Date().toISOString();
+    if (rowIdx >= 0) {
+      // Update existing row
+      var range = 'Gong Cache!A' + (rowIdx + 1) + ':C' + (rowIdx + 1);
+      await sheetsUpdate(REPORT_SHEET_ID, range, [[month, count, now]]);
+    } else {
+      // Append new row
+      await sheetsAppend(REPORT_SHEET_ID, 'Gong Cache!A:C', [[month, count, now]]);
+    }
+    console.log('[Gong Cache] Saved ' + month + ' = ' + count);
+  } catch (e) {
+    console.error('[Gong Cache] Failed to save:', e.message);
+  }
+}
+
+// Read all monthly counts from the "Gong Cache" sheet
+async function readGongCacheFromSheet() {
+  if (!REPORT_SHEET_ID) return {};
+  try {
+    await ensureSheetTabs();
+    var data = await sheetsGet(REPORT_SHEET_ID, 'Gong Cache!A:C');
+    var rows = (data.values || []);
+    var counts = {};
+    for (var i = 1; i < rows.length; i++) { // skip header
+      if (rows[i][0] && rows[i][1] != null) {
+        counts[rows[i][0]] = parseInt(rows[i][1]) || 0;
+      }
+    }
+    return counts;
+  } catch (e) {
+    console.error('[Gong Cache] Failed to read:', e.message);
+    return {};
+  }
+}
+
 // Cache for discovery calls endpoint: keyed by "from|to"
 var discoveryCallsCache = {};
 var DISCOVERY_CALLS_TTL = 24 * 60 * 60 * 1000; // 24 hours
@@ -2759,9 +2822,27 @@ app.get('/api/gong/discovery-calls', async function(req, res) {
     };
 
     discoveryCallsCache[cacheKey] = { data: result, ts: Date.now() };
+
+    // Persist to Google Sheet if this is a full-month range (from = YYYY-MM-01)
+    if (/^\d{4}-\d{2}-01$/.test(from)) {
+      var monthKey = from.substring(0, 7); // YYYY-MM
+      saveGongCountToSheet(monthKey, discoveryCalls.length).catch(function() {});
+    }
+
     res.json(result);
   } catch (err) {
     console.error('Gong discovery calls error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== Gong: Read persisted discovery call counts from sheet =====
+app.get('/api/gong/sheet-counts', async function(req, res) {
+  try {
+    var counts = await readGongCacheFromSheet();
+    res.json({ counts: counts });
+  } catch (err) {
+    console.error('Gong sheet counts error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
