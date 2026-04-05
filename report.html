@@ -608,7 +608,7 @@ Promise.all([
     ]},
     { title:'Sales', rows:[
       { label:'Discovery Calls Completed', col:C.gongCalls, format:'num' },
-      { label:'Show Rate', col:C.gongShowRate, format:'pctR' },
+      { label:'Show Rate', col:C.gongShowRate, format:'pctRound' },
       { label:'New Client Jobs Opened', col:C.newClientJobs, format:'num' },
       { label:'MQL to New Client Job Opened Conversion Rate', col:C.salesConvRate, format:'pctR' },
       { label:'MQL to New Client FTE Conversion Rate (1 Month Conversion Window)', col:C.newClientFTEConv, format:'pctR' }
@@ -740,7 +740,7 @@ function renderSubBlocks(containerId, sections, cur, prev, slice, labels) {
       var ds2 = makeDS({ type:'line', label:ov.label, color:ov.color });
       ds2.data = item.slice.map(function(m){return pn(m[ov.col]);});
       ds2.yAxisID = 'y1';
-      ds2.datalabels = { display:true, anchor:'end', align:'end', color:ov.color, font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?v.toFixed(1)+'%':'';} };
+      ds2.datalabels = { display:true, anchor:'end', align:'end', color:ov.color, font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?Math.round(v)+'%':'';} };
       datasets.push(ds2);
       opts.scales.y = { display:false, beginAtZero:true, position:'left' };
       opts.scales.y1 = { display:true, beginAtZero:true, position:'right', grid:{display:false}, ticks:{font:{size:10}, callback:function(v){return v+'%';}} };
@@ -777,6 +777,7 @@ function formatVal(v, format) {
   if (format==='money') return fmtM(v);
   if (format==='pct') return fmtPct(v);
   if (format==='pctR') return fmtPctRaw(v);
+  if (format==='pctRound') return v===null||v===undefined?'—':Math.round(Number(v))+'%';
   if (format==='dec') return fmtD(v);
   return fmt(v);
 }
