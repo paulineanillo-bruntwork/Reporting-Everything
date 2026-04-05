@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
-<title>Gong — Discovery Calls</title>
+<title>Gong — Discovery Calls Completed</title>
 <style>
 :root{--bg:#f4f6fb;--surface:#fff;--border:#e2e8f0;--text:#1e293b;--text-muted:#64748b;--blue:#2563eb;--blue-dark:#1e40af;--green:#059669;--green-light:#d1fae5;--red:#dc2626;--red-light:#fee2e2;--orange:#d97706;--purple:#7c3aed;--radius:16px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -67,7 +67,7 @@ tbody tr:hover td{background:#f8fafc}
 <body>
 <div class="header">
   <div>
-    <h1>Discovery Calls</h1>
+    <h1>Discovery Calls Completed</h1>
     <div class="subtitle">Sales team call data from Gong</div>
   </div>
   <div class="nav-links">
@@ -80,7 +80,7 @@ tbody tr:hover td{background:#f8fafc}
 <div class="main">
 
 <div class="tab-bar">
-  <button class="tab-btn active" onclick="switchTab('calls')" data-tab="calls">Discovery Calls (Gong)</button>
+  <button class="tab-btn active" onclick="switchTab('calls')" data-tab="calls">Discovery Calls Completed (Gong)</button>
   <button class="tab-btn" onclick="switchTab('conversion')" data-tab="conversion">Conversion Rates</button>
 </div>
 
@@ -96,12 +96,12 @@ tbody tr:hover td{background:#f8fafc}
   <input type="month" id="monthPicker" onchange="loadDataCached()" />
   <button id="loadBtn" onclick="loadData()">Load latest data</button>
   <span id="statusText" style="font-size:12px;color:var(--text-muted)"></span>
-  <span style="font-size:11px;color:var(--text-muted);margin-left:auto">Only sales discovery calls longer than 4 minutes are included</span>
+  <span style="font-size:11px;color:var(--text-muted);margin-left:auto">Only sales discovery calls completed longer than 4 minutes are included</span>
 </div>
 
 <div id="loading" class="loading" style="display:none">
   <div class="spinner"></div>
-  <div>Fetching discovery calls from Gong...</div>
+  <div>Fetching discovery calls completed from Gong...</div>
   <div class="progress-text" id="progressText"></div>
 </div>
 
@@ -236,7 +236,7 @@ function renderDiscoveryResult(data, range) {
   renderTable(data);
   document.getElementById('content').style.display = 'block';
   var cacheNote = data.cached ? ' (cached ' + new Date(data.cachedAt).toLocaleString() + ')' : ' (fresh)';
-  document.getElementById('statusText').textContent = range.label + ' — ' + data.totalDiscoveryCalls + ' discovery calls from ' + data.agents.length + ' agents' + cacheNote;
+  document.getElementById('statusText').textContent = range.label + ' — ' + data.totalDiscoveryCalls + ' discovery calls completed from ' + data.agents.length + ' agents' + cacheNote;
 }
 
 // Load button — always fetches fresh from Gong API
@@ -292,7 +292,7 @@ function loadDataCached() {
 
 function renderSummary(data, label) {
   var cards = [
-    { val: data.totalDiscoveryCalls.toLocaleString(), lbl: 'Discovery Calls' },
+    { val: data.totalDiscoveryCalls.toLocaleString(), lbl: 'Discovery Calls Completed' },
     { val: data.agents.length.toLocaleString(), lbl: 'Sales Agents' },
     { val: Math.round(data.avgDuration / 60) + 'm', lbl: 'Avg Duration' },
     { val: data.totalCallsScanned.toLocaleString(), lbl: 'Total Gong Calls' }
@@ -306,7 +306,7 @@ function renderSummary(data, label) {
 
 var COLS = [
   { key: 'agent', label: 'Sales Agent', align: 'left' },
-  { key: 'calls', label: 'Discovery Calls', align: 'right' },
+  { key: 'calls', label: 'Discovery Calls Completed', align: 'right' },
   { key: 'avgDuration', label: 'Avg Duration', align: 'right', fmt: 'dur' },
   { key: 'totalDuration', label: 'Total Time', align: 'right', fmt: 'dur' },
   { key: 'shortest', label: 'Shortest', align: 'right', fmt: 'dur' },
@@ -484,7 +484,7 @@ function renderConvSummary(data) {
   var convPct = data.overallConversion !== null ? data.overallConversion + '%' : '—';
   var cards = [
     { val: data.totalClosures.toLocaleString(), lbl: 'Closed FTE (' + data.closeMonth + ')' },
-    { val: data.totalGongCalls.toLocaleString(), lbl: 'Discovery Calls (' + data.callsMonth + ')' },
+    { val: data.totalGongCalls.toLocaleString(), lbl: 'Discovery Calls Completed (' + data.callsMonth + ')' },
     { val: convPct, lbl: 'Overall Conversion Rate' },
     { val: data.totalTickets.toLocaleString(), lbl: 'Onboarding Tickets' }
   ];
@@ -497,7 +497,7 @@ function renderConvSummary(data) {
 
 var CONV_COLS = [
   { key: 'agent', label: 'Sales Agent', align: 'left' },
-  { key: 'gongCalls', label: 'Discovery Calls (Prior Month)', align: 'right' },
+  { key: 'gongCalls', label: 'Discovery Calls Completed (Prior Month)', align: 'right' },
   { key: 'closures', label: 'Closed FTE', align: 'right' },
   { key: 'conversionRate', label: 'Conversion Rate', align: 'right' }
 ];
