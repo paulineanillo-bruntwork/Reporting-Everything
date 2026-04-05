@@ -241,7 +241,7 @@ function loadData() {
   document.getElementById('statusText').textContent = '';
   document.getElementById('progressText').textContent = '';
 
-  fetch('/api/gong/discovery-calls?from=' + range.from + '&to=' + range.to)
+  fetch('/api/gong/discovery-calls?from=' + range.from + '&to=' + range.to + '&refresh=true')
     .then(function(r) {
       if (r.status === 401) { alert('Session expired. Redirecting to login.'); window.location.href = '/login'; return; }
       return r.json();
@@ -421,7 +421,7 @@ function loadConversion() {
   document.getElementById('convContent').style.display = 'none';
   document.getElementById('convStatusText').textContent = '';
 
-  fetch('/api/gong/conversion?month=' + month)
+  fetch('/api/gong/conversion?month=' + month + '&refresh=true')
     .then(function(r) {
       if (r.status === 401) { alert('Session expired.'); window.location.href = '/login'; return; }
       return r.json();

@@ -2767,7 +2767,7 @@ async function readGongCacheFromSheet() {
 
 // Cache for discovery calls endpoint: keyed by "from|to"
 var discoveryCallsCache = {};
-var DISCOVERY_CALLS_TTL = 24 * 60 * 60 * 1000; // 24 hours
+var DISCOVERY_CALLS_TTL = Infinity; // never expires — refresh via Load button
 
 app.get('/api/gong/discovery-calls', async function(req, res) {
   try {
@@ -2775,10 +2775,11 @@ app.get('/api/gong/discovery-calls', async function(req, res) {
     var to = req.query.to;
     if (!from || !to) return res.status(400).json({ error: 'from and to date parameters required (YYYY-MM-DD)' });
 
+    var forceRefresh = req.query.refresh === 'true';
     var cacheKey = from + '|' + to;
     var cached = discoveryCallsCache[cacheKey];
-    if (cached && (Date.now() - cached.ts) < DISCOVERY_CALLS_TTL) {
-      console.log('[Discovery Calls] Returning cached data for ' + cacheKey + ' (' + Math.round((Date.now() - cached.ts) / 3600000) + 'h old)');
+    if (!forceRefresh && cached) {
+      console.log('[Discovery Calls] Returning cached data for ' + cacheKey);
       return res.json(Object.assign({}, cached.data, { cached: true, cachedAt: new Date(cached.ts).toISOString() }));
     }
 
@@ -2864,7 +2865,7 @@ app.get('/api/gong/sheet-counts', async function(req, res) {
 
 // ===== Gong: Monthly Discovery Call Counts (cached, batch) =====
 var discoveryCountCache = {}; // { 'YYYY-MM': { count, ts } }
-var DISCOVERY_COUNT_TTL = 24 * 60 * 60 * 1000; // 24 hours
+var DISCOVERY_COUNT_TTL = Infinity; // never expires — refresh via Load button
 
 async function getDiscoveryCountForMonth(month) {
   var cached = discoveryCountCache[month];
@@ -3077,17 +3078,18 @@ app.get('/api/gong/conversion-cached', async function(req, res) {
 
 // Cache conversion data per month for 24 hours
 var conversionCache = {}; // { 'YYYY-MM': { data, ts } }
-var CONVERSION_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+var CONVERSION_CACHE_TTL = Infinity; // never expires — refresh via Load button
 
 app.get('/api/gong/conversion', async function(req, res) {
   try {
     var month = req.query.month;
     if (!month) return res.status(400).json({ error: 'month parameter required (YYYY-MM)' });
 
-    // Check cache
+    // Check cache (skip if refresh=true)
+    var forceRefresh = req.query.refresh === 'true';
     var cached = conversionCache[month];
-    if (cached && (Date.now() - cached.ts) < CONVERSION_CACHE_TTL) {
-      console.log('[Conversion] Returning cached data for ' + month + ' (' + Math.round((Date.now() - cached.ts) / 3600000) + 'h old)');
+    if (!forceRefresh && cached) {
+      console.log('[Conversion] Returning cached data for ' + month);
       return res.json(Object.assign({}, cached.data, { cached: true, cachedAt: new Date(cached.ts).toISOString() }));
     }
 
