@@ -608,12 +608,12 @@ Promise.all([
     ]},
     { title:'Sales', rows:[
       { label:'Discovery Calls Completed', col:C.gongCalls, format:'num' },
-      { label:'Show Rate', col:C.gongShowRate, format:'pctRound' },
+      { label:'Show Rate (Booked Vs Completed Discovery Calls)', col:C.gongShowRate, format:'pctRound' },
       { label:'New Client Jobs Opened', col:C.newClientJobs, format:'num' },
       { label:'MQL to New Client Job Opened Conversion Rate', col:C.salesConvRate, format:'pctR' },
       { label:'MQL to New Client FTE Conversion Rate (1 Month Conversion Window)', col:C.newClientFTEConv, format:'pctR' }
     ], charts:[
-      { label:'Discovery Calls Completed', col:C.gongCalls, color:'#0891b2', type:'bar', overlay:{ label:'Show Rate', col:C.gongShowRate, color:'#6d28d9' } },
+      { label:'Discovery Calls Completed', col:C.gongCalls, color:'#0891b2', type:'bar', overlay:{ label:'Show Rate (Booked Vs Completed Discovery Calls)', col:C.gongShowRate, color:'#6d28d9' } },
       { label:'New Client Jobs Opened', col:C.newClientJobs, color:'#059669', type:'bar' },
       { label:'MQL to New Client Job Opened Conversion Rate', col:C.salesConvRate, color:'#d97706', type:'line', pct:true },
       { label:'MQL to New Client FTE Conversion Rate', col:C.newClientFTEConv, color:'#7c3aed', type:'line', pct:true }
