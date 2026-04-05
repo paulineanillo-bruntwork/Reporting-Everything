@@ -2630,8 +2630,11 @@ app.get('/kpi', function(req, res) {
 });
 
 // ===== Gong API =====
-app.get('/gong', function(req, res) {
+app.get('/sales', function(req, res) {
   res.sendFile(path.join(__dirname, 'gong.html'));
+});
+app.get('/gong', function(req, res) {
+  res.redirect(301, '/sales');
 });
 
 async function gongFetch(endpoint, options) {
