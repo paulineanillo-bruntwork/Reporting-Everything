@@ -2717,27 +2717,73 @@ function parseAgentFromTitle(title) {
   return null;
 }
 
-// ===== Gong Cache Sheet: persist discovery call counts =====
-// Save a monthly count to the "Gong Cache" sheet tab
-async function saveGongCountToSheet(month, count) {
-  if (!REPORT_SHEET_ID) return;
+// ===== Gong Cache: persist to KPI source spreadsheet =====
+var GONG_CACHE_SHEET = KPI_SOURCE_SHEET_ID; // use the same sheet that KPI history uses
+var gongCacheTabReady = false;
+
+async function ensureGongCacheTab() {
+  if (gongCacheTabReady) return;
   try {
-    await ensureSheetTabs();
-    // Read existing rows to find if month already exists
-    var existing = await sheetsGet(REPORT_SHEET_ID, 'Gong Cache!A:C');
+    var token = await getGoogleAccessToken();
+    var metaResp = await fetch(
+      'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(GONG_CACHE_SHEET) + '?fields=sheets.properties',
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    var meta = await metaResp.json();
+    var existing = (meta.sheets || []).map(function(s) { return s.properties.title; });
+    var requests = [];
+    if (existing.indexOf('Gong Cache') === -1) {
+      requests.push({ addSheet: { properties: { title: 'Gong Cache' } } });
+    }
+    if (existing.indexOf('Conversion Cache') === -1) {
+      requests.push({ addSheet: { properties: { title: 'Conversion Cache' } } });
+    }
+    if (requests.length > 0) {
+      await fetch(
+        'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(GONG_CACHE_SHEET) + ':batchUpdate',
+        { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ requests: requests }) }
+      );
+      console.log('[Gong Cache] Created cache tabs');
+    }
+    // Ensure headers
+    try {
+      var h1 = await sheetsGet(GONG_CACHE_SHEET, 'Gong Cache!A1:C1');
+      if (!h1.values || !h1.values[0] || h1.values[0][0] !== 'month') {
+        await sheetsUpdate(GONG_CACHE_SHEET, 'Gong Cache!A1:C1', [['month', 'discovery_calls', 'updated_at']]);
+      }
+    } catch (e) {
+      await sheetsUpdate(GONG_CACHE_SHEET, 'Gong Cache!A1:C1', [['month', 'discovery_calls', 'updated_at']]);
+    }
+    try {
+      var h2 = await sheetsGet(GONG_CACHE_SHEET, 'Conversion Cache!A1:C1');
+      if (!h2.values || !h2.values[0] || h2.values[0][0] !== 'month') {
+        await sheetsUpdate(GONG_CACHE_SHEET, 'Conversion Cache!A1:C1', [['month', 'data_json', 'updated_at']]);
+      }
+    } catch (e) {
+      await sheetsUpdate(GONG_CACHE_SHEET, 'Conversion Cache!A1:C1', [['month', 'data_json', 'updated_at']]);
+    }
+    gongCacheTabReady = true;
+    console.log('[Gong Cache] Tabs ready');
+  } catch (e) {
+    console.error('[Gong Cache] Tab init error:', e.message);
+  }
+}
+
+// Save a monthly discovery call count
+async function saveGongCountToSheet(month, count) {
+  try {
+    await ensureGongCacheTab();
+    var existing = await sheetsGet(GONG_CACHE_SHEET, 'Gong Cache!A:C');
     var rows = (existing.values || []);
     var rowIdx = -1;
-    for (var i = 1; i < rows.length; i++) { // skip header
+    for (var i = 1; i < rows.length; i++) {
       if (rows[i][0] === month) { rowIdx = i; break; }
     }
     var now = new Date().toISOString();
     if (rowIdx >= 0) {
-      // Update existing row
-      var range = 'Gong Cache!A' + (rowIdx + 1) + ':C' + (rowIdx + 1);
-      await sheetsUpdate(REPORT_SHEET_ID, range, [[month, count, now]]);
+      await sheetsUpdate(GONG_CACHE_SHEET, 'Gong Cache!A' + (rowIdx + 1) + ':C' + (rowIdx + 1), [[month, count, now]]);
     } else {
-      // Append new row
-      await sheetsAppend(REPORT_SHEET_ID, 'Gong Cache!A:C', [[month, count, now]]);
+      await sheetsAppend(GONG_CACHE_SHEET, 'Gong Cache!A:C', [[month, count, now]]);
     }
     console.log('[Gong Cache] Saved ' + month + ' = ' + count);
   } catch (e) {
@@ -2745,15 +2791,14 @@ async function saveGongCountToSheet(month, count) {
   }
 }
 
-// Read all monthly counts from the "Gong Cache" sheet
+// Read all monthly discovery call counts
 async function readGongCacheFromSheet() {
-  if (!REPORT_SHEET_ID) return {};
   try {
-    await ensureSheetTabs();
-    var data = await sheetsGet(REPORT_SHEET_ID, 'Gong Cache!A:C');
+    await ensureGongCacheTab();
+    var data = await sheetsGet(GONG_CACHE_SHEET, 'Gong Cache!A:C');
     var rows = (data.values || []);
     var counts = {};
-    for (var i = 1; i < rows.length; i++) { // skip header
+    for (var i = 1; i < rows.length; i++) {
       if (rows[i][0] && rows[i][1] != null) {
         counts[rows[i][0]] = parseInt(rows[i][1]) || 0;
       }
@@ -3019,10 +3064,9 @@ async function getSalesAgentForDeals(dealIds) {
 
 // ===== Conversion Cache Sheet persistence =====
 async function saveConversionToSheet(month, data) {
-  if (!REPORT_SHEET_ID) return;
   try {
-    await ensureSheetTabs();
-    var existing = await sheetsGet(REPORT_SHEET_ID, 'Conversion Cache!A:A');
+    await ensureGongCacheTab();
+    var existing = await sheetsGet(GONG_CACHE_SHEET, 'Conversion Cache!A:A');
     var rows = (existing.values || []);
     var rowIdx = -1;
     for (var i = 1; i < rows.length; i++) {
@@ -3031,22 +3075,20 @@ async function saveConversionToSheet(month, data) {
     var now = new Date().toISOString();
     var json = JSON.stringify(data);
     if (rowIdx >= 0) {
-      var range = 'Conversion Cache!A' + (rowIdx + 1) + ':C' + (rowIdx + 1);
-      await sheetsUpdate(REPORT_SHEET_ID, range, [[month, json, now]]);
+      await sheetsUpdate(GONG_CACHE_SHEET, 'Conversion Cache!A' + (rowIdx + 1) + ':C' + (rowIdx + 1), [[month, json, now]]);
     } else {
-      await sheetsAppend(REPORT_SHEET_ID, 'Conversion Cache!A:C', [[month, json, now]]);
+      await sheetsAppend(GONG_CACHE_SHEET, 'Conversion Cache!A:C', [[month, json, now]]);
     }
-    console.log('[Conversion Cache] Saved ' + month);
+    console.log('[Conversion Cache] Saved ' + month + ' (json length: ' + json.length + ')');
   } catch (e) {
     console.error('[Conversion Cache] Failed to save:', e.message);
   }
 }
 
 async function readConversionFromSheet(month) {
-  if (!REPORT_SHEET_ID) return null;
   try {
-    await ensureSheetTabs();
-    var data = await sheetsGet(REPORT_SHEET_ID, 'Conversion Cache!A:C');
+    await ensureGongCacheTab();
+    var data = await sheetsGet(GONG_CACHE_SHEET, 'Conversion Cache!A:C');
     var rows = (data.values || []);
     for (var i = 1; i < rows.length; i++) {
       if (rows[i][0] === month && rows[i][1]) {
