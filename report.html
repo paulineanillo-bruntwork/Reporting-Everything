@@ -378,9 +378,6 @@ Promise.all([
     document.getElementById('loading').innerHTML = '<div style="color:var(--red)">'+data.error+'</div>';
     return;
   }
-  document.getElementById('loading').style.display='none';
-  document.getElementById('content').style.display='block';
-
   var cols = data.columns;
   var allMonths = data.months;
 
@@ -412,27 +409,8 @@ Promise.all([
     allMonths[mi][C.costPerCall] = (spend && mqls) ? (spend / mqls).toFixed(2) : '';
   }
 
-  // Fetch Gong discovery call counts for all months in view and inject into allMonths
-  var monthKeys = [];
-  for (var gi = 0; gi < allMonths.length; gi++) {
-    var mk = monthToKey(allMonths[gi][0]);
-    if (mk) monthKeys.push(mk);
-  }
-  var gongPromise = monthKeys.length > 0
-    ? fetch('/api/gong/monthly-discovery-counts?months=' + monthKeys.join(',')).then(function(r){return r.json();}).catch(function(){return {counts:{}};})
-    : Promise.resolve({counts:{}});
-
-  return gongPromise.then(function(gongData) {
-  var gongCounts = gongData.counts || {};
-
-  // Inject Gong discovery calls (col 50) and show rate (col 51) into each month row
-  for (var gi2 = 0; gi2 < allMonths.length; gi2++) {
-    var mk2 = monthToKey(allMonths[gi2][0]);
-    var gongCount = (mk2 && gongCounts[mk2] != null) ? gongCounts[mk2] : null;
-    var mqlsBooked = pn(allMonths[gi2][C.mqls]);
-    allMonths[gi2][C.gongCalls] = gongCount;
-    allMonths[gi2][C.gongShowRate] = (gongCount !== null && mqlsBooked) ? ((gongCount / mqlsBooked) * 100).toFixed(1) : '';
-  }
+  document.getElementById('loading').style.display='none';
+  document.getElementById('content').style.display='block';
 
   var cur = curIdx>=0 ? allMonths[curIdx] : null;
   var prev = prevIdx>=0 ? allMonths[prevIdx] : null;
@@ -685,7 +663,30 @@ Promise.all([
   _projectsData = groupProjects(projectsData);
   renderUpdates(false);
 
-  }); // end gongPromise.then
+  // Fetch Gong discovery call counts and re-render acquisition blocks with data
+  var monthKeys = [];
+  for (var gi = 0; gi < allMonths.length; gi++) {
+    var mk = monthToKey(allMonths[gi][0]);
+    if (mk) monthKeys.push(mk);
+  }
+  if (monthKeys.length > 0) {
+    fetch('/api/gong/monthly-discovery-counts?months=' + monthKeys.join(','))
+      .then(function(r){return r.json();})
+      .then(function(gongData) {
+        var gongCounts = gongData.counts || {};
+        for (var gi2 = 0; gi2 < allMonths.length; gi2++) {
+          var mk2 = monthToKey(allMonths[gi2][0]);
+          var gongCount = (mk2 && gongCounts[mk2] != null) ? gongCounts[mk2] : null;
+          var mqlsBooked = pn(allMonths[gi2][C.mqls]);
+          allMonths[gi2][C.gongCalls] = gongCount;
+          allMonths[gi2][C.gongShowRate] = (gongCount !== null && mqlsBooked) ? ((gongCount / mqlsBooked) * 100).toFixed(1) : '';
+        }
+        // Re-render acquisition sub-blocks with Gong data now available
+        renderSubBlocks('acqBlocks', acqSections, cur, prev, curSlice, curLabels);
+      })
+      .catch(function(e) { console.error('Gong data fetch failed:', e); });
+  }
+
 }).catch(function(err){
   document.getElementById('loading').innerHTML = '<div style="color:var(--red)">Error: '+err.message+'</div>';
 });
