@@ -253,7 +253,8 @@ function loadData() {
       renderSummary(data, range.label);
       renderTable(data);
       document.getElementById('content').style.display = 'block';
-      document.getElementById('statusText').textContent = range.label + ' — ' + data.totalDiscoveryCalls + ' discovery calls from ' + data.agents.length + ' agents';
+      var cacheNote = data.cached ? ' (cached ' + new Date(data.cachedAt).toLocaleString() + ')' : ' (fresh)';
+      document.getElementById('statusText').textContent = range.label + ' — ' + data.totalDiscoveryCalls + ' discovery calls from ' + data.agents.length + ' agents' + cacheNote;
     })
     .catch(function(err) { showToast('Error: ' + err.message, 'error'); })
     .finally(function() {

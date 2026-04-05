@@ -2684,11 +2684,22 @@ function parseAgentFromTitle(title) {
   return null;
 }
 
+// Cache for discovery calls endpoint: keyed by "from|to"
+var discoveryCallsCache = {};
+var DISCOVERY_CALLS_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
 app.get('/api/gong/discovery-calls', async function(req, res) {
   try {
     var from = req.query.from;
     var to = req.query.to;
     if (!from || !to) return res.status(400).json({ error: 'from and to date parameters required (YYYY-MM-DD)' });
+
+    var cacheKey = from + '|' + to;
+    var cached = discoveryCallsCache[cacheKey];
+    if (cached && (Date.now() - cached.ts) < DISCOVERY_CALLS_TTL) {
+      console.log('[Discovery Calls] Returning cached data for ' + cacheKey + ' (' + Math.round((Date.now() - cached.ts) / 3600000) + 'h old)');
+      return res.json(Object.assign({}, cached.data, { cached: true, cachedAt: new Date(cached.ts).toISOString() }));
+    }
 
     // Fetch all calls for the date range (paginated)
     var allCalls = await gongFetchAllPages(
@@ -2735,14 +2746,17 @@ app.get('/api/gong/discovery-calls', async function(req, res) {
       };
     });
 
-    res.json({
+    var result = {
       from: from,
       to: to,
       totalCallsScanned: totalScanned,
       totalDiscoveryCalls: discoveryCalls.length,
       avgDuration: discoveryCalls.length > 0 ? Math.round(totalDuration / discoveryCalls.length) : 0,
       agents: agents
-    });
+    };
+
+    discoveryCallsCache[cacheKey] = { data: result, ts: Date.now() };
+    res.json(result);
   } catch (err) {
     console.error('Gong discovery calls error:', err.message);
     res.status(500).json({ error: err.message });
