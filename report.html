@@ -613,7 +613,7 @@ Promise.all([
       { label:'MQL to New Client Job Opened Conversion Rate', col:C.salesConvRate, format:'pctR' },
       { label:'MQL to New Client FTE Conversion Rate (1 Month Conversion Window)', col:C.newClientFTEConv, format:'pctR' }
     ], charts:[
-      { label:'Discovery Calls Completed', col:C.gongCalls, color:'#0891b2', type:'bar' },
+      { label:'Discovery Calls Completed', col:C.gongCalls, color:'#0891b2', type:'bar', overlay:{ label:'Show Rate', col:C.gongShowRate, color:'#e11d48' } },
       { label:'New Client Jobs Opened', col:C.newClientJobs, color:'#059669', type:'bar' },
       { label:'MQL to New Client Job Opened Conversion Rate', col:C.salesConvRate, color:'#d97706', type:'line', pct:true },
       { label:'MQL to New Client FTE Conversion Rate', col:C.newClientFTEConv, color:'#7c3aed', type:'line', pct:true }
@@ -731,11 +731,27 @@ function renderSubBlocks(containerId, sections, cur, prev, slice, labels) {
     } else {
       ds.datalabels = { display:true, anchor:'end', align:'end', color:item.chart.color, font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?Number(Math.round(v)).toLocaleString():'';} };
     }
+    var datasets = [ds];
+
+    // Overlay: add a second dataset on a secondary y-axis
+    if (item.chart.overlay) {
+      var ov = item.chart.overlay;
+      ds.yAxisID = 'y';
+      var ds2 = makeDS({ type:'line', label:ov.label, color:ov.color });
+      ds2.data = item.slice.map(function(m){return pn(m[ov.col]);});
+      ds2.yAxisID = 'y1';
+      ds2.datalabels = { display:true, anchor:'end', align:'end', color:ov.color, font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?v.toFixed(1)+'%':'';} };
+      datasets.push(ds2);
+      opts.scales.y = { display:false, beginAtZero:true, position:'left' };
+      opts.scales.y1 = { display:true, beginAtZero:true, position:'right', grid:{display:false}, ticks:{font:{size:10}, callback:function(v){return v+'%';}} };
+      opts.plugins.legend = { display:true, position:'bottom', labels:{font:{size:10},usePointStyle:true,padding:12} };
+    }
+
     var ctx = document.getElementById(item.canvasId);
     if (ctx) {
       new Chart(ctx.getContext('2d'), {
         type: item.chart.type==='bar'?'bar':'line',
-        data:{labels:item.labels, datasets:[ds]},
+        data:{labels:item.labels, datasets:datasets},
         options:opts
       });
     }
