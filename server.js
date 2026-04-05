@@ -2887,7 +2887,7 @@ app.get('/api/gong/discovery-calls', async function(req, res) {
     // Persist to Google Sheet if this is a full-month range (from = YYYY-MM-01)
     if (/^\d{4}-\d{2}-01$/.test(from)) {
       var monthKey = from.substring(0, 7); // YYYY-MM
-      saveGongCountToSheet(monthKey, discoveryCalls.length).catch(function(e) { console.error('[Gong Cache] Save error:', e.message); });
+      try { await saveGongCountToSheet(monthKey, discoveryCalls.length); } catch(e) { console.error('[Gong Cache] Save error:', e.message); }
     }
 
     res.json(result);
@@ -3311,7 +3311,7 @@ app.get('/api/gong/conversion', async function(req, res) {
 
     // Cache the result in memory and persist to Google Sheet
     conversionCache[month] = { data: result, ts: Date.now() };
-    saveConversionToSheet(month, result).catch(function(e) { console.error('[Conversion Cache] Save error:', e.message); });
+    try { await saveConversionToSheet(month, result); } catch(e) { console.error('[Conversion Cache] Save error:', e.message); }
     console.log('[Conversion] Cached result for ' + month);
 
     res.json(Object.assign({}, result, { cached: false }));
