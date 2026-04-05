@@ -230,6 +230,16 @@ function showToast(msg, type) {
   setTimeout(function() { t.className = 'status-toast'; }, 3000);
 }
 
+function renderDiscoveryResult(data, range) {
+  currentData = data;
+  renderSummary(data, range.label);
+  renderTable(data);
+  document.getElementById('content').style.display = 'block';
+  var cacheNote = data.cached ? ' (cached ' + new Date(data.cachedAt).toLocaleString() + ')' : ' (fresh)';
+  document.getElementById('statusText').textContent = range.label + ' — ' + data.totalDiscoveryCalls + ' discovery calls from ' + data.agents.length + ' agents' + cacheNote;
+}
+
+// Load button — always fetches fresh from Gong API
 function loadData() {
   var range = getDateRange();
   if (!range) return;
@@ -249,18 +259,34 @@ function loadData() {
     .then(function(data) {
       if (!data) return;
       if (data.error) { showToast(data.error, 'error'); return; }
-      currentData = data;
-      renderSummary(data, range.label);
-      renderTable(data);
-      document.getElementById('content').style.display = 'block';
-      var cacheNote = data.cached ? ' (cached ' + new Date(data.cachedAt).toLocaleString() + ')' : ' (fresh)';
-      document.getElementById('statusText').textContent = range.label + ' — ' + data.totalDiscoveryCalls + ' discovery calls from ' + data.agents.length + ' agents' + cacheNote;
+      renderDiscoveryResult(data, range);
     })
     .catch(function(err) { showToast('Error: ' + err.message, 'error'); })
     .finally(function() {
       btn.disabled = false;
       btn.textContent = 'Load';
       document.getElementById('loading').style.display = 'none';
+    });
+}
+
+// Auto-load — only uses cache, never fetches live from Gong
+function loadDataCached() {
+  var range = getDateRange();
+  if (!range) return;
+  document.getElementById('content').style.display = 'none';
+  document.getElementById('statusText').textContent = 'Loading cached data...';
+
+  fetch('/api/gong/discovery-calls?from=' + range.from + '&to=' + range.to)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data && !data.error && data.totalDiscoveryCalls != null) {
+        renderDiscoveryResult(data, range);
+      } else {
+        document.getElementById('statusText').textContent = 'No cached data. Click Load to fetch from Gong.';
+      }
+    })
+    .catch(function() {
+      document.getElementById('statusText').textContent = 'No cached data. Click Load to fetch from Gong.';
     });
 }
 
@@ -386,28 +412,34 @@ function renderConvResult(data) {
     'Closures in ' + data.closeMonth + ' vs calls in ' + data.callsMonth + cacheNote;
 }
 
-// Load conversion data — tries sheet cache first, then in-memory cache, then live API
+// Load conversion data from cache only (sheet or in-memory) — never fetches live
 function loadConversionCached() {
   var month = document.getElementById('convMonthPicker').value;
   if (!month) return;
-  document.getElementById('convLoading').style.display = 'block';
   document.getElementById('convContent').style.display = 'none';
-  document.getElementById('convStatusText').textContent = '';
+  document.getElementById('convStatusText').textContent = 'Loading cached data...';
 
-  // 1. Try persistent sheet cache first (instant)
+  // Try sheet cache, then in-memory (no refresh)
   fetch('/api/gong/conversion-cached?month=' + month)
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data && !data.empty && !data.error) {
         renderConvResult(data);
-        document.getElementById('convLoading').style.display = 'none';
       } else {
-        // 2. Fall back to server (uses in-memory cache if available, otherwise fetches fresh)
-        return fetchConversionFromServer(month, false);
+        // Try in-memory cache on server (no refresh — won't hit Gong/HubSpot)
+        return fetch('/api/gong/conversion?month=' + month)
+          .then(function(r) { return r.json(); })
+          .then(function(data2) {
+            if (data2 && !data2.error) {
+              renderConvResult(data2);
+            } else {
+              document.getElementById('convStatusText').textContent = 'No cached data. Click Load to fetch from Gong & HubSpot.';
+            }
+          });
       }
     })
     .catch(function() {
-      fetchConversionFromServer(month, false);
+      document.getElementById('convStatusText').textContent = 'No cached data. Click Load to fetch from Gong & HubSpot.';
     });
 }
 
@@ -524,8 +556,8 @@ function doConvSort(key) {
   if (convData) renderConvTable(convData);
 }
 
-// Auto-load
-loadData();
+// Auto-load from cache only (never hits Gong API on page open)
+loadDataCached();
 </script>
 </body>
 </html>
