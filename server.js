@@ -2842,7 +2842,7 @@ app.get('/api/gong/discovery-calls', async function(req, res) {
     // Persist to Google Sheet if this is a full-month range (from = YYYY-MM-01)
     if (/^\d{4}-\d{2}-01$/.test(from)) {
       var monthKey = from.substring(0, 7); // YYYY-MM
-      saveGongCountToSheet(monthKey, discoveryCalls.length).catch(function() {});
+      saveGongCountToSheet(monthKey, discoveryCalls.length).catch(function(e) { console.error('[Gong Cache] Save error:', e.message); });
     }
 
     res.json(result);
@@ -3089,8 +3089,18 @@ app.get('/api/gong/conversion', async function(req, res) {
     var forceRefresh = req.query.refresh === 'true';
     var cached = conversionCache[month];
     if (!forceRefresh && cached) {
-      console.log('[Conversion] Returning cached data for ' + month);
+      console.log('[Conversion] Returning in-memory cached data for ' + month);
       return res.json(Object.assign({}, cached.data, { cached: true, cachedAt: new Date(cached.ts).toISOString() }));
+    }
+
+    // If not in memory and not forcing refresh, try loading from sheet
+    if (!forceRefresh) {
+      var sheetCached = await readConversionFromSheet(month);
+      if (sheetCached) {
+        console.log('[Conversion] Loaded from sheet cache for ' + month);
+        conversionCache[month] = { data: sheetCached.data, ts: Date.now() };
+        return res.json(Object.assign({}, sheetCached.data, { cached: true, cachedAt: sheetCached.updatedAt }));
+      }
     }
 
     var parts = month.split('-');
@@ -3259,7 +3269,7 @@ app.get('/api/gong/conversion', async function(req, res) {
 
     // Cache the result in memory and persist to Google Sheet
     conversionCache[month] = { data: result, ts: Date.now() };
-    saveConversionToSheet(month, result).catch(function() {});
+    saveConversionToSheet(month, result).catch(function(e) { console.error('[Conversion Cache] Save error:', e.message); });
     console.log('[Conversion] Cached result for ' + month);
 
     res.json(Object.assign({}, result, { cached: false }));

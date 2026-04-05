@@ -386,7 +386,7 @@ function renderConvResult(data) {
     'Closures in ' + data.closeMonth + ' vs calls in ' + data.callsMonth + cacheNote;
 }
 
-// Load from persistent Google Sheet cache (instant)
+// Load conversion data — tries sheet cache first, then in-memory cache, then live API
 function loadConversionCached() {
   var month = document.getElementById('convMonthPicker').value;
   if (!month) return;
@@ -394,6 +394,7 @@ function loadConversionCached() {
   document.getElementById('convContent').style.display = 'none';
   document.getElementById('convStatusText').textContent = '';
 
+  // 1. Try persistent sheet cache first (instant)
   fetch('/api/gong/conversion-cached?month=' + month)
     .then(function(r) { return r.json(); })
     .then(function(data) {
@@ -401,19 +402,17 @@ function loadConversionCached() {
         renderConvResult(data);
         document.getElementById('convLoading').style.display = 'none';
       } else {
-        // No cached data — fall back to live fetch
-        loadConversion();
+        // 2. Fall back to server (uses in-memory cache if available, otherwise fetches fresh)
+        return fetchConversionFromServer(month, false);
       }
     })
     .catch(function() {
-      loadConversion();
+      fetchConversionFromServer(month, false);
     });
 }
 
-// Load fresh from Gong + HubSpot APIs (slow, persists to cache)
-function loadConversion() {
-  var month = document.getElementById('convMonthPicker').value;
-  if (!month) return;
+// Fetch from server endpoint — refresh=true bypasses all caches
+function fetchConversionFromServer(month, refresh) {
   var btn = document.getElementById('convLoadBtn');
   btn.disabled = true;
   btn.textContent = 'Loading...';
@@ -421,7 +420,10 @@ function loadConversion() {
   document.getElementById('convContent').style.display = 'none';
   document.getElementById('convStatusText').textContent = '';
 
-  fetch('/api/gong/conversion?month=' + month + '&refresh=true')
+  var url = '/api/gong/conversion?month=' + month;
+  if (refresh) url += '&refresh=true';
+
+  fetch(url)
     .then(function(r) {
       if (r.status === 401) { alert('Session expired.'); window.location.href = '/login'; return; }
       return r.json();
@@ -437,6 +439,13 @@ function loadConversion() {
       btn.textContent = 'Load';
       document.getElementById('convLoading').style.display = 'none';
     });
+}
+
+// Load button = force refresh from Gong + HubSpot APIs
+function loadConversion() {
+  var month = document.getElementById('convMonthPicker').value;
+  if (!month) return;
+  fetchConversionFromServer(month, true);
 }
 
 function renderConvSummary(data) {
