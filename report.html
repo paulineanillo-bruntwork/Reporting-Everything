@@ -349,7 +349,7 @@ var C = {
   month:0, totalMRR:1, perAdmin:2, activeHC:3, activeFTE:4, adminStaff:5,
   mqls:6, fabiusCalls:7, showRate:8, newClientJobs:9, jobsVsCalls:10,
   salesAgentFTE:11, totalHires:12, fteCloseRate:13, fteConvJob:14,
-  adsSpend:15, costPerCall:16, salesConvRate:17,
+  adsSpend:15, costPerCall:16, salesConvRate:17, gongCalls:50, gongShowRate:51,
   recruitHC:23, endorsements:24, endorsePerHC:25,
   churnUnder1m:27,
   totalHiresHC:32, hiresPerHC:33,
@@ -384,6 +384,13 @@ Promise.all([
   var cols = data.columns;
   var allMonths = data.months;
 
+  // Helper: convert month label to YYYY-MM
+  function monthToKey(label) {
+    var pm = parseMonth(label);
+    if (!pm) return null;
+    return pm.year + '-' + String(pm.month + 1).padStart(2, '0');
+  }
+
   // Parse month param into year/month
   var mp = currentMonth.split('-');
   var targetYear = parseInt(mp[0]), targetMo = parseInt(mp[1])-1;
@@ -403,6 +410,28 @@ Promise.all([
     var spend = pn(allMonths[mi][C.adsSpend]);
     var mqls = pn(allMonths[mi][C.mqls]);
     allMonths[mi][C.costPerCall] = (spend && mqls) ? (spend / mqls).toFixed(2) : '';
+  }
+
+  // Fetch Gong discovery call counts for all months in view and inject into allMonths
+  var monthKeys = [];
+  for (var gi = 0; gi < allMonths.length; gi++) {
+    var mk = monthToKey(allMonths[gi][0]);
+    if (mk) monthKeys.push(mk);
+  }
+  var gongPromise = monthKeys.length > 0
+    ? fetch('/api/gong/monthly-discovery-counts?months=' + monthKeys.join(',')).then(function(r){return r.json();}).catch(function(){return {counts:{}};})
+    : Promise.resolve({counts:{}});
+
+  return gongPromise.then(function(gongData) {
+  var gongCounts = gongData.counts || {};
+
+  // Inject Gong discovery calls (col 50) and show rate (col 51) into each month row
+  for (var gi2 = 0; gi2 < allMonths.length; gi2++) {
+    var mk2 = monthToKey(allMonths[gi2][0]);
+    var gongCount = (mk2 && gongCounts[mk2] != null) ? gongCounts[mk2] : null;
+    var mqlsBooked = pn(allMonths[gi2][C.mqls]);
+    allMonths[gi2][C.gongCalls] = gongCount;
+    allMonths[gi2][C.gongShowRate] = (gongCount !== null && mqlsBooked) ? ((gongCount / mqlsBooked) * 100).toFixed(1) : '';
   }
 
   var cur = curIdx>=0 ? allMonths[curIdx] : null;
@@ -600,10 +629,14 @@ Promise.all([
       { label:'Number of Active Clients', col:C.existingClients, color:'#d97706', type:'bar' }
     ]},
     { title:'Sales', rows:[
+      { label:'Discovery Calls Completed', col:C.gongCalls, format:'num' },
+      { label:'Show Rate', col:C.gongShowRate, format:'pctR' },
       { label:'New Client Jobs Opened', col:C.newClientJobs, format:'num' },
       { label:'MQL to New Client Job Opened Conversion Rate', col:C.salesConvRate, format:'pctR' },
       { label:'MQL to New Client FTE Conversion Rate (1 Month Conversion Window)', col:C.newClientFTEConv, format:'pctR' }
     ], charts:[
+      { label:'Discovery Calls Completed', col:C.gongCalls, color:'#0891b2', type:'bar' },
+      { label:'Show Rate', col:C.gongShowRate, color:'#e11d48', type:'line', pct:true },
       { label:'New Client Jobs Opened', col:C.newClientJobs, color:'#059669', type:'bar' },
       { label:'MQL to New Client Job Opened Conversion Rate', col:C.salesConvRate, color:'#d97706', type:'line', pct:true },
       { label:'MQL to New Client FTE Conversion Rate', col:C.newClientFTEConv, color:'#7c3aed', type:'line', pct:true }
@@ -652,6 +685,7 @@ Promise.all([
   _projectsData = groupProjects(projectsData);
   renderUpdates(false);
 
+  }); // end gongPromise.then
 }).catch(function(err){
   document.getElementById('loading').innerHTML = '<div style="color:var(--red)">Error: '+err.message+'</div>';
 });

@@ -2749,6 +2749,79 @@ app.get('/api/gong/discovery-calls', async function(req, res) {
   }
 });
 
+// ===== Gong: Monthly Discovery Call Counts (cached, batch) =====
+var discoveryCountCache = {}; // { 'YYYY-MM': { count, ts } }
+var DISCOVERY_COUNT_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+async function getDiscoveryCountForMonth(month) {
+  var cached = discoveryCountCache[month];
+  if (cached && (Date.now() - cached.ts) < DISCOVERY_COUNT_TTL) {
+    return cached.count;
+  }
+
+  var parts = month.split('-');
+  var y = parseInt(parts[0]), m = parseInt(parts[1]);
+  var from = month + '-01';
+  var nextM = m === 12 ? (y + 1) + '-01' : y + '-' + String(m + 1).padStart(2, '0');
+  var to = nextM + '-01';
+
+  var allCalls = await gongFetchAllPages(
+    '/calls?fromDateTime=' + from + 'T00:00:00Z&toDateTime=' + to + 'T00:00:00Z',
+    {},
+    function(d) { return d.calls || []; }
+  );
+
+  var count = 0;
+  for (var i = 0; i < allCalls.length; i++) {
+    var call = allCalls[i];
+    if (DISCOVERY_TITLE_PATTERN.test(call.title || '') && (call.duration || 0) > MIN_CALL_DURATION) {
+      count++;
+    }
+  }
+
+  discoveryCountCache[month] = { count: count, ts: Date.now() };
+  return count;
+}
+
+// Single month endpoint
+app.get('/api/gong/monthly-discovery-count', async function(req, res) {
+  try {
+    var month = req.query.month;
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'month param required (YYYY-MM)' });
+    var count = await getDiscoveryCountForMonth(month);
+    res.json({ month: month, totalDiscoveryCalls: count });
+  } catch (err) {
+    console.error('Gong monthly discovery count error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Batch endpoint: ?months=2026-01,2026-02,2026-03
+app.get('/api/gong/monthly-discovery-counts', async function(req, res) {
+  try {
+    var monthsParam = req.query.months;
+    if (!monthsParam) return res.status(400).json({ error: 'months param required (comma-separated YYYY-MM)' });
+    var months = monthsParam.split(',').filter(function(m) { return /^\d{4}-\d{2}$/.test(m); });
+    if (months.length === 0) return res.status(400).json({ error: 'no valid months provided' });
+
+    // Fetch all months concurrently
+    var results = {};
+    await Promise.all(months.map(async function(m) {
+      try {
+        results[m] = await getDiscoveryCountForMonth(m);
+      } catch (e) {
+        console.error('Error fetching Gong count for ' + m + ':', e.message);
+        results[m] = null;
+      }
+    }));
+
+    res.json({ counts: results });
+  } catch (err) {
+    console.error('Gong batch discovery counts error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ===== Gong + HubSpot: Sales Agent Conversion Rates =====
 var CLOSE_PIPELINES = ['4483329', '3857063', '20565603'];
 
