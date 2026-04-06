@@ -193,8 +193,7 @@ function renderConvSummary(data) {
   var cards = [
     { val: data.totalClosures.toLocaleString(), lbl: 'Closed FTE (' + data.closeMonth + ')' },
     { val: data.totalGongCalls.toLocaleString(), lbl: 'Discovery Calls Completed (' + data.callsMonth + ')' },
-    { val: convPct, lbl: 'Overall Conversion Rate' },
-    { val: data.totalTickets.toLocaleString(), lbl: 'Onboarding Tickets' }
+    { val: convPct, lbl: 'Overall Conversion Rate' }
   ];
   var h = '';
   for (var i = 0; i < cards.length; i++) {
