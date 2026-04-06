@@ -45,10 +45,7 @@ tbody tr:hover td{background:#f8fafc}
 .status-toast.show{opacity:1}
 .status-toast.error{background:var(--red)}
 .status-toast.success{background:var(--green)}
-.conv-rate{font-weight:700}
-.conv-rate.good{color:var(--green)}
-.conv-rate.medium{color:var(--orange)}
-.conv-rate.low{color:var(--red)}
+.conv-rate{font-weight:700;color:var(--text)}
 @media(max-width:900px){.header,.main{padding-left:20px;padding-right:20px}.summary-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
@@ -242,12 +239,11 @@ function renderConvTable(data) {
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     var rateStr = r.conversionRate !== null ? r.conversionRate + '%' : '—';
-    var rateClass = r.conversionRate === null ? '' : (r.conversionRate >= 100 ? 'good' : (r.conversionRate >= 50 ? 'medium' : 'low'));
     h += '<tr>';
     h += '<td>' + r.agent + '</td>';
     h += '<td class="ar">' + r.gongCalls.toLocaleString() + '</td>';
     h += '<td class="ar">' + r.closures.toLocaleString() + '</td>';
-    h += '<td class="ar"><span class="conv-rate ' + rateClass + '">' + rateStr + '</span></td>';
+    h += '<td class="ar"><span class="conv-rate">' + rateStr + '</span></td>';
     h += '</tr>';
   }
 
