@@ -190,7 +190,7 @@ function loadConversion() {
 function renderConvSummary(data) {
   var convPct = data.overallConversion !== null ? data.overallConversion + '%' : '—';
   var cards = [
-    { val: data.totalClosures.toLocaleString(), lbl: 'Closed FTE (' + data.closeMonth + ')' },
+    { val: Math.round(data.totalClosures).toLocaleString(), lbl: 'Closed FTE (' + data.closeMonth + ')' },
     { val: data.totalGongCalls.toLocaleString(), lbl: 'Discovery Calls Completed (' + data.callsMonth + ')' },
     { val: convPct, lbl: 'Overall Conversion Rate' }
   ];
