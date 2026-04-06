@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
-<title>Sales — Conversion Rates</title>
+<title>Sales Report</title>
 <style>
 :root{--bg:#f4f6fb;--surface:#fff;--border:#e2e8f0;--text:#1e293b;--text-muted:#64748b;--blue:#2563eb;--blue-dark:#1e40af;--green:#059669;--green-light:#d1fae5;--red:#dc2626;--red-light:#fee2e2;--orange:#d97706;--purple:#7c3aed;--radius:16px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -52,8 +52,7 @@ tbody tr:hover td{background:#f8fafc}
 <body>
 <div class="header">
   <div>
-    <h1>Conversion Rates</h1>
-    <div class="subtitle">Sales conversion data from Gong &amp; HubSpot</div>
+    <h1>Sales Report</h1>
   </div>
   <div class="nav-links">
     <a href="/" class="back-link">FTE Dashboard</a>
@@ -202,14 +201,19 @@ function renderConvSummary(data) {
   document.getElementById('convSummaryCards').innerHTML = h;
 }
 
-var CONV_COLS = [
-  { key: 'agent', label: 'Sales Agent', align: 'left' },
-  { key: 'gongCalls', label: 'Discovery Calls Completed (Prior Month)', align: 'right' },
-  { key: 'closures', label: 'Closed FTE', align: 'right' },
-  { key: 'conversionRate', label: 'Conversion Rate', align: 'right' }
-];
+function getConvCols(data) {
+  var callsMonth = data && data.callsMonth ? data.callsMonth : 'Prior Month';
+  var closeMonth = data && data.closeMonth ? data.closeMonth : '';
+  return [
+    { key: 'agent', label: 'Sales Agent', align: 'left' },
+    { key: 'gongCalls', label: 'Discovery Calls Completed (' + callsMonth + ')', align: 'right' },
+    { key: 'closures', label: 'Closed FTE' + (closeMonth ? ' (' + closeMonth + ')' : ''), align: 'right' },
+    { key: 'conversionRate', label: 'Conversion Rate', align: 'right' }
+  ];
+}
 
 function renderConvTable(data) {
+  var CONV_COLS = getConvCols(data);
   var rows = data.agents.slice();
   if (convSortCol) {
     rows.sort(function(a, b) {
