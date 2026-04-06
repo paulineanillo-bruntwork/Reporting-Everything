@@ -188,7 +188,7 @@ function loadConversion() {
 }
 
 function renderConvSummary(data) {
-  var convPct = data.overallConversion !== null ? data.overallConversion + '%' : '—';
+  var convPct = data.overallConversion !== null ? Math.round(data.overallConversion) + '%' : '—';
   var cards = [
     { val: Math.round(data.totalClosures).toLocaleString(), lbl: 'Closed FTE (' + data.closeMonth + ')' },
     { val: data.totalGongCalls.toLocaleString(), lbl: 'Discovery Calls Completed (' + data.callsMonth + ')' },
@@ -241,7 +241,7 @@ function renderConvTable(data) {
   var h = '';
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
-    var rateStr = r.conversionRate !== null ? r.conversionRate + '%' : '—';
+    var rateStr = r.conversionRate !== null ? Math.round(r.conversionRate) + '%' : '—';
     h += '<tr>';
     h += '<td>' + r.agent + '</td>';
     h += '<td class="ar">' + r.gongCalls.toLocaleString() + '</td>';
@@ -254,7 +254,7 @@ function renderConvTable(data) {
   if (rows.length > 0) {
     var totG = 0, totC = 0;
     for (var t = 0; t < rows.length; t++) { totG += rows[t].gongCalls; totC += rows[t].closures; }
-    var totRate = totG > 0 ? Math.round((totC / totG) * 1000) / 10 + '%' : '—';
+    var totRate = totG > 0 ? Math.round((totC / totG) * 100) + '%' : '—';
     h += '<tr style="font-weight:700;background:#f8fafc"><td>Total</td><td class="ar">' + totG.toLocaleString() + '</td><td class="ar">' + Math.round(totC).toLocaleString() + '</td><td class="ar">' + totRate + '</td></tr>';
   }
   document.getElementById('convTableBody').innerHTML = h;
