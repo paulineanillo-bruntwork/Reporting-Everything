@@ -694,7 +694,7 @@ function renderSubBlocks(containerId, sections, cur, prev, slice, labels) {
     var sec = sections[s];
     var bid = 'block_' + (++_blockId);
     html += '<div class="sub-block">';
-    html += '<div class="sub-block-header" style="display:flex;align-items:center;justify-content:space-between">'+sec.title+(sec.link ? '<a href="'+sec.link+'" target="_blank" style="display:inline-block;padding:6px 16px;background:var(--blue);color:#fff;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;letter-spacing:.3px">Full Report</a>' : '')+'</div>';
+    html += '<div class="sub-block-header">'+sec.title+(sec.link ? ' <a href="'+sec.link+'" target="_blank" style="display:inline-block;padding:6px 16px;background:var(--blue);color:#fff;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;letter-spacing:.3px;margin-left:12px;vertical-align:middle">Full Report &rarr;</a>' : '')+'</div>';
     html += '<table class="kpi-table"><thead><tr><th style="width:40%">Metric</th><th class="ar">'+monthLabel(currentMonth)+'</th><th class="ar">'+monthLabel(prevMonthKey(currentMonth))+'</th><th class="ar">Change</th></tr></thead><tbody>';
     for (var i=0;i<sec.rows.length;i++) {
       var r = sec.rows[i];
