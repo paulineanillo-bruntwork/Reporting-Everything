@@ -3321,10 +3321,60 @@ app.get('/api/gong/conversion', async function(req, res) {
   }
 });
 
+// Backfill missing months in Gong Cache sheet (runs once on startup)
+async function backfillGongCache() {
+  try {
+    var existing = await readGongCacheFromSheet();
+    // Build list of months from 2025-03 to previous month
+    var now = new Date();
+    var endY = now.getFullYear(), endM = now.getMonth(); // current month (0-indexed), we want up to prev month
+    if (endM === 0) { endY--; endM = 12; } // prev month
+    var months = [];
+    var y = 2025, m = 3;
+    while (y < endY || (y === endY && m <= endM)) {
+      var key = y + '-' + String(m).padStart(2, '0');
+      if (existing[key] == null) months.push(key);
+      m++;
+      if (m > 12) { m = 1; y++; }
+    }
+    if (months.length === 0) { console.log('[Gong Backfill] All months cached, nothing to do.'); return; }
+    console.log('[Gong Backfill] Missing months: ' + months.join(', '));
+    for (var i = 0; i < months.length; i++) {
+      var mk = months[i];
+      var parts = mk.split('-');
+      var yr = parseInt(parts[0]), mn = parseInt(parts[1]);
+      var from = mk + '-01';
+      var nextMn = mn === 12 ? 1 : mn + 1;
+      var nextY = mn === 12 ? yr + 1 : yr;
+      var to = nextY + '-' + String(nextMn).padStart(2, '0') + '-01';
+      console.log('[Gong Backfill] Fetching ' + mk + '...');
+      try {
+        var allCalls = await gongFetchAllPages(
+          '/calls?fromDateTime=' + from + 'T00:00:00Z&toDateTime=' + to + 'T00:00:00Z',
+          {},
+          function(d) { return d.calls || []; }
+        );
+        var count = 0;
+        for (var j = 0; j < allCalls.length; j++) {
+          if (DISCOVERY_TITLE_PATTERN.test(allCalls[j].title || '') && (allCalls[j].duration || 0) > MIN_CALL_DURATION) count++;
+        }
+        await saveGongCountToSheet(mk, count);
+        console.log('[Gong Backfill] ' + mk + ' = ' + count + ' discovery calls');
+      } catch (e) {
+        console.error('[Gong Backfill] Failed for ' + mk + ':', e.message);
+      }
+    }
+    console.log('[Gong Backfill] Done.');
+  } catch (e) {
+    console.error('[Gong Backfill] Error:', e.message);
+  }
+}
+
 initOIDC().then(function() {
   app.listen(PORT, function() {
     console.log('FTE Dashboard server running at http://localhost:' + PORT);
     scheduleGChatPosts();
+    backfillGongCache();
   });
 }).catch(function(err) {
   console.error('Failed to initialise OIDC:', err.message);
