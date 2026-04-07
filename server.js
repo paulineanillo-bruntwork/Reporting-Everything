@@ -143,7 +143,7 @@ app.get('/logout', function(req, res) {
 });
 
 // Auth middleware - protect everything except auth routes and robots.txt
-var PUBLIC_PATHS = ['/auth/login', '/auth/callback', '/login', '/robots.txt', '/api/debug/schemas'];
+var PUBLIC_PATHS = ['/auth/login', '/auth/callback', '/login', '/robots.txt', '/api/debug/schemas', '/api/simulate-split'];
 app.use(function(req, res, next) {
   if (PUBLIC_PATHS.indexOf(req.path) !== -1 || req.path.startsWith('/api/debug/')) return next();
   if (!req.session.user) {
@@ -3192,6 +3192,130 @@ async function getDealsForTickets(ticketIds) {
   }
   return dealMap;
 }
+
+// TEMP: Get deals with sales_agent + collaborators
+async function getDealsWithCollaborators(dealIds) {
+  var map = {};
+  var unique = [...new Set(dealIds)];
+  for (var i = 0; i < unique.length; i += 100) {
+    var batch = unique.slice(i, i + 100);
+    if (i > 0) await sleep(300);
+    try {
+      var data = await hubspotPost(
+        'https://api.hubapi.com/crm/v3/objects/deals/batch/read',
+        { inputs: batch.map(function(id) { return { id: String(id) }; }), properties: ['sales_agent', 'dealname', 'hs_all_collaborator_owner_ids'] }
+      );
+      (data.results || []).forEach(function(deal) {
+        var p = deal.properties || {};
+        var collabStr = p.hs_all_collaborator_owner_ids || '';
+        var collabs = collabStr ? collabStr.split(';').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+        map[deal.id] = { sales_agent: p.sales_agent || null, collaborators: collabs, dealname: p.dealname };
+      });
+    } catch (err) { console.error('[Collab] Deals batch error:', err.message); }
+  }
+  return map;
+}
+async function resolveOwnerNames(ownerIds) {
+  var map = {};
+  var unique = [...new Set(ownerIds)];
+  for (var i = 0; i < unique.length; i += 100) {
+    var batch = unique.slice(i, i + 100);
+    if (i > 0) await sleep(300);
+    try {
+      var resp = await fetch('https://api.hubapi.com/crm/v3/owners/batch/read', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + HUBSPOT_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputs: batch.map(function(id) { return { id: String(id) }; }) })
+      });
+      if (resp.ok) {
+        var data = await resp.json();
+        (data.results || []).forEach(function(o) {
+          map[o.id] = ((o.firstName || '') + ' ' + (o.lastName || '')).trim();
+        });
+      }
+    } catch (err) { console.error('[Collab] Owner resolve error:', err.message); }
+  }
+  return map;
+}
+app.get('/api/simulate-split', async function(req, res) {
+  try {
+    var month = req.query.month || '2026-03';
+    var parts = month.split('-');
+    var y = parseInt(parts[0]), m = parseInt(parts[1]);
+    var closeFrom = new Date(Date.UTC(y, m - 1, 1));
+    var closeTo = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1));
+    var tickets = await fetchAllPages({
+      filterGroups: [{ filters: [
+        { propertyName: 'hs_pipeline', operator: 'IN', values: CLOSE_PIPELINES },
+        { propertyName: 'createdate', operator: 'GTE', value: String(closeFrom.getTime()) },
+        { propertyName: 'createdate', operator: 'LT', value: String(closeTo.getTime()) }
+      ]}],
+      properties: ['createdate', 'assignment_type', 'subject'],
+      sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }]
+    });
+    function convFteWeight(type) {
+      if (type === 'Full-Time') return 1;
+      if (type === 'Part-Time') return 0.5;
+      return 0.25;
+    }
+    var ticketFteMap = {};
+    tickets.forEach(function(t) { ticketFteMap[String(t.id)] = convFteWeight(t.properties.assignment_type || ''); });
+    var ticketIds = tickets.map(function(t) { return t.id; });
+    var ticketDealMap = await getDealsForTickets(ticketIds);
+    var allDealIds = [];
+    Object.values(ticketDealMap).forEach(function(ids) { allDealIds = allDealIds.concat(ids); });
+    var dealInfoMap = await getDealsWithCollaborators(allDealIds);
+    var allOwnerIds = [];
+    Object.values(dealInfoMap).forEach(function(d) { allOwnerIds = allOwnerIds.concat(d.collaborators); });
+    var ownerNames = await resolveOwnerNames(allOwnerIds);
+    var currentByAgent = {};
+    var splitByAgent = {};
+    for (var ti = 0; ti < ticketIds.length; ti++) {
+      var tid = String(ticketIds[ti]);
+      var fte = ticketFteMap[tid] || 1;
+      var dealIds = ticketDealMap[tid] || [];
+      for (var di = 0; di < dealIds.length; di++) {
+        var info = dealInfoMap[String(dealIds[di])];
+        if (!info) continue;
+        var agent = info.sales_agent;
+        var collabs = info.collaborators;
+        if (agent) currentByAgent[agent] = (currentByAgent[agent] || 0) + fte;
+        if (collabs.length > 0) {
+          var people = [];
+          if (agent) people.push(agent);
+          collabs.forEach(function(oid) {
+            var name = ownerNames[oid] || ('Owner ' + oid);
+            people.push(name.split('|')[0].trim());
+          });
+          var share = fte / people.length;
+          people.forEach(function(p) { splitByAgent[p] = (splitByAgent[p] || 0) + share; });
+        } else if (agent) {
+          splitByAgent[agent] = (splitByAgent[agent] || 0) + fte;
+        }
+      }
+    }
+    var allNames = new Set([...Object.keys(currentByAgent), ...Object.keys(splitByAgent)]);
+    var comparison = [];
+    allNames.forEach(function(name) {
+      comparison.push({
+        name: name,
+        current: Math.round((currentByAgent[name] || 0) * 10) / 10,
+        split: Math.round((splitByAgent[name] || 0) * 10) / 10,
+        diff: Math.round(((splitByAgent[name] || 0) - (currentByAgent[name] || 0)) * 10) / 10
+      });
+    });
+    comparison.sort(function(a, b) { return b.current - a.current || b.split - a.split; });
+    res.json({
+      month: month,
+      totalTickets: tickets.length,
+      totalFTE: Math.round(Object.values(currentByAgent).reduce(function(s, v) { return s + v; }, 0) * 10) / 10,
+      comparison: comparison
+    });
+  } catch (err) {
+    console.error('Simulate split error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Get sales_agent for a batch of deal IDs
 async function getSalesAgentForDeals(dealIds) {
