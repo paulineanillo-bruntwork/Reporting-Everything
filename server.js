@@ -2897,6 +2897,163 @@ app.get('/api/gong/discovery-calls', async function(req, res) {
   }
 });
 
+// ===== Gong: Client Interviews =====
+var INTERVIEW_TITLE_PATTERN = /^Candidate Interview with BruntWork \|/i;
+var interviewCache = {}; // keyed by "from|to"
+
+// Save/read client interview cache to Google Sheet
+async function ensureInterviewCacheTab() {
+  try {
+    var meta = await sheetsGet(GONG_CACHE_SHEET, '');
+    var sheets = (meta.sheets || []).map(function(s) { return s.properties.title; });
+    if (sheets.indexOf('Interview Cache') === -1) {
+      await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + GONG_CACHE_SHEET + ':batchUpdate', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + (await getAccessToken()), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: [{ addSheet: { properties: { title: 'Interview Cache' } } }] })
+      });
+      await sheetsUpdate(GONG_CACHE_SHEET, 'Interview Cache!A1:C1', [['Month', 'Data', 'Updated']]);
+    }
+  } catch (e) { console.error('[Interview Cache] ensureTab error:', e.message); }
+}
+
+async function saveInterviewToSheet(month, data) {
+  try {
+    await ensureInterviewCacheTab();
+    var existing = await sheetsGet(GONG_CACHE_SHEET, 'Interview Cache!A:C');
+    var rows = (existing.values || []);
+    var rowIdx = -1;
+    for (var i = 1; i < rows.length; i++) {
+      if (rows[i][0] === month) { rowIdx = i; break; }
+    }
+    var now = new Date().toISOString();
+    var json = JSON.stringify(data);
+    if (rowIdx >= 0) {
+      await sheetsUpdate(GONG_CACHE_SHEET, 'Interview Cache!A' + (rowIdx + 1) + ':C' + (rowIdx + 1), [[month, json, now]]);
+    } else {
+      await sheetsAppend(GONG_CACHE_SHEET, 'Interview Cache!A:C', [[month, json, now]]);
+    }
+    console.log('[Interview Cache] Saved ' + month);
+  } catch (e) { console.error('[Interview Cache] Save error:', e.message); }
+}
+
+async function readInterviewFromSheet(month) {
+  try {
+    await ensureInterviewCacheTab();
+    var data = await sheetsGet(GONG_CACHE_SHEET, 'Interview Cache!A:C');
+    var rows = (data.values || []);
+    for (var i = 1; i < rows.length; i++) {
+      if (rows[i][0] === month && rows[i][1]) {
+        return { data: JSON.parse(rows[i][1]), cachedAt: rows[i][2] };
+      }
+    }
+    return null;
+  } catch (e) { console.error('[Interview Cache] Read error:', e.message); return null; }
+}
+
+app.get('/api/gong/client-interviews', async function(req, res) {
+  try {
+    var from = req.query.from;
+    var to = req.query.to;
+    if (!from || !to) return res.status(400).json({ error: 'from and to date parameters required' });
+
+    var forceRefresh = req.query.refresh === 'true';
+    var cacheKey = from + '|' + to;
+    var monthKey = from.substring(0, 7);
+
+    // 1. In-memory cache
+    if (!forceRefresh && interviewCache[cacheKey]) {
+      return res.json(Object.assign({}, interviewCache[cacheKey].data, { cached: true, cachedAt: new Date(interviewCache[cacheKey].ts).toISOString() }));
+    }
+
+    // 2. Google Sheet cache
+    if (!forceRefresh) {
+      var sheetData = await readInterviewFromSheet(monthKey);
+      if (sheetData) {
+        interviewCache[cacheKey] = { data: sheetData.data, ts: new Date(sheetData.cachedAt).getTime() };
+        return res.json(Object.assign({}, sheetData.data, { cached: true, cachedAt: sheetData.cachedAt }));
+      }
+    }
+
+    // 3. Live fetch from Gong
+    var users = await getGongUsers();
+    var allCalls = await gongFetchAllPages(
+      '/calls?fromDateTime=' + from + 'T00:00:00Z&toDateTime=' + to + 'T00:00:00Z',
+      {},
+      function(d) { return d.calls || []; }
+    );
+
+    var totalScanned = allCalls.length;
+    var interviews = [];
+    for (var i = 0; i < allCalls.length; i++) {
+      var call = allCalls[i];
+      if (INTERVIEW_TITLE_PATTERN.test(call.title || '')) {
+        interviews.push(call);
+      }
+    }
+
+    // Aggregate by host (ownerId -> user name)
+    var hostMap = {};
+    var totalDuration = 0;
+    for (var j = 0; j < interviews.length; j++) {
+      var c = interviews[j];
+      var ownerId = c.ownerId || 'unknown';
+      var user = users[ownerId];
+      var hostName = user ? ((user.firstName || '') + ' ' + (user.lastName || '')).trim() : 'Unknown';
+      totalDuration += c.duration || 0;
+      if (!hostMap[hostName]) {
+        hostMap[hostName] = { host: hostName, calls: 0, totalDuration: 0, shortest: Infinity, longest: 0 };
+      }
+      hostMap[hostName].calls++;
+      hostMap[hostName].totalDuration += c.duration || 0;
+      if (c.duration < hostMap[hostName].shortest) hostMap[hostName].shortest = c.duration;
+      if (c.duration > hostMap[hostName].longest) hostMap[hostName].longest = c.duration;
+    }
+
+    var hosts = Object.values(hostMap).map(function(h) {
+      return {
+        host: h.host,
+        calls: h.calls,
+        avgDuration: Math.round(h.totalDuration / h.calls),
+        totalDuration: h.totalDuration,
+        shortest: h.shortest === Infinity ? 0 : h.shortest,
+        longest: h.longest
+      };
+    });
+
+    var result = {
+      from: from,
+      to: to,
+      totalCallsScanned: totalScanned,
+      totalInterviews: interviews.length,
+      avgDuration: interviews.length > 0 ? Math.round(totalDuration / interviews.length) : 0,
+      hosts: hosts
+    };
+
+    interviewCache[cacheKey] = { data: result, ts: Date.now() };
+
+    // Persist to sheet
+    if (/^\d{4}-\d{2}-01$/.test(from)) {
+      try { await saveInterviewToSheet(monthKey, result); } catch(e) { console.error('[Interview Cache] Save error:', e.message); }
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('Gong client interviews error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/gong/client-interviews-cached', async function(req, res) {
+  try {
+    var month = req.query.month;
+    if (!month) return res.status(400).json({ error: 'month required' });
+    var sheetData = await readInterviewFromSheet(month);
+    if (sheetData) return res.json(Object.assign({}, sheetData.data, { cached: true, cachedAt: sheetData.cachedAt }));
+    res.json({ empty: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ===== Gong: Read persisted discovery call counts from sheet =====
 app.get('/api/gong/sheet-counts', async function(req, res) {
   try {

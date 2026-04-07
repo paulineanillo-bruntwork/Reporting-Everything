@@ -46,6 +46,12 @@ tbody tr:hover td{background:#f8fafc}
 .status-toast.error{background:var(--red)}
 .status-toast.success{background:var(--green)}
 .conv-rate{font-weight:700;color:var(--text)}
+.tab-bar{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:24px}
+.tab-btn{padding:12px 24px;font-size:14px;font-weight:600;border:none;background:none;color:var(--text-muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
 @media(max-width:900px){.header,.main{padding-left:20px;padding-right:20px}.summary-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
@@ -63,6 +69,13 @@ tbody tr:hover td{background:#f8fafc}
 </div>
 <div class="main">
 
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('conversion')" data-tab="conversion">Conversion Rates</button>
+  <button class="tab-btn" onclick="switchTab('interviews')" data-tab="interviews">Client Interviews</button>
+</div>
+
+<!-- ===== Conversion Rates Tab ===== -->
+<div class="tab-panel active" id="panelConversion">
 <div class="controls">
   <label style="font-size:13px;font-weight:600">Close Month:</label>
   <input type="month" id="convMonthPicker" onchange="loadConversionCached()" />
@@ -87,20 +100,53 @@ tbody tr:hover td{background:#f8fafc}
     </div>
   </div>
 </div>
+</div><!-- end panelConversion -->
+
+<!-- ===== Client Interviews Tab ===== -->
+<div class="tab-panel" id="panelInterviews">
+<div class="controls">
+  <label style="font-size:13px;font-weight:600">Month:</label>
+  <input type="month" id="intMonthPicker" onchange="loadInterviewsCached()" />
+  <button id="intLoadBtn" onclick="loadInterviews()">Load latest data</button>
+  <span id="intStatusText" style="font-size:12px;color:var(--text-muted)"></span>
+  <span style="font-size:11px;color:var(--text-muted);margin-left:auto">Gong calls matching "Candidate Interview with BruntWork |" grouped by host</span>
+</div>
+
+<div id="intLoading" class="loading" style="display:none">
+  <div class="spinner"></div>
+  <div>Fetching client interviews from Gong...</div>
+</div>
+
+<div id="intContent" style="display:none">
+  <div class="summary-grid" id="intSummaryCards"></div>
+  <div class="tbl-wrap">
+    <div class="tbl-scroll">
+      <table>
+        <thead id="intTableHead"></thead>
+        <tbody id="intTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div><!-- end panelInterviews -->
 
 </div>
 <div class="status-toast" id="toast"></div>
 
 <script>
+var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 var now = new Date();
 var yr = now.getFullYear();
 var mo = now.getMonth();
 if (mo === 0) { yr--; mo = 12; }
-document.getElementById('convMonthPicker').value = yr + '-' + String(mo).padStart(2, '0');
+var defaultMonth = yr + '-' + String(mo).padStart(2, '0');
+document.getElementById('convMonthPicker').value = defaultMonth;
+document.getElementById('intMonthPicker').value = defaultMonth;
 
-var convData = null;
-var convSortCol = 'closures';
-var convSortAsc = false;
+function monthLabel(m) {
+  var p = m.split('-');
+  return MONTH_NAMES[parseInt(p[1]) - 1] + ' ' + p[0];
+}
 
 function showToast(msg, type) {
   var t = document.getElementById('toast');
@@ -108,6 +154,33 @@ function showToast(msg, type) {
   t.className = 'status-toast show ' + type;
   setTimeout(function() { t.className = 'status-toast'; }, 3000);
 }
+
+function fmtDur(secs) {
+  if (!secs && secs !== 0) return '—';
+  var m = Math.floor(secs / 60);
+  var s = secs % 60;
+  return m + 'm ' + s + 's';
+}
+
+// ===== Tab switching =====
+var interviewsLoaded = false;
+function switchTab(tab) {
+  var btns = document.querySelectorAll('.tab-btn');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].classList.toggle('active', btns[i].getAttribute('data-tab') === tab);
+  }
+  document.getElementById('panelConversion').classList.toggle('active', tab === 'conversion');
+  document.getElementById('panelInterviews').classList.toggle('active', tab === 'interviews');
+  if (tab === 'interviews' && !interviewsLoaded) {
+    interviewsLoaded = true;
+    loadInterviewsCached();
+  }
+}
+
+// ===== Conversion Rates =====
+var convData = null;
+var convSortCol = 'closures';
+var convSortAsc = false;
 
 function renderConvResult(data) {
   convData = data;
@@ -119,68 +192,43 @@ function renderConvResult(data) {
     'Closures in ' + data.closeMonth + ' vs calls in ' + data.callsMonth + cacheNote;
 }
 
-// Load conversion data from cache only (sheet or in-memory) — never fetches live
 function loadConversionCached() {
   var month = document.getElementById('convMonthPicker').value;
   if (!month) return;
   document.getElementById('convContent').style.display = 'none';
   document.getElementById('convStatusText').textContent = 'Loading cached data...';
-
-  // Try sheet cache, then in-memory (no refresh)
   fetch('/api/gong/conversion-cached?month=' + month)
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data && !data.empty && !data.error) {
         renderConvResult(data);
       } else {
-        // Try in-memory cache on server (no refresh — won't hit Gong/HubSpot)
         return fetch('/api/gong/conversion?month=' + month)
           .then(function(r) { return r.json(); })
           .then(function(data2) {
-            if (data2 && !data2.error) {
-              renderConvResult(data2);
-            } else {
-              document.getElementById('convStatusText').textContent = 'No cached data. Click Load to fetch from Gong & HubSpot.';
-            }
+            if (data2 && !data2.error) { renderConvResult(data2); }
+            else { document.getElementById('convStatusText').textContent = 'No cached data. Click Load to fetch from Gong & HubSpot.'; }
           });
       }
     })
-    .catch(function() {
-      document.getElementById('convStatusText').textContent = 'No cached data. Click Load to fetch from Gong & HubSpot.';
-    });
+    .catch(function() { document.getElementById('convStatusText').textContent = 'No cached data. Click Load to fetch from Gong & HubSpot.'; });
 }
 
-// Fetch from server endpoint — refresh=true bypasses all caches
 function fetchConversionFromServer(month, refresh) {
   var btn = document.getElementById('convLoadBtn');
-  btn.disabled = true;
-  btn.textContent = 'Loading...';
+  btn.disabled = true; btn.textContent = 'Loading...';
   document.getElementById('convLoading').style.display = 'block';
   document.getElementById('convContent').style.display = 'none';
   document.getElementById('convStatusText').textContent = '';
-
   var url = '/api/gong/conversion?month=' + month;
   if (refresh) url += '&refresh=true';
-
   fetch(url)
-    .then(function(r) {
-      if (r.status === 401) { alert('Session expired.'); window.location.href = '/login'; return; }
-      return r.json();
-    })
-    .then(function(data) {
-      if (!data) return;
-      if (data.error) { showToast(data.error, 'error'); return; }
-      renderConvResult(data);
-    })
+    .then(function(r) { if (r.status === 401) { alert('Session expired.'); window.location.href = '/login'; return; } return r.json(); })
+    .then(function(data) { if (!data) return; if (data.error) { showToast(data.error, 'error'); return; } renderConvResult(data); })
     .catch(function(err) { showToast('Error: ' + err.message, 'error'); })
-    .finally(function() {
-      btn.disabled = false;
-      btn.textContent = 'Load latest data';
-      document.getElementById('convLoading').style.display = 'none';
-    });
+    .finally(function() { btn.disabled = false; btn.textContent = 'Load latest data'; document.getElementById('convLoading').style.display = 'none'; });
 }
 
-// Load button = force refresh from Gong + HubSpot APIs
 function loadConversion() {
   var month = document.getElementById('convMonthPicker').value;
   if (!month) return;
@@ -218,13 +266,11 @@ function renderConvTable(data) {
   if (convSortCol) {
     rows.sort(function(a, b) {
       var av = a[convSortCol], bv = b[convSortCol];
-      if (av === null) av = -1;
-      if (bv === null) bv = -1;
+      if (av === null) av = -1; if (bv === null) bv = -1;
       if (typeof av === 'string') return convSortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
       return convSortAsc ? (av - bv) : (bv - av);
     });
   }
-
   var th = '<tr>';
   for (var c = 0; c < CONV_COLS.length; c++) {
     var col = CONV_COLS[c];
@@ -249,8 +295,6 @@ function renderConvTable(data) {
     h += '<td class="ar"><span class="conv-rate">' + rateStr + '</span></td>';
     h += '</tr>';
   }
-
-  // Totals
   if (rows.length > 0) {
     var totG = 0, totC = 0;
     for (var t = 0; t < rows.length; t++) { totG += rows[t].gongCalls; totC += rows[t].closures; }
@@ -266,7 +310,148 @@ function doConvSort(key) {
   if (convData) renderConvTable(convData);
 }
 
-// Auto-load from cache on page open
+// ===== Client Interviews =====
+var intData = null;
+var intSortCol = 'calls';
+var intSortAsc = false;
+
+function getIntDateRange() {
+  var m = document.getElementById('intMonthPicker').value;
+  if (!m) return null;
+  var mp = m.split('-');
+  var y = parseInt(mp[0]), mn = parseInt(mp[1]);
+  var from = y + '-' + String(mn).padStart(2, '0') + '-01';
+  var nextMn = mn === 12 ? 1 : mn + 1;
+  var nextY = mn === 12 ? y + 1 : y;
+  var to = nextY + '-' + String(nextMn).padStart(2, '0') + '-01';
+  return { from: from, to: to, label: MONTH_NAMES[mn - 1] + ' ' + y, month: m };
+}
+
+function renderIntResult(data, label) {
+  intData = data;
+  renderIntSummary(data, label);
+  renderIntTable(data, label);
+  document.getElementById('intContent').style.display = 'block';
+  var cacheNote = data.cached ? ' (cached ' + new Date(data.cachedAt).toLocaleString() + ')' : ' (fresh)';
+  document.getElementById('intStatusText').textContent = label + ' — ' + data.totalInterviews + ' interviews from ' + data.hosts.length + ' coordinators' + cacheNote;
+}
+
+function loadInterviewsCached() {
+  var range = getIntDateRange();
+  if (!range) return;
+  document.getElementById('intContent').style.display = 'none';
+  document.getElementById('intStatusText').textContent = 'Loading cached data...';
+
+  fetch('/api/gong/client-interviews-cached?month=' + range.month)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data && !data.empty && !data.error && data.totalInterviews != null) {
+        renderIntResult(data, range.label);
+      } else {
+        return fetch('/api/gong/client-interviews?from=' + range.from + '&to=' + range.to)
+          .then(function(r) { return r.json(); })
+          .then(function(data2) {
+            if (data2 && !data2.error && data2.totalInterviews != null) { renderIntResult(data2, range.label); }
+            else { document.getElementById('intStatusText').textContent = 'No cached data. Click Load to fetch from Gong.'; }
+          });
+      }
+    })
+    .catch(function() { document.getElementById('intStatusText').textContent = 'No cached data. Click Load to fetch from Gong.'; });
+}
+
+function loadInterviews() {
+  var range = getIntDateRange();
+  if (!range) return;
+  var btn = document.getElementById('intLoadBtn');
+  btn.disabled = true; btn.textContent = 'Loading...';
+  document.getElementById('intLoading').style.display = 'block';
+  document.getElementById('intContent').style.display = 'none';
+  document.getElementById('intStatusText').textContent = '';
+
+  fetch('/api/gong/client-interviews?from=' + range.from + '&to=' + range.to + '&refresh=true')
+    .then(function(r) { if (r.status === 401) { alert('Session expired.'); window.location.href = '/login'; return; } return r.json(); })
+    .then(function(data) { if (!data) return; if (data.error) { showToast(data.error, 'error'); return; } renderIntResult(data, range.label); })
+    .catch(function(err) { showToast('Error: ' + err.message, 'error'); })
+    .finally(function() { btn.disabled = false; btn.textContent = 'Load latest data'; document.getElementById('intLoading').style.display = 'none'; });
+}
+
+function renderIntSummary(data, label) {
+  var cards = [
+    { val: data.totalInterviews.toLocaleString(), lbl: 'Client Interviews (' + label + ')' },
+    { val: data.hosts.length.toLocaleString(), lbl: 'Coordinators' },
+    { val: data.avgDuration ? Math.round(data.avgDuration / 60) + 'm' : '—', lbl: 'Avg Duration' }
+  ];
+  var h = '';
+  for (var i = 0; i < cards.length; i++) {
+    h += '<div class="summary-card"><div class="val">' + cards[i].val + '</div><div class="lbl">' + cards[i].lbl + '</div></div>';
+  }
+  document.getElementById('intSummaryCards').innerHTML = h;
+}
+
+var INT_COLS = [
+  { key: 'host', label: 'Coordinator', align: 'left' },
+  { key: 'calls', label: 'Interviews', align: 'right' },
+  { key: 'avgDuration', label: 'Avg Duration', align: 'right', fmt: 'dur' },
+  { key: 'totalDuration', label: 'Total Time', align: 'right', fmt: 'dur' },
+  { key: 'shortest', label: 'Shortest', align: 'right', fmt: 'dur' },
+  { key: 'longest', label: 'Longest', align: 'right', fmt: 'dur' }
+];
+
+function renderIntTable(data) {
+  var rows = data.hosts.slice();
+  if (intSortCol) {
+    rows.sort(function(a, b) {
+      var av = a[intSortCol], bv = b[intSortCol];
+      if (typeof av === 'string') return intSortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+      return intSortAsc ? (av - bv) : (bv - av);
+    });
+  }
+  var th = '<tr>';
+  for (var c = 0; c < INT_COLS.length; c++) {
+    var col = INT_COLS[c];
+    var sorted = intSortCol === col.key;
+    var arrow = sorted ? (intSortAsc ? '&#9650;' : '&#9660;') : '&#9650;';
+    var cls = [];
+    if (col.align === 'right') cls.push('ar');
+    if (sorted) cls.push('sorted');
+    th += '<th' + (cls.length ? ' class="' + cls.join(' ') + '"' : '') + ' onclick="doIntSort(\'' + col.key + '\')">' + col.label + '<span class="sort-arrow">' + arrow + '</span></th>';
+  }
+  th += '</tr>';
+  document.getElementById('intTableHead').innerHTML = th;
+
+  var h = '';
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    h += '<tr>';
+    for (var j = 0; j < INT_COLS.length; j++) {
+      var col = INT_COLS[j];
+      var v = r[col.key];
+      var tdCls = col.align === 'right' ? ' class="ar"' : '';
+      if (col.fmt === 'dur') {
+        h += '<td' + tdCls + '>' + fmtDur(v) + '</td>';
+      } else if (typeof v === 'number') {
+        h += '<td' + tdCls + '>' + v.toLocaleString() + '</td>';
+      } else {
+        h += '<td' + tdCls + '>' + (v || '') + '</td>';
+      }
+    }
+    h += '</tr>';
+  }
+  if (rows.length > 0) {
+    var totCalls = 0, totDur = 0;
+    for (var t = 0; t < rows.length; t++) { totCalls += rows[t].calls; totDur += rows[t].totalDuration; }
+    h += '<tr style="font-weight:700;background:#f8fafc"><td>Total</td><td class="ar">' + totCalls.toLocaleString() + '</td><td class="ar">' + fmtDur(totCalls > 0 ? Math.round(totDur / totCalls) : 0) + '</td><td class="ar">' + fmtDur(totDur) + '</td><td class="ar"></td><td class="ar"></td></tr>';
+  }
+  document.getElementById('intTableBody').innerHTML = h;
+}
+
+function doIntSort(key) {
+  if (intSortCol === key) { intSortAsc = !intSortAsc; }
+  else { intSortCol = key; intSortAsc = key === 'host'; }
+  if (intData) renderIntTable(intData);
+}
+
+// Auto-load conversion from cache on page open
 loadConversionCached();
 </script>
 </body>
