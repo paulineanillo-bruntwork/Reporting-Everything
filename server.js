@@ -143,7 +143,7 @@ app.get('/logout', function(req, res) {
 });
 
 // Auth middleware - protect everything except auth routes and robots.txt
-var PUBLIC_PATHS = ['/auth/login', '/auth/callback', '/login', '/robots.txt', '/api/debug/schemas'];
+var PUBLIC_PATHS = ['/auth/login', '/auth/callback', '/login', '/robots.txt', '/api/debug/schemas', '/api/simulate-split'];
 app.use(function(req, res, next) {
   if (PUBLIC_PATHS.indexOf(req.path) !== -1 || req.path.startsWith('/api/debug/')) return next();
   if (!req.session.user) {
