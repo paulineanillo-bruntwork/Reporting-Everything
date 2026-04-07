@@ -766,9 +766,14 @@ function renderSubBlocks(containerId, sections, cur, prev, slice, labels) {
       ds2.backgroundColor = 'transparent';
       datasets.push(ds2);
       opts.scales.y = { display:false, beginAtZero:true, position:'left' };
-      var y1Max = ov.pct===false ? undefined : 200;
       opts.scales.y1 = { display:false, min:0, position:'right', grid:{display:false} };
-      if (y1Max) opts.scales.y1.max = y1Max;
+      if (ov.pct===false) {
+        // Push the line lower by setting max to ~4x the data range
+        var ovMax = Math.max.apply(null, ds2.data.filter(function(v){return v!==null;})) || 1;
+        opts.scales.y1.max = Math.ceil(ovMax * 4);
+      } else {
+        opts.scales.y1.max = 200;
+      }
       opts.plugins.legend = { display:true, position:'bottom', labels:{font:{size:10},usePointStyle:true,padding:12} };
     }
 
