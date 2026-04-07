@@ -665,10 +665,10 @@ Promise.all([
   // === Team Scalability sub-blocks ===
   var scalSections = [
     { title:'Team Scalability', rows:[
-      { label:'BW Admin Staff (end of period) - excl. Digital Team', col:C.adminStaff, format:'num' },
-      { label:'Active Staff Headcount Per Internal Staff (excl. Digital)', col:C.perAdmin, format:'dec2' }
+      { label:'Internal Team Headcount (exc. Digital Team)', col:C.adminStaff, format:'num' },
+      { label:'Client FTE Vs BW Internal Headcount Ratio', col:C.perAdmin, format:'dec2' }
     ], charts:[
-      { label:'BW Admin Staff', col:C.adminStaff, color:'#2563eb', type:'bar', overlay:{ label:'Active Staff Per Admin', col:C.perAdmin, color:'#d97706', pct:false } }
+      { label:'Internal Team Headcount (exc. Digital Team)', col:C.adminStaff, color:'#2563eb', type:'bar', overlay:{ label:'Client FTE Vs BW Internal Headcount Ratio', col:C.perAdmin, color:'#d97706', pct:false } }
     ]}
   ];
   renderSubBlocks('scalBlocks', scalSections, cur, prev, curSlice, curLabels);
@@ -759,7 +759,7 @@ function renderSubBlocks(containerId, sections, cur, prev, slice, labels) {
       ds2.data = item.slice.map(function(m){return pn(m[ov.col]);});
       ds2.yAxisID = 'y1';
       var ovFmt = ov.pct===false ? function(v){return v!==null?Number(v).toFixed(1):'';} : function(v){return v!==null?Math.round(v)+'%':'';};
-      ds2.datalabels = { display:true, anchor:'start', align:'bottom', color:ovColor, font:{size:9,weight:'bold'}, formatter:ovFmt };
+      ds2.datalabels = { display:true, anchor:'center', align:'bottom', offset:8, color:ovColor, font:{size:9,weight:'bold'}, formatter:ovFmt };
       ds2.borderColor = ovColor;
       ds2.pointBackgroundColor = ovColor;
       ds2.pointBorderColor = ovColor;
