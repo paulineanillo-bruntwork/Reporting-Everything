@@ -231,6 +231,12 @@ td.q-backlog-collapsed{background:#f8fafc}
   <div id="churnBlocks"></div>
 </div>
 
+<!-- Team Scalability Section -->
+<div class="section" id="teamScalability">
+  <div class="section-title"><span class="dot" style="background:var(--purple)"></span> Team Scalability</div>
+  <div id="scalBlocks"></div>
+</div>
+
 <!-- Monthly Updates Section -->
 <div class="section" id="monthlyUpdates">
   <div class="section-title"><span class="dot" style="background:var(--orange)"></span> <span id="updatesTitle">Updates</span></div>
@@ -656,6 +662,17 @@ Promise.all([
   ];
   renderSubBlocks('churnBlocks', churnSections, cur, prev, curSlice, curLabels);
 
+  // === Team Scalability sub-blocks ===
+  var scalSections = [
+    { title:'Team Scalability', rows:[
+      { label:'BW Admin Staff (end of period) - excl. Digital Team', col:C.adminStaff, format:'num' },
+      { label:'Active Staff Headcount Per Internal Staff (excl. Digital)', col:C.perAdmin, format:'dec2' }
+    ], charts:[
+      { label:'BW Admin Staff', col:C.adminStaff, color:'#2563eb', type:'bar', overlay:{ label:'Active Staff Per Admin', col:C.perAdmin, color:'#d97706', pct:false } }
+    ]}
+  ];
+  renderSubBlocks('scalBlocks', scalSections, cur, prev, curSlice, curLabels);
+
   // === Monthly Updates Section ===
   document.getElementById('updatesTitle').textContent = monthLabel(currentMonth) + ' Updates';
   var projectsData = (reportData && reportData.projects) || [];
@@ -736,18 +753,22 @@ function renderSubBlocks(containerId, sections, cur, prev, slice, labels) {
     // Overlay: add a second dataset on a secondary y-axis
     if (item.chart.overlay) {
       var ov = item.chart.overlay;
+      var ovColor = ov.color || '#6d28d9';
       ds.yAxisID = 'y';
-      var ds2 = makeDS({ type:'line', label:ov.label, color:ov.color });
+      var ds2 = makeDS({ type:'line', label:ov.label, color:ovColor });
       ds2.data = item.slice.map(function(m){return pn(m[ov.col]);});
       ds2.yAxisID = 'y1';
-      ds2.datalabels = { display:true, anchor:'start', align:'bottom', color:'#6d28d9', font:{size:9,weight:'bold'}, formatter:function(v){return v!==null?Math.round(v)+'%':'';} };
-      ds2.borderColor = '#6d28d9';
-      ds2.pointBackgroundColor = '#6d28d9';
-      ds2.pointBorderColor = '#6d28d9';
-      ds2.backgroundColor = 'rgba(109,40,217,0.08)';
+      var ovFmt = ov.pct===false ? function(v){return v!==null?Number(v).toFixed(1):'';} : function(v){return v!==null?Math.round(v)+'%':'';};
+      ds2.datalabels = { display:true, anchor:'start', align:'bottom', color:ovColor, font:{size:9,weight:'bold'}, formatter:ovFmt };
+      ds2.borderColor = ovColor;
+      ds2.pointBackgroundColor = ovColor;
+      ds2.pointBorderColor = ovColor;
+      ds2.backgroundColor = 'transparent';
       datasets.push(ds2);
       opts.scales.y = { display:false, beginAtZero:true, position:'left' };
-      opts.scales.y1 = { display:false, min:0, max:200, position:'right', grid:{display:false} };
+      var y1Max = ov.pct===false ? undefined : 200;
+      opts.scales.y1 = { display:false, min:0, position:'right', grid:{display:false} };
+      if (y1Max) opts.scales.y1.max = y1Max;
       opts.plugins.legend = { display:true, position:'bottom', labels:{font:{size:10},usePointStyle:true,padding:12} };
     }
 
@@ -783,6 +804,7 @@ function formatVal(v, format) {
   if (format==='pctR') return fmtPctRaw(v);
   if (format==='pctRound') return v===null||v===undefined?'—':Math.round(Number(v))+'%';
   if (format==='dec') return fmtD(v);
+  if (format==='dec2') return fmtD(v,2);
   return fmt(v);
 }
 
