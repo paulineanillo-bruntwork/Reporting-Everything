@@ -2659,6 +2659,18 @@ app.get('/kpi', function(req, res) {
   res.sendFile(path.join(__dirname, 'kpi-history.html'));
 });
 
+// TEMP: debug pipeline stages
+app.get('/api/debug/pipeline-stages', async function(req, res) {
+  try {
+    var url = 'https://api.hubapi.com/crm/v3/pipelines/tickets/' + '16984077' + '/stages';
+    var headers = { 'Content-Type': 'application/json' };
+    if (HUBSPOT_KEY && HUBSPOT_KEY.startsWith('pat-')) headers['Authorization'] = 'Bearer ' + HUBSPOT_KEY;
+    var resp = await fetch(url, { headers: headers });
+    var data = await resp.json();
+    res.json(data);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ===== Internal Costs =====
 var BW_INTERNAL_PIPELINE = '16984077';
 var AUD_FX_RATES = {
