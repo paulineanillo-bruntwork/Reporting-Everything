@@ -2659,6 +2659,87 @@ app.get('/kpi', function(req, res) {
   res.sendFile(path.join(__dirname, 'kpi-history.html'));
 });
 
+// ===== Internal Costs =====
+var BW_INTERNAL_PIPELINE = '16984077';
+var AUD_FX_RATES = {
+  PHP: 0.027, ZAR: 0.083, USD: 1.55, KES: 0.012, COP: 0.00037,
+  IDR: 0.000095, ARS: 0.0013, SGD: 1.18, GTQ: 0.20, AUD: 1.0,
+  NPR: 0.0115, THB: 0.046, EGP: 0.031, TTD: 0.23, MYR: 0.35,
+  XAF: 0.0025, INR: 0.019, HNL: 0.061, MXN: 0.077
+};
+var HOURS_PER_MONTH = 173;
+
+app.get('/internal-costs', function(req, res) {
+  res.sendFile(path.join(__dirname, 'internal-costs.html'));
+});
+
+app.get('/api/internal-costs', async function(req, res) {
+  try {
+    var tickets = await fetchAllPagesWithRetry({
+      filterGroups: [{
+        filters: [
+          { propertyName: 'hs_pipeline', operator: 'EQ', value: BW_INTERNAL_PIPELINE },
+          { propertyName: 'staff_status', operator: 'EQ', value: 'Active' }
+        ]
+      }],
+      properties: ['subject', 'bw_internal_secondary_team', 'bw_internal_hourly_rate', 'bw_internal_monthly_rate', 'staff_hourly_monthly_rate_currency']
+    });
+
+    var staff = [];
+    var teamAgg = {};
+
+    for (var i = 0; i < tickets.length; i++) {
+      var p = tickets[i].properties || {};
+      var name = (p.subject || '').replace(/, BruntWork$/i, '').trim() || 'Unknown';
+      var team = p.bw_internal_secondary_team || 'Unassigned';
+      var hourly = parseFloat(p.bw_internal_hourly_rate) || 0;
+      var monthly = parseFloat(p.bw_internal_monthly_rate) || 0;
+      var currency = p.staff_hourly_monthly_rate_currency || '';
+
+      var localMonthly = monthly > 0 ? monthly : (hourly > 0 ? hourly * HOURS_PER_MONTH : 0);
+      var rateType = monthly > 0 ? 'monthly' : (hourly > 0 ? 'hourly' : 'none');
+      var fxRate = currency ? (AUD_FX_RATES[currency] || 0) : 0;
+      var audMonthly = Math.round(localMonthly * fxRate * 100) / 100;
+
+      staff.push({
+        id: tickets[i].id,
+        name: name,
+        team: team,
+        currency: currency,
+        hourlyRate: hourly,
+        monthlyRate: monthly,
+        rateType: rateType,
+        localMonthly: Math.round(localMonthly * 100) / 100,
+        audMonthly: audMonthly
+      });
+
+      if (!teamAgg[team]) teamAgg[team] = { headcount: 0, totalAud: 0 };
+      teamAgg[team].headcount++;
+      teamAgg[team].totalAud += audMonthly;
+    }
+
+    // Sort staff by team then name
+    staff.sort(function(a, b) {
+      if (a.team < b.team) return -1;
+      if (a.team > b.team) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    // Build sorted team summary
+    var teams = Object.keys(teamAgg).map(function(t) {
+      return { team: t, headcount: teamAgg[t].headcount, totalAud: Math.round(teamAgg[t].totalAud * 100) / 100 };
+    }).sort(function(a, b) { return b.totalAud - a.totalAud; });
+
+    var totalHeadcount = staff.length;
+    var totalAud = Math.round(teams.reduce(function(s, t) { return s + t.totalAud; }, 0) * 100) / 100;
+
+    res.json({ staff: staff, teams: teams, totalHeadcount: totalHeadcount, totalAud: totalAud });
+  } catch (err) {
+    console.error('Internal costs error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ===== Gong API =====
 app.get('/sales', function(req, res) {
   res.sendFile(path.join(__dirname, 'gong.html'));
