@@ -117,6 +117,10 @@ tbody tr:hover td{background:#f8fafc}
     <div class="cb-row"><input type="checkbox" id="cbPreActive" onchange="applyFilters()"> Pre-Active Stages</div>
   </div>
   <div class="filter-group">
+    <label>Exclude Teams</label>
+    <div id="teamCheckboxes"></div>
+  </div>
+  <div class="filter-group">
     <label>Exclude Staff</label>
     <div class="exclude-wrap">
       <input type="text" class="exclude-input" id="excludeInput" placeholder="Type name to exclude..." oninput="showSuggestions()" onfocus="showSuggestions()">
@@ -162,7 +166,9 @@ tbody tr:hover td{background:#f8fafc}
 var GATE_PW = '1234';
 var allStaff = [];
 var allNames = [];
+var allTeams = [];
 var excludedNames = [];
+var excludedTeams = [];
 var sortCol = 'team';
 var sortDir = 1;
 var chartHC = null;
@@ -203,6 +209,53 @@ var TEAM_COLORS = {
 };
 function getColor(team) { return TEAM_COLORS[team] || '#64748b'; }
 
+function buildTeamCheckboxes() {
+  var container = document.getElementById('teamCheckboxes');
+  // Preserve existing exclusions, add new teams
+  var html = '';
+  allTeams.forEach(function(t) {
+    var excluded = excludedTeams.indexOf(t) !== -1;
+    html += '<div class="cb-row"><input type="checkbox" ' + (excluded ? 'checked' : '') + ' onchange="toggleTeamExclude(\'' + t.replace(/'/g, "\\'") + '\', this.checked)"> ' + t + '</div>';
+  });
+  container.innerHTML = html;
+}
+
+function toggleTeamExclude(team, checked) {
+  if (checked && excludedTeams.indexOf(team) === -1) {
+    excludedTeams.push(team);
+  } else if (!checked) {
+    excludedTeams = excludedTeams.filter(function(t) { return t !== team; });
+  }
+  renderFiltered();
+}
+
+function getFilteredData() {
+  var filtered = allStaff.filter(function(s) {
+    return excludedTeams.indexOf(s.team) === -1;
+  });
+  var teamAgg = {};
+  filtered.forEach(function(s) {
+    if (!teamAgg[s.team]) teamAgg[s.team] = { team: s.team, headcount: 0, totalAud: 0 };
+    teamAgg[s.team].headcount++;
+    teamAgg[s.team].totalAud += s.audMonthly;
+  });
+  var teams = Object.values(teamAgg).sort(function(a, b) { return b.totalAud - a.totalAud; });
+  teams.forEach(function(t) { t.totalAud = Math.round(t.totalAud * 100) / 100; });
+  var totalAud = Math.round(teams.reduce(function(s, t) { return s + t.totalAud; }, 0) * 100) / 100;
+  return { staff: filtered, teams: teams, totalHeadcount: filtered.length, totalAud: totalAud };
+}
+
+function renderFiltered() {
+  var data = getFilteredData();
+  document.getElementById('summaryGrid').innerHTML =
+    '<div class="summary-card"><div class="val">' + data.totalHeadcount + '</div><div class="lbl">Staff Count</div></div>' +
+    '<div class="summary-card"><div class="val">' + fmtAud(data.totalAud) + '</div><div class="lbl">Est. Monthly Cost (AUD)</div></div>' +
+    '<div class="summary-card"><div class="val">' + data.teams.length + '</div><div class="lbl">Teams</div></div>' +
+    '<div class="summary-card"><div class="val">' + (data.totalHeadcount > 0 ? fmtAud(Math.round(data.totalAud / data.totalHeadcount)) : '$0') + '</div><div class="lbl">Avg Cost Per Staff (AUD)</div></div>';
+  renderCharts(data.teams);
+  renderTable();
+}
+
 function buildUrl() {
   var active = document.getElementById('cbActive').checked ? '1' : '0';
   var preactive = document.getElementById('cbPreActive').checked ? '1' : '0';
@@ -219,20 +272,13 @@ async function loadData() {
     if (!resp.ok) throw new Error('Failed to load data');
     var data = await resp.json();
     allStaff = data.staff;
-    // Build unique name list for exclusion suggestions
-    var nameSet = {};
-    data.staff.forEach(function(s) { nameSet[s.name] = true; });
+    // Build unique name and team lists
+    var nameSet = {}, teamSet = {};
+    data.staff.forEach(function(s) { nameSet[s.name] = true; teamSet[s.team] = true; });
     allNames = Object.keys(nameSet).sort();
-
-    // Summary cards
-    document.getElementById('summaryGrid').innerHTML =
-      '<div class="summary-card"><div class="val">' + data.totalHeadcount + '</div><div class="lbl">Staff Count</div></div>' +
-      '<div class="summary-card"><div class="val">' + fmtAud(data.totalAud) + '</div><div class="lbl">Est. Monthly Cost (AUD)</div></div>' +
-      '<div class="summary-card"><div class="val">' + data.teams.length + '</div><div class="lbl">Teams</div></div>' +
-      '<div class="summary-card"><div class="val">' + (data.totalHeadcount > 0 ? fmtAud(Math.round(data.totalAud / data.totalHeadcount)) : '$0') + '</div><div class="lbl">Avg Cost Per Staff (AUD)</div></div>';
-
-    renderCharts(data.teams);
-    renderTable();
+    allTeams = Object.keys(teamSet).sort();
+    buildTeamCheckboxes();
+    renderFiltered();
     document.getElementById('loading').style.display = 'none';
     document.getElementById('content').style.display = '';
   } catch (err) {
@@ -284,7 +330,7 @@ var COLS = [
 
 function renderTable() {
   var filter = (document.getElementById('searchBox').value || '').toLowerCase();
-  var rows = allStaff;
+  var rows = allStaff.filter(function(s) { return excludedTeams.indexOf(s.team) === -1; });
   if (filter) {
     rows = rows.filter(function(s) {
       return s.name.toLowerCase().indexOf(filter) !== -1 || s.team.toLowerCase().indexOf(filter) !== -1;
