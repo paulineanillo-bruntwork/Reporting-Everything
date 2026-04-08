@@ -2692,8 +2692,7 @@ app.get('/api/internal-costs', async function(req, res) {
     if (includePreActive) stageIds = stageIds.concat(IC_STAGES_PREACTIVE);
     if (stageIds.length === 0) stageIds.push(IC_STAGE_ACTIVE); // fallback
 
-    // Excluded staff names (comma-separated)
-    var excludeNames = (req.query.exclude || '').split(',').map(function(s) { return s.trim().toLowerCase(); }).filter(Boolean);
+
 
     var tickets = await fetchAllPagesWithRetry({
       filterGroups: [{
@@ -2717,9 +2716,6 @@ app.get('/api/internal-costs', async function(req, res) {
       var currency = p.staff_hourly_monthly_rate_currency || '';
       var stageId = p.hs_pipeline_stage || '';
       var stageLabel = IC_STAGE_LABELS[stageId] || stageId;
-
-      // Apply exclusion filter
-      if (excludeNames.length > 0 && excludeNames.indexOf(name.toLowerCase()) !== -1) continue;
 
       var localMonthly = monthly > 0 ? monthly : (hourly > 0 ? hourly * HOURS_PER_MONTH : 0);
       var rateType = monthly > 0 ? 'monthly' : (hourly > 0 ? 'hourly' : 'none');

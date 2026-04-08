@@ -53,15 +53,6 @@ tbody tr:hover td{background:#f8fafc}
 .filter-group .cb-row input{accent-color:var(--blue);cursor:pointer}
 .filter-group button{padding:6px 16px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:var(--blue);color:#fff;margin-top:8px;transition:background .15s}
 .filter-group button:hover{background:var(--blue-dark)}
-.exclude-wrap{position:relative}
-.exclude-input{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;width:260px}
-.exclude-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
-.exclude-tag{display:inline-flex;align-items:center;gap:4px;background:#e2e8f0;border-radius:4px;padding:2px 8px;font-size:11px}
-.exclude-tag .remove{cursor:pointer;font-weight:bold;color:var(--red);font-size:13px}
-.exclude-suggestions{position:absolute;top:100%;left:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;max-height:180px;overflow-y:auto;width:260px;z-index:20;box-shadow:var(--shadow);display:none}
-.exclude-suggestions.open{display:block}
-.exclude-suggestions div{padding:6px 10px;font-size:12px;cursor:pointer}
-.exclude-suggestions div:hover{background:#f1f5f9}
 /* Password gate */
 .gate-overlay{position:fixed;inset:0;background:linear-gradient(135deg,#1e293b,#334155);display:flex;align-items:center;justify-content:center;z-index:9999}
 .gate-box{background:var(--surface);border-radius:var(--radius);padding:40px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2);max-width:360px;width:90%}
@@ -120,14 +111,6 @@ tbody tr:hover td{background:#f8fafc}
     <label>Exclude Teams</label>
     <div id="teamCheckboxes"></div>
   </div>
-  <div class="filter-group">
-    <label>Exclude Staff</label>
-    <div class="exclude-wrap">
-      <input type="text" class="exclude-input" id="excludeInput" placeholder="Type name to exclude..." oninput="showSuggestions()" onfocus="showSuggestions()">
-      <div class="exclude-suggestions" id="excludeSuggestions"></div>
-    </div>
-    <div class="exclude-tags" id="excludeTags"></div>
-  </div>
 </div>
 
 <div class="summary-grid" id="summaryGrid"></div>
@@ -165,9 +148,7 @@ tbody tr:hover td{background:#f8fafc}
 <script>
 var GATE_PW = '1234';
 var allStaff = [];
-var allNames = [];
 var allTeams = [];
-var excludedNames = [];
 var excludedTeams = ['Digital'];
 var sortCol = 'team';
 var sortDir = 1;
@@ -260,7 +241,6 @@ function buildUrl() {
   var active = document.getElementById('cbActive').checked ? '1' : '0';
   var preactive = document.getElementById('cbPreActive').checked ? '1' : '0';
   var params = 'active=' + active + '&preactive=' + preactive;
-  if (excludedNames.length > 0) params += '&exclude=' + encodeURIComponent(excludedNames.join(','));
   return '/api/internal-costs?' + params;
 }
 
@@ -273,9 +253,8 @@ async function loadData() {
     var data = await resp.json();
     allStaff = data.staff;
     // Build unique name and team lists
-    var nameSet = {}, teamSet = {};
-    data.staff.forEach(function(s) { nameSet[s.name] = true; teamSet[s.team] = true; });
-    allNames = Object.keys(nameSet).sort();
+    var teamSet = {};
+    data.staff.forEach(function(s) { teamSet[s.team] = true; });
     allTeams = Object.keys(teamSet).sort();
     buildTeamCheckboxes();
     renderFiltered();
@@ -379,49 +358,6 @@ function filterTable() { renderTable(); }
 // Stage filter
 function applyFilters() { loadData(); }
 
-// Exclude staff
-function showSuggestions() {
-  var input = document.getElementById('excludeInput').value.toLowerCase();
-  var box = document.getElementById('excludeSuggestions');
-  if (!input) { box.className = 'exclude-suggestions'; return; }
-  var matches = allNames.filter(function(n) {
-    return n.toLowerCase().indexOf(input) !== -1 && excludedNames.indexOf(n) === -1;
-  }).slice(0, 10);
-  if (matches.length === 0) { box.className = 'exclude-suggestions'; return; }
-  box.innerHTML = matches.map(function(n) {
-    return '<div onclick="addExclusion(\'' + n.replace(/'/g, "\\'") + '\')">' + n + '</div>';
-  }).join('');
-  box.className = 'exclude-suggestions open';
-}
-
-function addExclusion(name) {
-  if (excludedNames.indexOf(name) === -1) excludedNames.push(name);
-  document.getElementById('excludeInput').value = '';
-  document.getElementById('excludeSuggestions').className = 'exclude-suggestions';
-  renderExcludeTags();
-  loadData();
-}
-
-function removeExclusion(name) {
-  excludedNames = excludedNames.filter(function(n) { return n !== name; });
-  renderExcludeTags();
-  loadData();
-}
-
-function renderExcludeTags() {
-  var html = '';
-  for (var i = 0; i < excludedNames.length; i++) {
-    html += '<span class="exclude-tag">' + excludedNames[i] + ' <span class="remove" onclick="removeExclusion(\'' + excludedNames[i].replace(/'/g, "\\'") + '\')">&times;</span></span>';
-  }
-  document.getElementById('excludeTags').innerHTML = html;
-}
-
-// Close suggestions on outside click
-document.addEventListener('click', function(e) {
-  if (!e.target.closest('.exclude-wrap')) {
-    document.getElementById('excludeSuggestions').className = 'exclude-suggestions';
-  }
-});
 </script>
 </body>
 </html>
