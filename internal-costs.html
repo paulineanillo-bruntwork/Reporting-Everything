@@ -45,6 +45,23 @@ td{padding:8px 12px;border-bottom:1px solid var(--border);border-right:1px solid
 td.ar{text-align:right;font-variant-numeric:tabular-nums}
 tbody tr:hover td{background:#f8fafc}
 .empty-cell{color:#cbd5e1}
+/* Controls */
+.filters-bar{display:flex;gap:16px;align-items:flex-start;margin-bottom:24px;flex-wrap:wrap}
+.filter-group{background:var(--surface);border-radius:12px;padding:14px 18px;box-shadow:var(--shadow);border:1px solid var(--border)}
+.filter-group label{font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:8px}
+.filter-group .cb-row{display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:4px;cursor:pointer}
+.filter-group .cb-row input{accent-color:var(--blue);cursor:pointer}
+.filter-group button{padding:6px 16px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:var(--blue);color:#fff;margin-top:8px;transition:background .15s}
+.filter-group button:hover{background:var(--blue-dark)}
+.exclude-wrap{position:relative}
+.exclude-input{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;width:260px}
+.exclude-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.exclude-tag{display:inline-flex;align-items:center;gap:4px;background:#e2e8f0;border-radius:4px;padding:2px 8px;font-size:11px}
+.exclude-tag .remove{cursor:pointer;font-weight:bold;color:var(--red);font-size:13px}
+.exclude-suggestions{position:absolute;top:100%;left:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;max-height:180px;overflow-y:auto;width:260px;z-index:20;box-shadow:var(--shadow);display:none}
+.exclude-suggestions.open{display:block}
+.exclude-suggestions div{padding:6px 10px;font-size:12px;cursor:pointer}
+.exclude-suggestions div:hover{background:#f1f5f9}
 /* Password gate */
 .gate-overlay{position:fixed;inset:0;background:linear-gradient(135deg,#1e293b,#334155);display:flex;align-items:center;justify-content:center;z-index:9999}
 .gate-box{background:var(--surface);border-radius:var(--radius);padding:40px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2);max-width:360px;width:90%}
@@ -93,6 +110,22 @@ tbody tr:hover td{background:#f8fafc}
 
 <div id="content" style="display:none">
 
+<div class="filters-bar">
+  <div class="filter-group">
+    <label>Stages</label>
+    <div class="cb-row"><input type="checkbox" id="cbActive" checked onchange="applyFilters()"> Active Staff</div>
+    <div class="cb-row"><input type="checkbox" id="cbPreActive" onchange="applyFilters()"> Pre-Active Stages</div>
+  </div>
+  <div class="filter-group">
+    <label>Exclude Staff</label>
+    <div class="exclude-wrap">
+      <input type="text" class="exclude-input" id="excludeInput" placeholder="Type name to exclude..." oninput="showSuggestions()" onfocus="showSuggestions()">
+      <div class="exclude-suggestions" id="excludeSuggestions"></div>
+    </div>
+    <div class="exclude-tags" id="excludeTags"></div>
+  </div>
+</div>
+
 <div class="summary-grid" id="summaryGrid"></div>
 
 <div class="charts-row">
@@ -128,8 +161,12 @@ tbody tr:hover td{background:#f8fafc}
 <script>
 var GATE_PW = '1234';
 var allStaff = [];
+var allNames = [];
+var excludedNames = [];
 var sortCol = 'team';
 var sortDir = 1;
+var chartHC = null;
+var chartCost = null;
 
 function checkGate() {
   var pw = document.getElementById('gatePw').value;
@@ -145,7 +182,6 @@ function checkGate() {
   return false;
 }
 
-// Auto-unlock if already authenticated
 if (sessionStorage.getItem('icAuth') === GATE_PW) {
   document.getElementById('gate').style.display = 'none';
   document.getElementById('appContent').style.display = '';
@@ -155,49 +191,48 @@ if (sessionStorage.getItem('icAuth') === GATE_PW) {
 function fmtAud(v) {
   return '$' + v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
-
 function fmtLocal(v) {
   return v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
 var TEAM_COLORS = {
-  'Client Success': '#2563eb',
-  'Recruitment': '#059669',
-  'Staff Services': '#7c3aed',
-  'Sales': '#d97706',
-  'Finance & Admin': '#dc2626',
-  'Tech': '#0891b2',
-  'Executive': '#1e293b',
-  'Sourcing': '#e11d48',
-  'Information Technology': '#6366f1',
-  'Digital': '#64748b',
-  'Unassigned': '#94a3b8'
+  'Client Success': '#2563eb', 'Recruitment': '#059669', 'Staff Services': '#7c3aed',
+  'Sales': '#d97706', 'Finance & Admin': '#dc2626', 'Tech': '#0891b2',
+  'Executive': '#1e293b', 'Sourcing': '#e11d48', 'Information Technology': '#6366f1',
+  'Digital': '#64748b', 'Unassigned': '#94a3b8'
 };
+function getColor(team) { return TEAM_COLORS[team] || '#64748b'; }
 
-function getColor(team) {
-  return TEAM_COLORS[team] || '#64748b';
+function buildUrl() {
+  var active = document.getElementById('cbActive').checked ? '1' : '0';
+  var preactive = document.getElementById('cbPreActive').checked ? '1' : '0';
+  var params = 'active=' + active + '&preactive=' + preactive;
+  if (excludedNames.length > 0) params += '&exclude=' + encodeURIComponent(excludedNames.join(','));
+  return '/api/internal-costs?' + params;
 }
 
 async function loadData() {
+  document.getElementById('loading').style.display = '';
+  document.getElementById('content').style.display = 'none';
   try {
-    var resp = await fetch('/api/internal-costs');
+    var resp = await fetch(buildUrl());
     if (!resp.ok) throw new Error('Failed to load data');
     var data = await resp.json();
     allStaff = data.staff;
+    // Build unique name list for exclusion suggestions
+    var nameSet = {};
+    data.staff.forEach(function(s) { nameSet[s.name] = true; });
+    allNames = Object.keys(nameSet).sort();
 
     // Summary cards
     document.getElementById('summaryGrid').innerHTML =
-      '<div class="summary-card"><div class="val">' + data.totalHeadcount + '</div><div class="lbl">Active Staff</div></div>' +
+      '<div class="summary-card"><div class="val">' + data.totalHeadcount + '</div><div class="lbl">Staff Count</div></div>' +
       '<div class="summary-card"><div class="val">' + fmtAud(data.totalAud) + '</div><div class="lbl">Est. Monthly Cost (AUD)</div></div>' +
       '<div class="summary-card"><div class="val">' + data.teams.length + '</div><div class="lbl">Teams</div></div>' +
       '<div class="summary-card"><div class="val">' + (data.totalHeadcount > 0 ? fmtAud(Math.round(data.totalAud / data.totalHeadcount)) : '$0') + '</div><div class="lbl">Avg Cost Per Staff (AUD)</div></div>';
 
-    // Charts
     renderCharts(data.teams);
-
-    // Table
     renderTable();
-
     document.getElementById('loading').style.display = 'none';
     document.getElementById('content').style.display = '';
   } catch (err) {
@@ -211,51 +246,28 @@ function renderCharts(teams) {
   var costData = teams.map(function(t) { return t.totalAud; });
   var bgColors = labels.map(function(l) { return getColor(l) + 'b3'; });
 
-  new Chart(document.getElementById('chartHeadcount'), {
+  if (chartHC) chartHC.destroy();
+  if (chartCost) chartCost.destroy();
+
+  chartHC = new Chart(document.getElementById('chartHeadcount'), {
     type: 'bar',
-    data: {
-      labels: labels,
-      datasets: [{ data: hcData, backgroundColor: bgColors, borderRadius: 4 }]
-    },
+    data: { labels: labels, datasets: [{ data: hcData, backgroundColor: bgColors, borderRadius: 4 }] },
     plugins: [ChartDataLabels],
     options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        datalabels: { anchor: 'end', align: 'end', font: { size: 11, weight: 'bold' }, color: '#1e293b' }
-      },
-      scales: {
-        x: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 } } },
-        y: { grid: { display: false }, ticks: { font: { size: 12, weight: '600' } } }
-      }
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'end', font: { size: 11, weight: 'bold' }, color: '#1e293b' } },
+      scales: { x: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 } } }, y: { grid: { display: false }, ticks: { font: { size: 12, weight: '600' } } } }
     }
   });
 
-  new Chart(document.getElementById('chartCost'), {
+  chartCost = new Chart(document.getElementById('chartCost'), {
     type: 'bar',
-    data: {
-      labels: labels,
-      datasets: [{ data: costData, backgroundColor: bgColors, borderRadius: 4 }]
-    },
+    data: { labels: labels, datasets: [{ data: costData, backgroundColor: bgColors, borderRadius: 4 }] },
     plugins: [ChartDataLabels],
     options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        datalabels: {
-          anchor: 'end', align: 'end',
-          font: { size: 11, weight: 'bold' }, color: '#1e293b',
-          formatter: function(v) { return fmtAud(v); }
-        }
-      },
-      scales: {
-        x: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 }, callback: function(v) { return fmtAud(v); } } },
-        y: { grid: { display: false }, ticks: { font: { size: 12, weight: '600' } } }
-      }
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'end', font: { size: 11, weight: 'bold' }, color: '#1e293b', formatter: function(v) { return fmtAud(v); } } },
+      scales: { x: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 }, callback: function(v) { return fmtAud(v); } } }, y: { grid: { display: false }, ticks: { font: { size: 12, weight: '600' } } } }
     }
   });
 }
@@ -263,6 +275,7 @@ function renderCharts(teams) {
 var COLS = [
   { key: 'name', label: 'Name', align: 'left' },
   { key: 'team', label: 'Team', align: 'left' },
+  { key: 'stage', label: 'Stage', align: 'left' },
   { key: 'currency', label: 'Currency', align: 'left' },
   { key: 'rateType', label: 'Rate Type', align: 'left' },
   { key: 'localMonthly', label: 'Local Monthly Rate', align: 'right' },
@@ -277,32 +290,31 @@ function renderTable() {
       return s.name.toLowerCase().indexOf(filter) !== -1 || s.team.toLowerCase().indexOf(filter) !== -1;
     });
   }
-
-  // Sort
   rows = rows.slice().sort(function(a, b) {
     var va = a[sortCol], vb = b[sortCol];
     if (typeof va === 'string') return sortDir * va.localeCompare(vb);
     return sortDir * ((va || 0) - (vb || 0));
   });
 
-  // Header
   var headHtml = '';
   for (var i = 0; i < COLS.length; i++) {
     var c = COLS[i];
-    var cls = c.align === 'right' ? ' class="ar"' : '';
     var sorted = c.key === sortCol;
     var arrow = sorted ? (sortDir === 1 ? ' &#9650;' : ' &#9660;') : '';
-    headHtml += '<th' + cls + ' onclick="doSort(\'' + c.key + '\')"' + (sorted ? ' class="sorted' + (c.align === 'right' ? ' ar' : '') + '"' : '') + '>' + c.label + '<span class="sort-arrow">' + arrow + '</span></th>';
+    var cls = [];
+    if (sorted) cls.push('sorted');
+    if (c.align === 'right') cls.push('ar');
+    headHtml += '<th' + (cls.length ? ' class="' + cls.join(' ') + '"' : '') + ' onclick="doSort(\'' + c.key + '\')">' + c.label + '<span class="sort-arrow">' + arrow + '</span></th>';
   }
   document.getElementById('tblHead').innerHTML = headHtml;
 
-  // Body
   var html = '';
   for (var j = 0; j < rows.length; j++) {
     var s = rows[j];
     html += '<tr>';
     html += '<td>' + s.name + '</td>';
     html += '<td>' + s.team + '</td>';
+    html += '<td>' + (s.stage || '<span class="empty-cell">-</span>') + '</td>';
     html += '<td>' + (s.currency || '<span class="empty-cell">-</span>') + '</td>';
     html += '<td>' + (s.rateType === 'monthly' ? 'Monthly' : (s.rateType === 'hourly' ? 'Hourly' : '<span class="empty-cell">-</span>')) + '</td>';
     html += '<td class="ar">' + (s.localMonthly > 0 ? fmtLocal(s.localMonthly) + ' ' + s.currency : '<span class="empty-cell">-</span>') + '</td>';
@@ -316,10 +328,54 @@ function doSort(col) {
   if (sortCol === col) { sortDir *= -1; } else { sortCol = col; sortDir = 1; }
   renderTable();
 }
+function filterTable() { renderTable(); }
 
-function filterTable() {
-  renderTable();
+// Stage filter
+function applyFilters() { loadData(); }
+
+// Exclude staff
+function showSuggestions() {
+  var input = document.getElementById('excludeInput').value.toLowerCase();
+  var box = document.getElementById('excludeSuggestions');
+  if (!input) { box.className = 'exclude-suggestions'; return; }
+  var matches = allNames.filter(function(n) {
+    return n.toLowerCase().indexOf(input) !== -1 && excludedNames.indexOf(n) === -1;
+  }).slice(0, 10);
+  if (matches.length === 0) { box.className = 'exclude-suggestions'; return; }
+  box.innerHTML = matches.map(function(n) {
+    return '<div onclick="addExclusion(\'' + n.replace(/'/g, "\\'") + '\')">' + n + '</div>';
+  }).join('');
+  box.className = 'exclude-suggestions open';
 }
+
+function addExclusion(name) {
+  if (excludedNames.indexOf(name) === -1) excludedNames.push(name);
+  document.getElementById('excludeInput').value = '';
+  document.getElementById('excludeSuggestions').className = 'exclude-suggestions';
+  renderExcludeTags();
+  loadData();
+}
+
+function removeExclusion(name) {
+  excludedNames = excludedNames.filter(function(n) { return n !== name; });
+  renderExcludeTags();
+  loadData();
+}
+
+function renderExcludeTags() {
+  var html = '';
+  for (var i = 0; i < excludedNames.length; i++) {
+    html += '<span class="exclude-tag">' + excludedNames[i] + ' <span class="remove" onclick="removeExclusion(\'' + excludedNames[i].replace(/'/g, "\\'") + '\')">&times;</span></span>';
+  }
+  document.getElementById('excludeTags').innerHTML = html;
+}
+
+// Close suggestions on outside click
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.exclude-wrap')) {
+    document.getElementById('excludeSuggestions').className = 'exclude-suggestions';
+  }
+});
 </script>
 </body>
 </html>

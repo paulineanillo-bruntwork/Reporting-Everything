@@ -2659,18 +2659,6 @@ app.get('/kpi', function(req, res) {
   res.sendFile(path.join(__dirname, 'kpi-history.html'));
 });
 
-// TEMP: debug pipeline stages
-app.get('/api/debug/pipeline-stages', async function(req, res) {
-  try {
-    var url = 'https://api.hubapi.com/crm/v3/pipelines/tickets/' + '16984077' + '/stages';
-    var headers = { 'Content-Type': 'application/json' };
-    if (HUBSPOT_KEY && HUBSPOT_KEY.startsWith('pat-')) headers['Authorization'] = 'Bearer ' + HUBSPOT_KEY;
-    var resp = await fetch(url, { headers: headers });
-    var data = await resp.json();
-    res.json(data);
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 // ===== Internal Costs =====
 var BW_INTERNAL_PIPELINE = '16984077';
 var AUD_FX_RATES = {
@@ -2680,6 +2668,15 @@ var AUD_FX_RATES = {
   XAF: 0.0025, INR: 0.019, HNL: 0.061, MXN: 0.077
 };
 var HOURS_PER_MONTH = 173;
+var IC_STAGE_ACTIVE = '43691692';
+var IC_STAGES_PREACTIVE = ['43261242', '43261244', '43261245', '45761800'];
+var IC_STAGE_LABELS = {
+  '43261242': 'New Endorsement',
+  '43261244': 'Email Creation, Contact Update, Deputy Creation',
+  '43261245': 'NH Invite and NHO Training',
+  '45761800': 'Contract Creation',
+  '43691692': 'Active Staff'
+};
 
 app.get('/internal-costs', function(req, res) {
   res.sendFile(path.join(__dirname, 'internal-costs.html'));
@@ -2687,14 +2684,25 @@ app.get('/internal-costs', function(req, res) {
 
 app.get('/api/internal-costs', async function(req, res) {
   try {
+    // Build stage list from query params
+    var stageIds = [];
+    var includeActive = req.query.active !== '0';
+    var includePreActive = req.query.preactive === '1';
+    if (includeActive) stageIds.push(IC_STAGE_ACTIVE);
+    if (includePreActive) stageIds = stageIds.concat(IC_STAGES_PREACTIVE);
+    if (stageIds.length === 0) stageIds.push(IC_STAGE_ACTIVE); // fallback
+
+    // Excluded staff names (comma-separated)
+    var excludeNames = (req.query.exclude || '').split(',').map(function(s) { return s.trim().toLowerCase(); }).filter(Boolean);
+
     var tickets = await fetchAllPagesWithRetry({
       filterGroups: [{
         filters: [
           { propertyName: 'hs_pipeline', operator: 'EQ', value: BW_INTERNAL_PIPELINE },
-          { propertyName: 'staff_status', operator: 'EQ', value: 'Active' }
+          { propertyName: 'hs_pipeline_stage', operator: 'IN', values: stageIds }
         ]
       }],
-      properties: ['subject', 'bw_internal_secondary_team', 'bw_internal_hourly_rate', 'bw_internal_monthly_rate', 'staff_hourly_monthly_rate_currency']
+      properties: ['subject', 'bw_internal_secondary_team', 'bw_internal_hourly_rate', 'bw_internal_monthly_rate', 'staff_hourly_monthly_rate_currency', 'hs_pipeline_stage']
     });
 
     var staff = [];
@@ -2702,11 +2710,16 @@ app.get('/api/internal-costs', async function(req, res) {
 
     for (var i = 0; i < tickets.length; i++) {
       var p = tickets[i].properties || {};
-      var name = (p.subject || '').replace(/, BruntWork$/i, '').trim() || 'Unknown';
+      var name = (p.subject || '').replace(/, BruntWork.*$/i, '').trim() || 'Unknown';
       var team = p.bw_internal_secondary_team || 'Unassigned';
       var hourly = parseFloat(p.bw_internal_hourly_rate) || 0;
       var monthly = parseFloat(p.bw_internal_monthly_rate) || 0;
       var currency = p.staff_hourly_monthly_rate_currency || '';
+      var stageId = p.hs_pipeline_stage || '';
+      var stageLabel = IC_STAGE_LABELS[stageId] || stageId;
+
+      // Apply exclusion filter
+      if (excludeNames.length > 0 && excludeNames.indexOf(name.toLowerCase()) !== -1) continue;
 
       var localMonthly = monthly > 0 ? monthly : (hourly > 0 ? hourly * HOURS_PER_MONTH : 0);
       var rateType = monthly > 0 ? 'monthly' : (hourly > 0 ? 'hourly' : 'none');
@@ -2722,7 +2735,8 @@ app.get('/api/internal-costs', async function(req, res) {
         monthlyRate: monthly,
         rateType: rateType,
         localMonthly: Math.round(localMonthly * 100) / 100,
-        audMonthly: audMonthly
+        audMonthly: audMonthly,
+        stage: stageLabel
       });
 
       if (!teamAgg[team]) teamAgg[team] = { headcount: 0, totalAud: 0 };
