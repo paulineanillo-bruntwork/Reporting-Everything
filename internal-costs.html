@@ -303,6 +303,7 @@ function renderCharts(teams) {
 var COLS = [
   { key: 'name', label: 'Name', align: 'left' },
   { key: 'team', label: 'Team', align: 'left' },
+  { key: 'role', label: 'Role', align: 'left' },
   { key: 'stage', label: 'Stage', align: 'left' },
   { key: 'currency', label: 'Currency', align: 'left' },
   { key: 'rateType', label: 'Rate Type', align: 'left' },
@@ -342,6 +343,7 @@ function renderTable() {
     html += '<tr>';
     html += '<td>' + s.name + '</td>';
     html += '<td>' + s.team + '</td>';
+    html += '<td>' + (s.role || '<span class="empty-cell">-</span>') + '</td>';
     html += '<td>' + (s.stage || '<span class="empty-cell">-</span>') + '</td>';
     html += '<td>' + (s.currency || '<span class="empty-cell">-</span>') + '</td>';
     html += '<td>' + (s.rateType === 'monthly' ? 'Monthly' : (s.rateType === 'hourly' ? 'Hourly' : '<span class="empty-cell">-</span>')) + '</td>';

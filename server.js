@@ -2675,8 +2675,12 @@ var IC_STAGE_LABELS = {
   '43261244': 'Email Creation, Contact Update, Deputy Creation',
   '43261245': 'NH Invite and NHO Training',
   '45761800': 'Contract Creation',
-  '43691692': 'Active Staff'
+  '43691692': 'Active Staff',
+  '49707899': 'Active Staff'
 };
+// Employee pipeline: BruntWork client only
+var BW_EMPLOYEE_PIPELINE = '20565603';
+var IC_EMPLOYEE_STAGE_ACTIVE = '49707899';
 
 app.get('/internal-costs', function(req, res) {
   res.sendFile(path.join(__dirname, 'internal-costs.html'));
@@ -2694,6 +2698,8 @@ app.get('/api/internal-costs', async function(req, res) {
 
 
 
+    var icProps = ['subject', 'bw_internal_secondary_team', 'bw_internal_hourly_rate', 'bw_internal_monthly_rate', 'staff_hourly_monthly_rate_currency', 'hs_pipeline_stage', 'role'];
+
     var tickets = await fetchAllPagesWithRetry({
       filterGroups: [{
         filters: [
@@ -2701,8 +2707,23 @@ app.get('/api/internal-costs', async function(req, res) {
           { propertyName: 'hs_pipeline_stage', operator: 'IN', values: stageIds }
         ]
       }],
-      properties: ['subject', 'bw_internal_secondary_team', 'bw_internal_hourly_rate', 'bw_internal_monthly_rate', 'staff_hourly_monthly_rate_currency', 'hs_pipeline_stage']
+      properties: icProps
     });
+
+    // Also fetch BruntWork employees from Employee pipeline (active stage only when active is included)
+    if (includeActive) {
+      var empTickets = await fetchAllPagesWithRetry({
+        filterGroups: [{
+          filters: [
+            { propertyName: 'hs_pipeline', operator: 'EQ', value: BW_EMPLOYEE_PIPELINE },
+            { propertyName: 'client', operator: 'CONTAINS_TOKEN', value: 'BruntWork' },
+            { propertyName: 'hs_pipeline_stage', operator: 'EQ', value: IC_EMPLOYEE_STAGE_ACTIVE }
+          ]
+        }],
+        properties: icProps
+      });
+      tickets = tickets.concat(empTickets);
+    }
 
     var staff = [];
     var teamAgg = {};
@@ -2716,6 +2737,7 @@ app.get('/api/internal-costs', async function(req, res) {
       var currency = p.staff_hourly_monthly_rate_currency || '';
       var stageId = p.hs_pipeline_stage || '';
       var stageLabel = IC_STAGE_LABELS[stageId] || stageId;
+      var role = p.role || '';
 
       var localMonthly = monthly > 0 ? monthly : (hourly > 0 ? hourly * HOURS_PER_MONTH : 0);
       var rateType = monthly > 0 ? 'monthly' : (hourly > 0 ? 'hourly' : 'none');
@@ -2732,7 +2754,8 @@ app.get('/api/internal-costs', async function(req, res) {
         rateType: rateType,
         localMonthly: Math.round(localMonthly * 100) / 100,
         audMonthly: audMonthly,
-        stage: stageLabel
+        stage: stageLabel,
+        role: role
       });
 
       if (!teamAgg[team]) teamAgg[team] = { headcount: 0, totalAud: 0 };
