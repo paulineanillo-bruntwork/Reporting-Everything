@@ -108,7 +108,7 @@ tbody tr:hover td{background:#f8fafc}
     <div class="cb-row"><input type="checkbox" id="cbPreActive" onchange="applyFilters()"> Pre-Active Stages</div>
   </div>
   <div class="filter-group">
-    <label>Exclude Teams</label>
+    <label>Teams</label>
     <div id="teamCheckboxes"></div>
   </div>
 </div>
@@ -149,7 +149,7 @@ tbody tr:hover td{background:#f8fafc}
 var GATE_PW = '1234';
 var allStaff = [];
 var allTeams = [];
-var excludedTeams = ['Digital'];
+var includedTeams = null; // null = not yet initialized
 var sortCol = 'team';
 var sortDir = 1;
 var chartHC = null;
@@ -192,27 +192,30 @@ function getColor(team) { return TEAM_COLORS[team] || '#64748b'; }
 
 function buildTeamCheckboxes() {
   var container = document.getElementById('teamCheckboxes');
-  // Preserve existing exclusions, add new teams
+  // First load: include all except Digital
+  if (includedTeams === null) {
+    includedTeams = allTeams.filter(function(t) { return t !== 'Digital'; });
+  }
   var html = '';
   allTeams.forEach(function(t) {
-    var excluded = excludedTeams.indexOf(t) !== -1;
-    html += '<div class="cb-row"><input type="checkbox" ' + (excluded ? 'checked' : '') + ' onchange="toggleTeamExclude(\'' + t.replace(/'/g, "\\'") + '\', this.checked)"> ' + t + '</div>';
+    var included = includedTeams.indexOf(t) !== -1;
+    html += '<div class="cb-row"><input type="checkbox" ' + (included ? 'checked' : '') + ' onchange="toggleTeamInclude(\'' + t.replace(/'/g, "\\'") + '\', this.checked)"> ' + t + '</div>';
   });
   container.innerHTML = html;
 }
 
-function toggleTeamExclude(team, checked) {
-  if (checked && excludedTeams.indexOf(team) === -1) {
-    excludedTeams.push(team);
+function toggleTeamInclude(team, checked) {
+  if (checked && includedTeams.indexOf(team) === -1) {
+    includedTeams.push(team);
   } else if (!checked) {
-    excludedTeams = excludedTeams.filter(function(t) { return t !== team; });
+    includedTeams = includedTeams.filter(function(t) { return t !== team; });
   }
   renderFiltered();
 }
 
 function getFilteredData() {
   var filtered = allStaff.filter(function(s) {
-    return excludedTeams.indexOf(s.team) === -1;
+    return includedTeams !== null && includedTeams.indexOf(s.team) !== -1;
   });
   var teamAgg = {};
   filtered.forEach(function(s) {
@@ -309,7 +312,7 @@ var COLS = [
 
 function renderTable() {
   var filter = (document.getElementById('searchBox').value || '').toLowerCase();
-  var rows = allStaff.filter(function(s) { return excludedTeams.indexOf(s.team) === -1; });
+  var rows = allStaff.filter(function(s) { return includedTeams !== null && includedTeams.indexOf(s.team) !== -1; });
   if (filter) {
     rows = rows.filter(function(s) {
       return s.name.toLowerCase().indexOf(filter) !== -1 || s.team.toLowerCase().indexOf(filter) !== -1;
