@@ -2681,6 +2681,7 @@ var IC_STAGE_LABELS = {
 // Employee pipeline: BruntWork client only
 var BW_EMPLOYEE_PIPELINE = '20565603';
 var IC_EMPLOYEE_STAGE_ACTIVE = '49707899';
+var IC_EXCLUDED_NAMES = ['Pamela Larranaga', 'Michelle Kacarovski'];
 
 app.get('/internal-costs', function(req, res) {
   res.sendFile(path.join(__dirname, 'internal-costs.html'));
@@ -2731,6 +2732,7 @@ app.get('/api/internal-costs', async function(req, res) {
     for (var i = 0; i < tickets.length; i++) {
       var p = tickets[i].properties || {};
       var name = (p.subject || '').replace(/, BruntWork.*$/i, '').trim() || 'Unknown';
+      if (IC_EXCLUDED_NAMES.some(function(n) { return name.toLowerCase() === n.toLowerCase(); })) continue;
       var team = p.bw_internal_secondary_team || 'Unassigned';
       var hourly = parseFloat(p.bw_internal_hourly_rate) || 0;
       var monthly = parseFloat(p.bw_internal_monthly_rate) || 0;
