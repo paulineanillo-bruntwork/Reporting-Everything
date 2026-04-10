@@ -269,6 +269,24 @@
     border-color: var(--blue);
   }
 
+  /* === RUNNING UPDATE VIEW TOGGLE === */
+  .ru-view-btn {
+    padding: 5px 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .ru-view-btn:hover { border-color: var(--blue); color: var(--blue); }
+  .ru-view-btn.active {
+    background: #1e293b;
+    color: #fff;
+    border-color: #1e293b;
+  }
+
   /* === CHARTS === */
   .chart-panel {
     background: var(--surface);
@@ -479,6 +497,10 @@
       </select>
       <select id="ruMonth"></select>
     </div>
+  </div>
+  <div class="ru-view-toggle" style="display:flex;gap:6px;margin:12px 0 8px">
+    <button class="ru-view-btn active" data-view="contract">By Contract Type</button>
+    <button class="ru-view-btn" data-view="jobsource">By Job Source</button>
   </div>
   <div class="ru-body">
     <table class="ru-table" id="ruTable"></table>
@@ -735,33 +757,104 @@ function buildMonthSummary(monthKey) {
   return counts;
 }
 
+function buildJobSourceSummary(monthKey) {
+  var jsFilter = getSelectedJobSource();
+  var sources = ['New', 'Existing', 'Backfill'];
+  var counts = { hire: {}, churn: {} };
+  sources.forEach(function(s) { counts.hire[s] = { hc: 0, fte: 0 }; counts.churn[s] = { hc: 0, fte: 0 }; });
+  counts.hire._other = { hc: 0, fte: 0 }; counts.churn._other = { hc: 0, fte: 0 };
+  counts.hire._total = 0; counts.churn._total = 0;
+  counts.hire._fte = 0; counts.churn._fte = 0;
+
+  RAW_DATA.forEach(function(r) {
+    var k = getMonthKey(r.d);
+    if (k !== monthKey) return;
+    if (!matchesJobSource(r, jsFilter)) return;
+    var w = getFTEWeight(r.t);
+    var src = (r.s || '').trim();
+    var bucket = counts.hire[src] || counts.hire._other;
+    bucket.hc++;
+    bucket.fte += w;
+    counts.hire._total++;
+    counts.hire._fte += w;
+  });
+
+  OFFBOARD_DATA.forEach(function(r) {
+    var k = getMonthKey(r.o + 'T00:00:00Z');
+    if (k !== monthKey) return;
+    if (!matchesJobSource(r, jsFilter)) return;
+    var w = getFTEWeight(r.t);
+    var src = (r.s || '').trim();
+    var bucket = counts.churn[src] || counts.churn._other;
+    bucket.hc++;
+    bucket.fte += w;
+    counts.churn._total++;
+    counts.churn._fte += w;
+  });
+
+  return counts;
+}
+
+function getActiveRUView() {
+  var btn = document.querySelector('.ru-view-btn.active');
+  return btn ? btn.getAttribute('data-view') : 'contract';
+}
+
 function renderRunningUpdate() {
   var sel = document.getElementById('ruMonth');
   var monthKey = sel.value;
-  var c = buildMonthSummary(monthKey);
+  var view = getActiveRUView();
 
-  var types = ['Full-Time','Part-Time','Part-Time-Under-20-Hours','Output-Based','Project-Based','Trial'];
-  var typeLabels = {'Full-Time':'Full Time','Part-Time':'Part Time','Part-Time-Under-20-Hours':'Part Time under 20 hrs','Output-Based':'Output-Based','Project-Based':'Project-Based','Trial':'Trial'};
+  if (view === 'jobsource') {
+    var js = buildJobSourceSummary(monthKey);
+    var netFTE = Math.round((js.hire._fte - js.churn._fte) * 100) / 100;
+    var netColor = netFTE >= 0 ? 'var(--green)' : 'var(--red)';
+    var netPrefix = netFTE >= 0 ? '+' : '';
 
-  var netFTE = Math.round((c.hire._fte - c.churn._fte) * 100) / 100;
-  var netColor = netFTE >= 0 ? 'var(--green)' : 'var(--red)';
-  var netPrefix = netFTE >= 0 ? '+' : '';
+    var html = '<thead><tr><th></th><th class="col-hire">New Hires</th><th class="col-hire" style="font-size:11px">FTE</th><th class="col-churn">Churn</th><th class="col-churn" style="font-size:11px">FTE</th></tr></thead><tbody>';
+    html += '<tr class="ru-hc-row"><td><strong>Total</strong></td><td><strong>' + js.hire._total + '</strong></td><td><strong>' + fmtFTE(Math.round(js.hire._fte * 100) / 100) + '</strong></td><td><strong>' + js.churn._total + '</strong></td><td><strong>' + fmtFTE(Math.round(js.churn._fte * 100) / 100) + '</strong></td></tr>';
 
-  var html = '<thead><tr><th></th><th class="col-hire">New Hires</th><th class="col-churn">Churn</th></tr></thead><tbody>';
-  html += '<tr class="ru-hc-row"><td><strong>Headcount</strong></td><td><strong>' + c.hire._total + '</strong></td><td><strong>' + c.churn._total + '</strong></td></tr>';
+    var sources = ['New', 'Existing', 'Backfill'];
+    sources.forEach(function(s) {
+      var h = js.hire[s] || { hc: 0, fte: 0 };
+      var ch = js.churn[s] || { hc: 0, fte: 0 };
+      if (h.hc === 0 && ch.hc === 0) return;
+      html += '<tr><td class="indent">' + s + '</td><td>' + (h.hc || '-') + '</td><td>' + (h.fte ? fmtFTE(Math.round(h.fte * 100) / 100) : '-') + '</td><td>' + (ch.hc || '-') + '</td><td>' + (ch.fte ? fmtFTE(Math.round(ch.fte * 100) / 100) : '-') + '</td></tr>';
+    });
 
-  types.forEach(function(t) {
-    var h = c.hire[t] || 0;
-    var ch = c.churn[t] || 0;
-    if (h === 0 && ch === 0) return;
-    html += '<tr><td class="indent">' + (typeLabels[t] || t) + '</td><td>' + (h || '-') + '</td><td>' + (ch || '-') + '</td></tr>';
-  });
+    // Show "Other" if any
+    if (js.hire._other.hc > 0 || js.churn._other.hc > 0) {
+      html += '<tr><td class="indent">Other / Unknown</td><td>' + (js.hire._other.hc || '-') + '</td><td>' + (js.hire._other.fte ? fmtFTE(Math.round(js.hire._other.fte * 100) / 100) : '-') + '</td><td>' + (js.churn._other.hc || '-') + '</td><td>' + (js.churn._other.fte ? fmtFTE(Math.round(js.churn._other.fte * 100) / 100) : '-') + '</td></tr>';
+    }
 
-  html += '<tr class="ru-fte-row"><td><strong>FTE Equivalent</strong></td><td><strong>' + fmtFTE(Math.round(c.hire._fte * 100) / 100) + '</strong></td><td><strong>' + fmtFTE(Math.round(c.churn._fte * 100) / 100) + '</strong></td></tr>';
-  html += '<tr class="ru-net-row"><td><strong>Net FTE</strong></td><td colspan="2" style="text-align:center;color:' + netColor + '"><strong>' + netPrefix + fmtFTE(netFTE) + '</strong></td></tr>';
-  html += '</tbody>';
+    html += '<tr class="ru-net-row"><td><strong>Net FTE</strong></td><td colspan="4" style="text-align:center;color:' + netColor + '"><strong>' + netPrefix + fmtFTE(netFTE) + '</strong></td></tr>';
+    html += '</tbody>';
+    document.getElementById('ruTable').innerHTML = html;
+  } else {
+    // Default: contract type view
+    var c = buildMonthSummary(monthKey);
+    var types = ['Full-Time','Part-Time','Part-Time-Under-20-Hours','Output-Based','Project-Based','Trial'];
+    var typeLabels = {'Full-Time':'Full Time','Part-Time':'Part Time','Part-Time-Under-20-Hours':'Part Time under 20 hrs','Output-Based':'Output-Based','Project-Based':'Project-Based','Trial':'Trial'};
 
-  document.getElementById('ruTable').innerHTML = html;
+    var netFTE = Math.round((c.hire._fte - c.churn._fte) * 100) / 100;
+    var netColor = netFTE >= 0 ? 'var(--green)' : 'var(--red)';
+    var netPrefix = netFTE >= 0 ? '+' : '';
+
+    var html = '<thead><tr><th></th><th class="col-hire">New Hires</th><th class="col-churn">Churn</th></tr></thead><tbody>';
+    html += '<tr class="ru-hc-row"><td><strong>Headcount</strong></td><td><strong>' + c.hire._total + '</strong></td><td><strong>' + c.churn._total + '</strong></td></tr>';
+
+    types.forEach(function(t) {
+      var h = c.hire[t] || 0;
+      var ch = c.churn[t] || 0;
+      if (h === 0 && ch === 0) return;
+      html += '<tr><td class="indent">' + (typeLabels[t] || t) + '</td><td>' + (h || '-') + '</td><td>' + (ch || '-') + '</td></tr>';
+    });
+
+    html += '<tr class="ru-fte-row"><td><strong>FTE Equivalent</strong></td><td><strong>' + fmtFTE(Math.round(c.hire._fte * 100) / 100) + '</strong></td><td><strong>' + fmtFTE(Math.round(c.churn._fte * 100) / 100) + '</strong></td></tr>';
+    html += '<tr class="ru-net-row"><td><strong>Net FTE</strong></td><td colspan="2" style="text-align:center;color:' + netColor + '"><strong>' + netPrefix + fmtFTE(netFTE) + '</strong></td></tr>';
+    html += '</tbody>';
+    document.getElementById('ruTable').innerHTML = html;
+  }
 }
 
 // Populate month dropdown - format: "Current Month - 2026 March" (using GMT+8)
@@ -791,6 +884,15 @@ function renderRunningUpdate() {
       updateHistCharts();
       updateHistTable();
     }
+  });
+
+  // Running Update view toggle (Contract Type vs Job Source)
+  document.querySelectorAll('.ru-view-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.ru-view-btn').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      renderRunningUpdate();
+    });
   });
 })();
 
