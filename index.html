@@ -759,10 +759,7 @@ function buildMonthSummary(monthKey) {
 
 function buildJobSourceSummary(monthKey) {
   var jsFilter = getSelectedJobSource();
-  var sources = ['New', 'Existing', 'Backfill'];
-  var counts = { hire: {}, churn: {} };
-  sources.forEach(function(s) { counts.hire[s] = { hc: 0, fte: 0 }; counts.churn[s] = { hc: 0, fte: 0 }; });
-  counts.hire._other = { hc: 0, fte: 0 }; counts.churn._other = { hc: 0, fte: 0 };
+  var counts = { hire: {}, churn: {}, _sources: {} };
   counts.hire._total = 0; counts.churn._total = 0;
   counts.hire._fte = 0; counts.churn._fte = 0;
 
@@ -771,10 +768,11 @@ function buildJobSourceSummary(monthKey) {
     if (k !== monthKey) return;
     if (!matchesJobSource(r, jsFilter)) return;
     var w = getFTEWeight(r.t);
-    var src = (r.s || '').trim();
-    var bucket = counts.hire[src] || counts.hire._other;
-    bucket.hc++;
-    bucket.fte += w;
+    var src = (r.s || '').trim() || 'Unknown';
+    if (!counts.hire[src]) counts.hire[src] = { hc: 0, fte: 0 };
+    counts._sources[src] = true;
+    counts.hire[src].hc++;
+    counts.hire[src].fte += w;
     counts.hire._total++;
     counts.hire._fte += w;
   });
@@ -784,10 +782,11 @@ function buildJobSourceSummary(monthKey) {
     if (k !== monthKey) return;
     if (!matchesJobSource(r, jsFilter)) return;
     var w = getFTEWeight(r.t);
-    var src = (r.s || '').trim();
-    var bucket = counts.churn[src] || counts.churn._other;
-    bucket.hc++;
-    bucket.fte += w;
+    var src = (r.s || '').trim() || 'Unknown';
+    if (!counts.churn[src]) counts.churn[src] = { hc: 0, fte: 0 };
+    counts._sources[src] = true;
+    counts.churn[src].hc++;
+    counts.churn[src].fte += w;
     counts.churn._total++;
     counts.churn._fte += w;
   });
@@ -811,21 +810,23 @@ function renderRunningUpdate() {
     var netColor = netFTE >= 0 ? 'var(--green)' : 'var(--red)';
     var netPrefix = netFTE >= 0 ? '+' : '';
 
+    var sourceLabels = {'Back Up':'Back Up Backfill','Back Up Additional':'Back Up Additional'};
     var html = '<thead><tr><th></th><th class="col-hire">New Hires</th><th class="col-hire" style="font-size:11px">FTE</th><th class="col-churn">Churn</th><th class="col-churn" style="font-size:11px">FTE</th></tr></thead><tbody>';
     html += '<tr class="ru-hc-row"><td><strong>Total</strong></td><td><strong>' + js.hire._total + '</strong></td><td><strong>' + fmtFTE(Math.round(js.hire._fte * 100) / 100) + '</strong></td><td><strong>' + js.churn._total + '</strong></td><td><strong>' + fmtFTE(Math.round(js.churn._fte * 100) / 100) + '</strong></td></tr>';
 
-    var sources = ['New', 'Existing', 'Backfill'];
-    sources.forEach(function(s) {
+    // Show all actual job sources found in data
+    var orderedSources = ['New', 'Existing', 'Backfill', 'Back Up', 'Back Up Additional', 'Unknown'];
+    var allSources = Object.keys(js._sources);
+    // Add any sources not in the ordered list
+    allSources.forEach(function(s) { if (orderedSources.indexOf(s) === -1) orderedSources.push(s); });
+
+    orderedSources.forEach(function(s) {
       var h = js.hire[s] || { hc: 0, fte: 0 };
       var ch = js.churn[s] || { hc: 0, fte: 0 };
       if (h.hc === 0 && ch.hc === 0) return;
-      html += '<tr><td class="indent">' + s + '</td><td>' + (h.hc || '-') + '</td><td>' + (h.fte ? fmtFTE(Math.round(h.fte * 100) / 100) : '-') + '</td><td>' + (ch.hc || '-') + '</td><td>' + (ch.fte ? fmtFTE(Math.round(ch.fte * 100) / 100) : '-') + '</td></tr>';
+      var label = sourceLabels[s] || s;
+      html += '<tr><td class="indent">' + label + '</td><td>' + (h.hc || '-') + '</td><td>' + (h.fte ? fmtFTE(Math.round(h.fte * 100) / 100) : '-') + '</td><td>' + (ch.hc || '-') + '</td><td>' + (ch.fte ? fmtFTE(Math.round(ch.fte * 100) / 100) : '-') + '</td></tr>';
     });
-
-    // Show "Other" if any
-    if (js.hire._other.hc > 0 || js.churn._other.hc > 0) {
-      html += '<tr><td class="indent">Other / Unknown</td><td>' + (js.hire._other.hc || '-') + '</td><td>' + (js.hire._other.fte ? fmtFTE(Math.round(js.hire._other.fte * 100) / 100) : '-') + '</td><td>' + (js.churn._other.hc || '-') + '</td><td>' + (js.churn._other.fte ? fmtFTE(Math.round(js.churn._other.fte * 100) / 100) : '-') + '</td></tr>';
-    }
 
     html += '<tr class="ru-net-row"><td><strong>Net FTE</strong></td><td colspan="4" style="text-align:center;color:' + netColor + '"><strong>' + netPrefix + fmtFTE(netFTE) + '</strong></td></tr>';
     html += '</tbody>';
