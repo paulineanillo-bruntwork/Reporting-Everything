@@ -157,6 +157,9 @@ var METRIC_LABEL_OVERRIDES = {
   6: 'MQLs (Contacts Booked Chilli Meeting)'
 };
 
+// Columns to hide from the KPI table
+var HIDDEN_COLS = { 50: true, 51: true };
+
 // Links for specific metrics (col index -> URL)
 var METRIC_LINKS = {
   4: 'https://fte-dashboard-production.up.railway.app/',
@@ -443,7 +446,7 @@ fetch('/api/kpi-history').then(function(r) { return r.json(); })
   var currentTeam = '';
   for (var ci = 1; ci < columns.length; ci++) {
     var col = columns[ci];
-    if (!col.name) continue;
+    if (!col.name || HIDDEN_COLS[ci]) continue;
 
     if (col.team && col.team !== currentTeam) {
       currentTeam = col.team;
