@@ -1636,6 +1636,34 @@ app.post('/api/report/generate', async function(req, res) {
   }
 });
 
+// DEBUG: Check HubSpot token status
+app.get('/api/debug/hs-status', async function(req, res) {
+  try {
+    var keyPrefix = HUBSPOT_KEY ? HUBSPOT_KEY.substring(0, 10) + '...' : 'NOT SET';
+    var isPat = HUBSPOT_KEY && HUBSPOT_KEY.startsWith('pat-');
+    // Test a minimal query
+    var testBody = {
+      filterGroups: [{ filters: [
+        { propertyName: 'hs_pipeline', operator: 'EQ', value: '4483329' }
+      ]}],
+      properties: ['subject'],
+      limit: 1
+    };
+    var url = HUBSPOT_API;
+    var headers = { 'Content-Type': 'application/json' };
+    if (isPat) {
+      headers['Authorization'] = 'Bearer ' + HUBSPOT_KEY;
+    } else {
+      url = HUBSPOT_API + '?hapikey=' + HUBSPOT_KEY;
+    }
+    var testRes = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(testBody) });
+    var testText = await testRes.text();
+    res.json({ keyPrefix: keyPrefix, isPat: isPat, testStatus: testRes.status, testResponse: testText.substring(0, 500) });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 // DEBUG: Test individual HubSpot queries for report generation
 app.get('/api/debug/test-generate', async function(req, res) {
   try {
