@@ -1636,6 +1636,70 @@ app.post('/api/report/generate', async function(req, res) {
   }
 });
 
+// DEBUG: Test individual HubSpot queries for report generation
+app.get('/api/debug/test-generate', async function(req, res) {
+  try {
+    var month = req.query.month || '2026-04';
+    var parts = month.split('-');
+    var yr = parseInt(parts[0]);
+    var mo = parseInt(parts[1]);
+    var monthStart = month + '-01';
+    var lastDay = new Date(yr, mo, 0).getDate();
+    var monthEnd = month + '-' + String(lastDay).padStart(2, '0');
+    var results = { month: month, monthStart: monthStart, monthEnd: monthEnd, steps: {} };
+
+    // Step 1: Hires
+    try {
+      var hires = await fetchAllPagesWithRetry({
+        filterGroups: [{ filters: [
+          { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+          { propertyName: 'onboarding_date', operator: 'GTE', value: monthStart },
+          { propertyName: 'onboarding_date', operator: 'LTE', value: monthEnd }
+        ]}],
+        properties: ['onboarding_date', 'assignment_type', 'type_of_recruitment', 'hs_pipeline']
+      });
+      results.steps.hires = { ok: true, count: hires.length };
+    } catch (e) { results.steps.hires = { ok: false, error: e.message }; }
+
+    // Step 2: Offboardings
+    try {
+      var offs = await fetchAllPagesWithRetry({
+        filterGroups: [{ filters: [
+          { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+          { propertyName: 'offboarding_date', operator: 'GTE', value: monthStart },
+          { propertyName: 'offboarding_date', operator: 'LTE', value: monthEnd }
+        ]}],
+        properties: ['offboarding_date', 'assignment_type', 'onboarding_date', 'days_between_onboarding_offboarding']
+      });
+      results.steps.offboardings = { ok: true, count: offs.length };
+    } catch (e) { results.steps.offboardings = { ok: false, error: e.message }; }
+
+    // Step 3: Active FTE (two filter groups)
+    try {
+      var active = await fetchAllPagesWithRetry({
+        filterGroups: [
+          { filters: [
+            { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+            { propertyName: 'onboarding_date', operator: 'LTE', value: monthEnd },
+            { propertyName: 'offboarding_date', operator: 'NOT_HAS_PROPERTY' }
+          ]},
+          { filters: [
+            { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+            { propertyName: 'onboarding_date', operator: 'LTE', value: monthEnd },
+            { propertyName: 'offboarding_date', operator: 'GT', value: monthEnd }
+          ]}
+        ],
+        properties: ['assignment_type', 'onboarding_date', 'offboarding_date']
+      });
+      results.steps.active_fte = { ok: true, count: active.length };
+    } catch (e) { results.steps.active_fte = { ok: false, error: e.message }; }
+
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Serve report pages
 app.get('/reports', function(req, res) {
   res.sendFile(path.join(__dirname, 'reports.html'));
