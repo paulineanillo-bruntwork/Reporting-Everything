@@ -1664,6 +1664,43 @@ app.get('/api/debug/hs-status', async function(req, res) {
   }
 });
 
+// DEBUG: Test specific filter combinations
+app.get('/api/debug/test-filters', async function(req, res) {
+  var results = {};
+  // Test 1: IN operator with pipelines
+  try {
+    var d = await hubspotSearch({
+      filterGroups: [{ filters: [
+        { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES }
+      ]}], properties: ['subject'], limit: 1
+    });
+    results.test_in = { ok: true, total: d.total };
+  } catch (e) { results.test_in = { ok: false, error: e.message.substring(0, 300) }; }
+  // Test 2: Date GTE/LTE only
+  try {
+    var d2 = await hubspotSearch({
+      filterGroups: [{ filters: [
+        { propertyName: 'hs_pipeline', operator: 'EQ', value: '4483329' },
+        { propertyName: 'onboarding_date', operator: 'GTE', value: '2026-04-01' },
+        { propertyName: 'onboarding_date', operator: 'LTE', value: '2026-04-30' }
+      ]}], properties: ['subject'], limit: 1
+    });
+    results.test_date = { ok: true, total: d2.total };
+  } catch (e) { results.test_date = { ok: false, error: e.message.substring(0, 300) }; }
+  // Test 3: IN + date combined
+  try {
+    var d3 = await hubspotSearch({
+      filterGroups: [{ filters: [
+        { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+        { propertyName: 'onboarding_date', operator: 'GTE', value: '2026-04-01' },
+        { propertyName: 'onboarding_date', operator: 'LTE', value: '2026-04-30' }
+      ]}], properties: ['subject'], limit: 1
+    });
+    results.test_in_date = { ok: true, total: d3.total };
+  } catch (e) { results.test_in_date = { ok: false, error: e.message.substring(0, 300) }; }
+  res.json(results);
+});
+
 // DEBUG: Test individual HubSpot queries for report generation
 app.get('/api/debug/test-generate', async function(req, res) {
   try {
