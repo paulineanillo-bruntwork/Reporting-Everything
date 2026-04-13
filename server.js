@@ -317,6 +317,22 @@ app.post('/api/debug/fix-cell', async function(req, res) {
   }
 });
 
+// One-time: update header label in KPI sheet
+app.post('/api/debug/fix-header', async function(req, res) {
+  try {
+    var col = parseInt(req.body.col);
+    var value = req.body.value;
+    var row = parseInt(req.body.row) || 3; // default to header row (row 3 = column names)
+    if (isNaN(col) || !value) return res.status(400).json({ error: 'col, value required' });
+    var cell = KPI_SOURCE_TAB + '!' + colLetter(col) + row;
+    await sheetsUpdate(KPI_SOURCE_SHEET_ID, cell, [[value]]);
+    kpiHistoryCache = { data: null, ts: 0 };
+    res.json({ success: true, cell: cell, value: value });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/debug/endorsements', async function(req, res) {
   try {
     var includedStages = [

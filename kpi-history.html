@@ -152,11 +152,16 @@ var monthLabels = []; // month labels from data
 // Columns used in the monthly report template (charts/tables)
 var REPORT_COLS = {4:1,6:1,9:1,12:1,15:1,16:1,17:1,34:1,35:1,36:1,37:1,38:1,39:1,40:1,41:1,42:1,44:1,45:1,48:1,49:1};
 
+// Label overrides (col index -> display name)
+var METRIC_LABEL_OVERRIDES = {
+  6: 'MQLs (Contacts Booked Chilli Meeting)'
+};
+
 // Links for specific metrics (col index -> URL)
 var METRIC_LINKS = {
   4: 'https://fte-dashboard-production.up.railway.app/',
   5: 'https://app.hubspot.com/contacts/8513837/objects/0-5/views/13844863/board?prefetch=',
-  6: 'https://app.hubspot.com/reports-dashboard/8513837/view/10504718/108131077',
+  6: 'https://app.hubspot.com/report-builder/8513837/report/108131077',
   9: 'https://app.hubspot.com/advanced-builder/8513837/report/160703817',
   12: 'https://fte-dashboard-production.up.railway.app/',
   34: 'https://fte-dashboard-production.up.railway.app/',
@@ -446,9 +451,10 @@ fetch('/api/kpi-history').then(function(r) { return r.json(); })
     }
 
     var isReport = REPORT_COLS[ci] ? true : false;
+    var displayName = METRIC_LABEL_OVERRIDES[ci] || col.name;
     var nameHtml = METRIC_LINKS[ci]
-      ? '<a href="' + METRIC_LINKS[ci] + '" target="_blank" style="color:var(--blue);text-decoration:none;border-bottom:1px dashed var(--blue)" title="Open source">' + escHtml(col.name) + '</a>'
-      : escHtml(col.name);
+      ? '<a href="' + METRIC_LINKS[ci] + '" target="_blank" style="color:var(--blue);text-decoration:none;border-bottom:1px dashed var(--blue)" title="Open source">' + escHtml(displayName) + '</a>'
+      : escHtml(displayName);
     h += '<tr id="row-' + ci + '"' + (isReport ? ' class="report-row"' : '') + '><td title="' + escAttr(col.source) + '"><span class="edit-toggle" id="edit-btn-' + ci + '" title="Click to edit this row" onclick="toggleEdit(' + ci + ')">&#9998;</span>' + nameHtml + (isReport ? '<span class="report-badge">REPORT</span>' : '') + '</td>';
     for (var mj = 0; mj < months.length; mj++) {
       var rawVal = months[mj][ci];
