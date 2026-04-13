@@ -1381,7 +1381,7 @@ app.post('/api/report/generate', async function(req, res) {
     var monthStart = month + '-01';
     var lastDay = new Date(yr, mo, 0).getDate();
     var monthEnd = month + '-' + String(lastDay).padStart(2, '0');
-    // Timestamps for HubSpot filters (milliseconds)
+    // Timestamps for HubSpot date filters (milliseconds) — HubSpot requires timestamps, not date strings
     var startMs = String(new Date(monthStart + 'T00:00:00Z').getTime());
     var endMs = String(new Date(monthEnd + 'T23:59:59Z').getTime());
 
@@ -1400,8 +1400,8 @@ app.post('/api/report/generate', async function(req, res) {
       filterGroups: [{
         filters: [
           { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-          { propertyName: 'onboarding_date', operator: 'GTE', value: monthStart },
-          { propertyName: 'onboarding_date', operator: 'LTE', value: monthEnd }
+          { propertyName: 'onboarding_date', operator: 'GTE', value: startMs },
+          { propertyName: 'onboarding_date', operator: 'LTE', value: endMs }
         ]
       }],
       properties: ['onboarding_date', 'assignment_type', 'type_of_recruitment', 'hs_pipeline'],
@@ -1463,8 +1463,8 @@ app.post('/api/report/generate', async function(req, res) {
       filterGroups: [{
         filters: [
           { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-          { propertyName: 'offboarding_date', operator: 'GTE', value: monthStart },
-          { propertyName: 'offboarding_date', operator: 'LTE', value: monthEnd }
+          { propertyName: 'offboarding_date', operator: 'GTE', value: startMs },
+          { propertyName: 'offboarding_date', operator: 'LTE', value: endMs }
         ]
       }],
       properties: ['offboarding_date', 'assignment_type', 'onboarding_date', 'days_between_onboarding_offboarding', 'hs_pipeline'],
@@ -1512,15 +1512,15 @@ app.post('/api/report/generate', async function(req, res) {
         {
           filters: [
             { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-            { propertyName: 'onboarding_date', operator: 'LTE', value: monthEnd },
+            { propertyName: 'onboarding_date', operator: 'LTE', value: endMs },
             { propertyName: 'offboarding_date', operator: 'NOT_HAS_PROPERTY' }
           ]
         },
         {
           filters: [
             { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-            { propertyName: 'onboarding_date', operator: 'LTE', value: monthEnd },
-            { propertyName: 'offboarding_date', operator: 'GT', value: monthEnd }
+            { propertyName: 'onboarding_date', operator: 'LTE', value: endMs },
+            { propertyName: 'offboarding_date', operator: 'GT', value: endMs }
           ]
         }
       ],
@@ -1676,30 +1676,24 @@ app.get('/api/debug/test-filters', async function(req, res) {
     });
     results.test_in = { ok: true, total: d.total };
   } catch (e) { results.test_in = { ok: false, error: e.message.substring(0, 300) }; }
-  // Test 2: Date with string format
+  // Test 2: Date with timestamp format
+  var tStartMs = String(new Date('2026-04-01T00:00:00Z').getTime());
+  var tEndMs = String(new Date('2026-04-30T23:59:59Z').getTime());
   try {
     var d2 = await hubspotSearch({
       filterGroups: [{ filters: [
         { propertyName: 'hs_pipeline', operator: 'EQ', value: '4483329' },
-        { propertyName: 'onboarding_date', operator: 'GTE', value: '2026-04-01' },
-        { propertyName: 'onboarding_date', operator: 'LTE', value: '2026-04-30' }
+        { propertyName: 'onboarding_date', operator: 'GTE', value: tStartMs },
+        { propertyName: 'onboarding_date', operator: 'LTE', value: tEndMs }
       ]}], properties: ['subject'], limit: 1
     });
-    results.test_date_string = { ok: true, total: d2.total };
-  } catch (e) { results.test_date_string = { ok: false, error: e.message.substring(0, 300) }; }
-  // Test 3: Date with timestamp format
-  var startMs = String(new Date('2026-04-01T00:00:00Z').getTime());
-  var endMs = String(new Date('2026-04-30T23:59:59Z').getTime());
-  try {
-    var d3 = await hubspotSearch({
-      filterGroups: [{ filters: [
-        { propertyName: 'hs_pipeline', operator: 'EQ', value: '4483329' },
-        { propertyName: 'onboarding_date', operator: 'GTE', value: startMs },
-        { propertyName: 'onboarding_date', operator: 'LTE', value: endMs }
-      ]}], properties: ['subject'], limit: 1
-    });
-    results.test_date_timestamp = { ok: true, total: d3.total };
+    results.test_date_timestamp = { ok: true, total: d2.total };
   } catch (e) { results.test_date_timestamp = { ok: false, error: e.message.substring(0, 300) }; }
+  // Test 4: Gong discovery calls for April
+  try {
+    var gongCount = await getDiscoveryCountForMonth('2026-04');
+    results.gong_april = { ok: true, discoveryCalls: gongCount };
+  } catch (e) { results.gong_april = { ok: false, error: e.message.substring(0, 300) }; }
   res.json(results);
 });
 
@@ -1713,15 +1707,17 @@ app.get('/api/debug/test-generate', async function(req, res) {
     var monthStart = month + '-01';
     var lastDay = new Date(yr, mo, 0).getDate();
     var monthEnd = month + '-' + String(lastDay).padStart(2, '0');
-    var results = { month: month, monthStart: monthStart, monthEnd: monthEnd, steps: {} };
+    var sMs = String(new Date(monthStart + 'T00:00:00Z').getTime());
+    var eMs = String(new Date(monthEnd + 'T23:59:59Z').getTime());
+    var results = { month: month, monthStart: monthStart, monthEnd: monthEnd, startMs: sMs, endMs: eMs, steps: {} };
 
     // Step 1: Hires
     try {
       var hires = await fetchAllPagesWithRetry({
         filterGroups: [{ filters: [
           { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-          { propertyName: 'onboarding_date', operator: 'GTE', value: monthStart },
-          { propertyName: 'onboarding_date', operator: 'LTE', value: monthEnd }
+          { propertyName: 'onboarding_date', operator: 'GTE', value: sMs },
+          { propertyName: 'onboarding_date', operator: 'LTE', value: eMs }
         ]}],
         properties: ['onboarding_date', 'assignment_type', 'type_of_recruitment', 'hs_pipeline']
       });
@@ -1733,8 +1729,8 @@ app.get('/api/debug/test-generate', async function(req, res) {
       var offs = await fetchAllPagesWithRetry({
         filterGroups: [{ filters: [
           { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-          { propertyName: 'offboarding_date', operator: 'GTE', value: monthStart },
-          { propertyName: 'offboarding_date', operator: 'LTE', value: monthEnd }
+          { propertyName: 'offboarding_date', operator: 'GTE', value: sMs },
+          { propertyName: 'offboarding_date', operator: 'LTE', value: eMs }
         ]}],
         properties: ['offboarding_date', 'assignment_type', 'onboarding_date', 'days_between_onboarding_offboarding']
       });
@@ -1747,13 +1743,13 @@ app.get('/api/debug/test-generate', async function(req, res) {
         filterGroups: [
           { filters: [
             { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-            { propertyName: 'onboarding_date', operator: 'LTE', value: monthEnd },
+            { propertyName: 'onboarding_date', operator: 'LTE', value: eMs },
             { propertyName: 'offboarding_date', operator: 'NOT_HAS_PROPERTY' }
           ]},
           { filters: [
             { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-            { propertyName: 'onboarding_date', operator: 'LTE', value: monthEnd },
-            { propertyName: 'offboarding_date', operator: 'GT', value: monthEnd }
+            { propertyName: 'onboarding_date', operator: 'LTE', value: eMs },
+            { propertyName: 'offboarding_date', operator: 'GT', value: eMs }
           ]}
         ],
         properties: ['assignment_type', 'onboarding_date', 'offboarding_date']
@@ -2341,13 +2337,14 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     var lostFTEs = 0;
     var under30FTE = 0;
     try {
-      // offboarding_date is a date property — use date strings, not ms timestamps
+      var offStartMs = String(new Date(parsed.start + 'T00:00:00Z').getTime());
+      var offEndMs = String(new Date(parsed.end + 'T23:59:59Z').getTime());
       var offResults = await fetchAllPagesWithRetry({
         filterGroups: [{
           filters: [
             { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-            { propertyName: 'offboarding_date', operator: 'GTE', value: parsed.start },
-            { propertyName: 'offboarding_date', operator: 'LTE', value: parsed.end }
+            { propertyName: 'offboarding_date', operator: 'GTE', value: offStartMs },
+            { propertyName: 'offboarding_date', operator: 'LTE', value: offEndMs }
           ]
         }],
         properties: ['offboarding_date', 'assignment_type', 'onboarding_date', 'days_between_onboarding_offboarding', 'type_of_recruitment'],
@@ -2382,15 +2379,16 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     // ===== HubSpot Tickets: Roles to be Backfilled (Col 36) =====
     console.log('[KPI Generate] Fetching roles to be backfilled for ' + month + '...');
     try {
-      // offboarding_date is a date property — use date strings, not ms timestamps
+      var bfStartMs = String(new Date(parsed.start + 'T00:00:00Z').getTime());
+      var bfEndMs = String(new Date(parsed.end + 'T23:59:59Z').getTime());
       var backfillResults = await fetchAllPagesWithRetry({
         filterGroups: [{
           filters: [
             { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
             { propertyName: 'assignment_group', operator: 'EQ', value: 'Outsource' },
             { propertyName: 'client_role_backfill', operator: 'EQ', value: 'Yes' },
-            { propertyName: 'offboarding_date', operator: 'GTE', value: parsed.start },
-            { propertyName: 'offboarding_date', operator: 'LTE', value: parsed.end }
+            { propertyName: 'offboarding_date', operator: 'GTE', value: bfStartMs },
+            { propertyName: 'offboarding_date', operator: 'LTE', value: bfEndMs }
           ]
         }],
         properties: ['offboarding_date', 'assignment_group', 'client_role_backfill'],
