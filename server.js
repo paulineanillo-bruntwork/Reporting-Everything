@@ -1676,7 +1676,7 @@ app.get('/api/debug/test-filters', async function(req, res) {
     });
     results.test_in = { ok: true, total: d.total };
   } catch (e) { results.test_in = { ok: false, error: e.message.substring(0, 300) }; }
-  // Test 2: Date GTE/LTE only
+  // Test 2: Date with string format
   try {
     var d2 = await hubspotSearch({
       filterGroups: [{ filters: [
@@ -1685,19 +1685,21 @@ app.get('/api/debug/test-filters', async function(req, res) {
         { propertyName: 'onboarding_date', operator: 'LTE', value: '2026-04-30' }
       ]}], properties: ['subject'], limit: 1
     });
-    results.test_date = { ok: true, total: d2.total };
-  } catch (e) { results.test_date = { ok: false, error: e.message.substring(0, 300) }; }
-  // Test 3: IN + date combined
+    results.test_date_string = { ok: true, total: d2.total };
+  } catch (e) { results.test_date_string = { ok: false, error: e.message.substring(0, 300) }; }
+  // Test 3: Date with timestamp format
+  var startMs = String(new Date('2026-04-01T00:00:00Z').getTime());
+  var endMs = String(new Date('2026-04-30T23:59:59Z').getTime());
   try {
     var d3 = await hubspotSearch({
       filterGroups: [{ filters: [
-        { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-        { propertyName: 'onboarding_date', operator: 'GTE', value: '2026-04-01' },
-        { propertyName: 'onboarding_date', operator: 'LTE', value: '2026-04-30' }
+        { propertyName: 'hs_pipeline', operator: 'EQ', value: '4483329' },
+        { propertyName: 'onboarding_date', operator: 'GTE', value: startMs },
+        { propertyName: 'onboarding_date', operator: 'LTE', value: endMs }
       ]}], properties: ['subject'], limit: 1
     });
-    results.test_in_date = { ok: true, total: d3.total };
-  } catch (e) { results.test_in_date = { ok: false, error: e.message.substring(0, 300) }; }
+    results.test_date_timestamp = { ok: true, total: d3.total };
+  } catch (e) { results.test_date_timestamp = { ok: false, error: e.message.substring(0, 300) }; }
   res.json(results);
 });
 
