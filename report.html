@@ -351,19 +351,21 @@ function changeHtml(cur,prev,invertColor) {
 }
 
 // Column index map (from KPI sheet)
+// Column mapping — must match current KPI history spreadsheet layout
 var C = {
-  month:0, totalMRR:1, perAdmin:2, activeHC:3, activeFTE:4, adminStaff:5,
-  mqls:6, fabiusCalls:7, showRate:8, newClientJobs:9, jobsVsCalls:10,
-  salesAgentFTE:11, totalHires:12, fteCloseRate:13, fteConvJob:14,
-  adsSpend:15, costPerCall:16, salesConvRate:17, gongCalls:50, gongShowRate:51,
-  recruitHC:23, endorsements:24, endorsePerHC:25,
-  churnUnder1m:27,
-  totalHiresHC:32, hiresPerHC:33,
-  churnedFTE:34, churnRate:35, rolesToBackfill:36, backfillRate:37,
-  backfillFTE:38, backfillCloseRate:39,
-  existingClients:40, existingJobs:41,
-  existingFTE:42, newClientFTE:43, fteClientExpRate:44, jobsExpRate:45,
-  totalHires47:47, newClientHires:48, newClientFTEConv:49
+  month:0, perAdmin:1, activeFTE:2, adminStaff:3,
+  mqls:4, fabiusCalls:5, showRate:6, newClientJobs:7, jobsVsCalls:8,
+  salesAgentFTE:9, totalHires:10, fteCloseRate:11, fteConvJob:12,
+  adsSpend:13, costPerCall:14, salesConvRate:15,
+  recruitHC:21, endorsements:22, endorsePerHC:23,
+  churnUnder1m:24,
+  totalHiresHC:30, hiresPerHC:31,
+  churnedFTE:32, churnRate:33, rolesToBackfill:34, backfillRate:35,
+  backfillFTE:36, backfillCloseRate:37,
+  existingClients:38, existingJobs:39,
+  existingFTE:41, fteClientExpRate:42, jobsExpRate:43,
+  existingFTECloseRate:44, totalHires47:45, newClientHires:46, newClientFTEConv:47,
+  gongCalls:60, gongShowRate:61
 };
 
 var MIN_MONTH = '2026-02';
@@ -380,6 +382,7 @@ Promise.all([
 ]).then(function(results){
   var data = results[0];
   var reportData = results[1];
+  // Previous month report data is embedded in reportData.previous by the server
   if (data.error) {
     document.getElementById('loading').innerHTML = '<div style="color:var(--red)">'+data.error+'</div>';
     return;
@@ -427,15 +430,18 @@ Promise.all([
 
 
   // === Highlight Panels ===
-  // Active FTE: show next month's start-of-period (= end of report month)
-  var activeFTE = next ? pn(next[C.activeFTE]) : cv(C.activeFTE);
-  var hiredFTE = cv(C.totalHires);
-  var lostFTE = cv(C.churnedFTE);
+  // Override FTEs Hired / Lost / Active with HubSpot-generated data when available (same source as main dashboard)
+  var rpt = (reportData && reportData.current) || {};
+  var rptPrev = (reportData && reportData.previous) || {};
+  var activeFTE = (rpt.active_outsource_fte != null && rpt.generated_at) ? pn(rpt.active_outsource_fte) : (next ? pn(next[C.activeFTE]) : cv(C.activeFTE));
+  var hiredFTE = (rpt.total_fte_hires != null && rpt.generated_at) ? pn(rpt.total_fte_hires) : cv(C.totalHires);
+  var lostFTE = (rpt.lost_ftes != null && rpt.generated_at) ? pn(rpt.lost_ftes) : cv(C.churnedFTE);
   var netFTE = (hiredFTE!==null && lostFTE!==null) ? Math.round((hiredFTE - lostFTE)*100)/100 : null;
 
-  var prevActiveFTE = cv(C.activeFTE); // current month's start becomes "previous"
-  var prevHiredFTE = pv(C.totalHires);
-  var prevLostFTE = pv(C.churnedFTE);
+  // Previous month: use generated report data when available
+  var prevActiveFTE = (rptPrev.active_outsource_fte != null && rptPrev.generated_at) ? pn(rptPrev.active_outsource_fte) : cv(C.activeFTE);
+  var prevHiredFTE = (rptPrev.total_fte_hires != null && rptPrev.generated_at) ? pn(rptPrev.total_fte_hires) : pv(C.totalHires);
+  var prevLostFTE = (rptPrev.lost_ftes != null && rptPrev.generated_at) ? pn(rptPrev.lost_ftes) : pv(C.churnedFTE);
   var prevNetFTE = (prevHiredFTE!==null && prevLostFTE!==null) ? Math.round((prevHiredFTE - prevLostFTE)*100)/100 : null;
 
   var highlights = [
@@ -494,7 +500,7 @@ Promise.all([
     { label:'FTEs Hired', col:C.totalHires, color:'#059669', type:'bar', slice:curSlice, labels:curLabels, stacked:true,
       stackCols:[
         { label:'New Client', col:C.newClientHires, color:'#2563eb' },
-        { label:'Existing Client', col:C.newClientFTE, color:'#059669' },
+        { label:'Existing Client', col:C.existingFTE, color:'#059669' },
         { label:'Backfill', col:C.backfillFTE, color:'#d97706' }
       ], height:280
     },
