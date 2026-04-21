@@ -317,6 +317,11 @@ app.post('/api/debug/fix-cell', async function(req, res) {
   }
 });
 
+// DEBUG: Show service account email
+app.get('/api/debug/sa-email', function(req, res) {
+  res.json({ serviceAccountEmail: GOOGLE_SA_KEY ? GOOGLE_SA_KEY.client_email : 'NOT CONFIGURED' });
+});
+
 // One-time: update header label in KPI sheet
 app.post('/api/debug/fix-header', async function(req, res) {
   try {
