@@ -73,6 +73,63 @@ app.get('/login', function(req, res) {
   res.redirect('/auth/login');
 });
 
+// ===== Email allowlist =====
+var ALLOWED_EMAILS_SHEET_ID = '1_kbicBlpJbm0kOBkoIU4k6CrPUHRanI8FAZnVtyrshM';
+var ALLOWED_EMAILS_RANGE = 'A:A'; // column A of first tab; includes header which is harmless
+var ALLOWED_EMAILS_TTL = 5 * 60 * 1000; // 5 minutes
+var allowedEmailsCache = { set: null, ts: 0 };
+
+async function getAllowedEmails(force) {
+  var now = Date.now();
+  if (!force && allowedEmailsCache.set && (now - allowedEmailsCache.ts) < ALLOWED_EMAILS_TTL) {
+    return allowedEmailsCache.set;
+  }
+  if (!GOOGLE_SA_KEY) {
+    console.error('[Allowlist] GOOGLE_SA_KEY not configured — allowlist cannot be fetched');
+    return null;
+  }
+  try {
+    var data = await sheetsGet(ALLOWED_EMAILS_SHEET_ID, ALLOWED_EMAILS_RANGE);
+    var rows = data.values || [];
+    var set = {};
+    for (var i = 0; i < rows.length; i++) {
+      var v = (rows[i][0] || '').trim().toLowerCase();
+      if (v && v.indexOf('@') !== -1) set[v] = true;
+    }
+    allowedEmailsCache = { set: set, ts: now };
+    console.log('[Allowlist] Loaded ' + Object.keys(set).length + ' allowed emails');
+    return set;
+  } catch (e) {
+    console.error('[Allowlist] Failed to fetch allowed emails:', e.message);
+    // If we have a stale cache, keep using it rather than locking everyone out
+    if (allowedEmailsCache.set) return allowedEmailsCache.set;
+    return null;
+  }
+}
+
+// Access denied page
+app.get('/access-denied', function(req, res) {
+  var email = (req.session && req.session.pendingEmail) || '';
+  res.status(403).send('<!DOCTYPE html><html><head><title>Access Denied</title>' +
+    '<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:0;display:flex;align-items:center;justify-content:center;min-height:100vh}' +
+    '.card{background:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.08);padding:40px 48px;max-width:480px;text-align:center}' +
+    'h1{font-size:22px;margin:0 0 12px;color:#dc2626}' +
+    'p{color:#475569;line-height:1.5;margin:8px 0}' +
+    '.email{background:#f1f5f9;padding:4px 10px;border-radius:6px;font-family:monospace;font-size:13px;color:#0f172a}' +
+    '.btn{display:inline-block;margin-top:16px;background:#0f172a;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600}' +
+    '.btn:hover{background:#1e293b}</style></head><body>' +
+    '<div class="card"><h1>Access Denied</h1>' +
+    '<p>Your account <span class="email">' + email.replace(/[<>&"]/g, '') + '</span> is not authorised to view this dashboard.</p>' +
+    '<p>If you think this is a mistake, please contact an administrator.</p>' +
+    '<a class="btn" href="/logout">Sign out</a></div></body></html>');
+});
+
+// Debug: refresh allowlist cache (admin only-ish: requires valid session)
+app.get('/api/debug/refresh-allowlist', async function(req, res) {
+  var set = await getAllowedEmails(true);
+  res.json({ count: set ? Object.keys(set).length : 0, emails: set ? Object.keys(set) : [] });
+});
+
 // Redirect to Keycloak login
 app.get('/auth/login', function(req, res) {
   if (req.session.user) return res.redirect('/');
@@ -104,14 +161,30 @@ app.get('/auth/callback', async function(req, res) {
       { state: req.session.oidcState, nonce: req.session.oidcNonce }
     );
     var claims = tokenSet.claims();
+    var userEmail = (claims.email || '').toLowerCase();
+
+    // Check email against allowlist
+    var allowed = await getAllowedEmails();
+    if (allowed && (!userEmail || !allowed[userEmail])) {
+      console.log('[Auth] Denied: ' + userEmail + ' not in allowlist');
+      req.session.pendingEmail = userEmail;
+      req.session.idToken = tokenSet.id_token; // keep so logout end-session works
+      delete req.session.oidcState;
+      delete req.session.oidcNonce;
+      return req.session.save(function() {
+        res.redirect('/access-denied');
+      });
+    }
+
     req.session.user = {
       sub: claims.sub,
       name: claims.name || claims.preferred_username,
-      email: claims.email
+      email: userEmail
     };
     req.session.idToken = tokenSet.id_token;
     delete req.session.oidcState;
     delete req.session.oidcNonce;
+    delete req.session.pendingEmail;
     req.session.save(function(err) {
       if (err) {
         console.error('Session save error:', err);
@@ -143,12 +216,25 @@ app.get('/logout', function(req, res) {
 });
 
 // Auth middleware - protect everything except auth routes and robots.txt
-var PUBLIC_PATHS = ['/auth/login', '/auth/callback', '/login', '/robots.txt', '/api/debug/schemas'];
-app.use(function(req, res, next) {
+var PUBLIC_PATHS = ['/auth/login', '/auth/callback', '/login', '/logout', '/access-denied', '/robots.txt', '/api/debug/schemas'];
+app.use(async function(req, res, next) {
   if (PUBLIC_PATHS.indexOf(req.path) !== -1 || req.path.startsWith('/api/debug/')) return next();
   if (!req.session.user) {
     if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Unauthorized' });
     return res.redirect('/auth/login');
+  }
+  // Re-verify email against allowlist (cached for 5 min, so this is cheap)
+  try {
+    var allowed = await getAllowedEmails();
+    var email = (req.session.user.email || '').toLowerCase();
+    if (allowed && !allowed[email]) {
+      console.log('[Auth] Session revoked for ' + email + ' (no longer on allowlist)');
+      if (req.path.startsWith('/api/')) return res.status(403).json({ error: 'Forbidden' });
+      return res.redirect('/access-denied');
+    }
+  } catch (e) {
+    console.error('[Auth] Allowlist check failed:', e.message);
+    // Fail open if the allowlist fetch itself crashed unexpectedly — prevents locking everyone out
   }
   next();
 });
