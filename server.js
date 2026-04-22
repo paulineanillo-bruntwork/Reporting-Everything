@@ -2939,6 +2939,161 @@ var BW_EMPLOYEE_PIPELINE = '20565603';
 var IC_EMPLOYEE_STAGE_ACTIVE = '49707899';
 var IC_EXCLUDED_NAMES = ['Pamela Larranaga', 'Michelle Kacarovski'];
 
+// ===== Candidate Interviews =====
+var APPLICATIONS_OBJECT = '2-38227027';
+var CI_OUTCOME_SLOTS = [
+  { prop: 'n1st_client_interview_outcome', dateProp: 'n1st_client_interview_date' },
+  { prop: 'n2nd_client_interview_outcome', dateProp: 'n2nd_client_interview_date' },
+  { prop: 'n3rd_client_interview_outcome', dateProp: 'n3rd_client_interview_date' },
+  { prop: 'n4th_client_interview_outcome', dateProp: 'n4th_interview_date_and_time__your_timezone_' },
+  { prop: 'n5th_client_interview_outcome', dateProp: 'n5th_interview_date_and_time__your_timezone_' }
+];
+
+// Cache job_source options (5 min)
+var jobSourceOptionsCache = { options: null, ts: 0 };
+app.get('/api/candidate-interviews/job-sources', async function(req, res) {
+  try {
+    if (jobSourceOptionsCache.options && (Date.now() - jobSourceOptionsCache.ts) < 300000) {
+      return res.json({ options: jobSourceOptionsCache.options, cached: true });
+    }
+    var url = 'https://api.hubapi.com/crm/v3/properties/' + APPLICATIONS_OBJECT + '/job_source';
+    var headers = { 'Content-Type': 'application/json' };
+    if (HUBSPOT_KEY && HUBSPOT_KEY.startsWith('pat-')) headers['Authorization'] = 'Bearer ' + HUBSPOT_KEY;
+    var r = await fetch(url, { headers: headers });
+    var data = await r.json();
+    var options = (data.options || []).map(function(o) {
+      return { value: o.value, label: o.label };
+    });
+    jobSourceOptionsCache = { options: options, ts: Date.now() };
+    res.json({ options: options, cached: false });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Week key helper (ISO week — Monday start, YYYY-Www)
+function weekKeyForDate(dateStr) {
+  if (!dateStr) return null;
+  var d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  // Use UTC to avoid TZ drift. Normalise to Monday of that week.
+  var utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  // Monday-based: getUTCDay: 0=Sun, 1=Mon...6=Sat — shift so Mon=0
+  var dow = (utc.getUTCDay() + 6) % 7;
+  utc.setUTCDate(utc.getUTCDate() - dow);
+  var y = utc.getUTCFullYear();
+  var m = String(utc.getUTCMonth() + 1).padStart(2, '0');
+  var da = String(utc.getUTCDate()).padStart(2, '0');
+  return y + '-' + m + '-' + da; // Monday of that week
+}
+
+// GET /api/candidate-interviews?jobSource=xxx&weeks=26
+app.get('/api/candidate-interviews', async function(req, res) {
+  try {
+    var jobSource = (req.query.jobSource || '').trim();
+    var weeks = parseInt(req.query.weeks) || 26;
+    if (weeks < 1) weeks = 1;
+    if (weeks > 104) weeks = 104;
+
+    // Compute from/to window (inclusive of last <weeks> full weeks including current)
+    var now = new Date();
+    var todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    var dow = (todayUTC.getUTCDay() + 6) % 7;
+    var thisMon = new Date(todayUTC);
+    thisMon.setUTCDate(thisMon.getUTCDate() - dow);
+    var startMon = new Date(thisMon);
+    startMon.setUTCDate(startMon.getUTCDate() - (weeks - 1) * 7);
+    var fromMs = String(startMon.getTime());
+    var toMs = String(todayUTC.getTime() + 24*60*60*1000); // include today
+
+    // Build 5 filter groups (OR): each group requires outcome set AND date in range, plus optional job_source
+    var filterGroups = CI_OUTCOME_SLOTS.map(function(slot) {
+      var filters = [
+        { propertyName: slot.prop, operator: 'HAS_PROPERTY' },
+        { propertyName: slot.dateProp, operator: 'GTE', value: fromMs },
+        { propertyName: slot.dateProp, operator: 'LTE', value: toMs }
+      ];
+      if (jobSource) filters.push({ propertyName: 'job_source', operator: 'EQ', value: jobSource });
+      return { filters: filters };
+    });
+
+    // Fetch all pages
+    var properties = ['job_source'];
+    CI_OUTCOME_SLOTS.forEach(function(s) { properties.push(s.prop); properties.push(s.dateProp); });
+
+    var all = [];
+    var after = undefined;
+    var pages = 0;
+    while (true) {
+      var body = { filterGroups: filterGroups, properties: properties, limit: 200 };
+      if (after) body.after = after;
+      if (pages > 0) await sleep(300);
+      var data = await hubspotSearchObject(APPLICATIONS_OBJECT, body);
+      all = all.concat(data.results || []);
+      if (data.paging && data.paging.next && data.paging.next.after) {
+        after = data.paging.next.after;
+      } else break;
+      pages++;
+      if (pages > 50) break; // hard safety cap — 10k applications
+    }
+
+    // Aggregate: for each application, for each slot where both outcome+date populated and date in range,
+    // emit one event keyed by (week, outcome)
+    var weekBuckets = {}; // weekKey -> { outcomeValue -> count }
+    var outcomesSet = {};
+    var weeksList = {};
+    var totalEvents = 0;
+
+    for (var i = 0; i < all.length; i++) {
+      var p = all[i].properties || {};
+      for (var s = 0; s < CI_OUTCOME_SLOTS.length; s++) {
+        var slot = CI_OUTCOME_SLOTS[s];
+        var outcome = p[slot.prop];
+        var dateVal = p[slot.dateProp];
+        if (!outcome || !dateVal) continue;
+        var wk = weekKeyForDate(dateVal);
+        if (!wk) continue;
+        // Ensure within window (date could slightly exceed due to rounding)
+        var wMs = new Date(wk).getTime();
+        if (wMs < startMon.getTime() || wMs > todayUTC.getTime()) continue;
+        outcomesSet[outcome] = true;
+        weeksList[wk] = true;
+        if (!weekBuckets[wk]) weekBuckets[wk] = {};
+        weekBuckets[wk][outcome] = (weekBuckets[wk][outcome] || 0) + 1;
+        totalEvents++;
+      }
+    }
+
+    // Build weeks array (Monday-aligned) covering the full window, even for empty weeks
+    var weekKeys = [];
+    for (var w = 0; w < weeks; w++) {
+      var d = new Date(startMon);
+      d.setUTCDate(d.getUTCDate() + w * 7);
+      var k = d.getUTCFullYear() + '-' + String(d.getUTCMonth()+1).padStart(2,'0') + '-' + String(d.getUTCDate()).padStart(2,'0');
+      weekKeys.push(k);
+    }
+
+    var outcomes = Object.keys(outcomesSet).sort();
+
+    res.json({
+      weeks: weekKeys,
+      outcomes: outcomes,
+      buckets: weekBuckets,
+      totalEvents: totalEvents,
+      totalApplications: all.length,
+      window: { from: fromMs, to: toMs, weeks: weeks },
+      jobSource: jobSource || null
+    });
+  } catch (e) {
+    console.error('[Candidate Interviews] error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/candidate-interviews', function(req, res) {
+  res.sendFile(path.join(__dirname, 'candidate-interviews.html'));
+});
+
 app.get('/internal-costs', function(req, res) {
   res.sendFile(path.join(__dirname, 'internal-costs.html'));
 });

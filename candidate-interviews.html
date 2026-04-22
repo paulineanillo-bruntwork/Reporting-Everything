@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Candidate Interview Outcomes</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<style>
+:root{--blue:#2563eb;--green:#059669;--red:#dc2626;--amber:#d97706;--purple:#7c3aed;--cyan:#0891b2;--pink:#db2777;--text:#1e293b;--muted:#64748b;--border:#e2e8f0;--bg:#f8fafc;--card:#fff}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+.header{background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:24px 40px}
+.header h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.3px}
+.header .sub{color:#94a3b8;font-size:13px;margin-top:4px}
+.main{padding:24px 40px;max-width:1400px;margin:0 auto}
+.controls{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:20px}
+.control-group{display:flex;flex-direction:column;gap:4px}
+.control-group label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+select,input[type=number]{padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:#fff;min-width:200px}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:18px 20px}
+.card .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:600}
+.card .val{font-size:26px;font-weight:700;margin-top:4px;color:var(--text)}
+.chart-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:20px}
+.chart-card h2{margin:0 0 14px;font-size:15px;font-weight:600}
+.chart-wrap{position:relative;height:420px}
+.table-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:0;overflow:hidden}
+.table-card h2{margin:0;font-size:15px;font-weight:600;padding:18px 20px;border-bottom:1px solid var(--border)}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 14px;text-align:right;border-bottom:1px solid var(--border);font-size:13px}
+th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:#fff}
+thead th{background:#f8fafc;font-weight:600;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+tr:hover td{background:#f8fafc}
+.loading{padding:40px;text-align:center;color:var(--muted)}
+.scrollx{overflow-x:auto}
+.badge{display:inline-block;font-size:11px;padding:3px 8px;border-radius:999px;background:#e2e8f0;color:#334155;font-weight:600}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Candidate Interview Outcomes</h1>
+  <div class="sub">Weekly trend of 1st–5th client interview outcomes, aggregated across all stages</div>
+</div>
+<div class="main">
+  <div class="controls">
+    <div class="control-group">
+      <label for="jobSource">Job Source</label>
+      <select id="jobSource">
+        <option value="">All job sources</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label for="weeks">Weeks to show</label>
+      <select id="weeks">
+        <option value="8">Last 8 weeks</option>
+        <option value="13">Last 13 weeks</option>
+        <option value="26" selected>Last 26 weeks</option>
+        <option value="52">Last 52 weeks</option>
+      </select>
+    </div>
+    <div style="flex:1"></div>
+    <button id="refreshBtn" style="padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:13px;font-weight:600">Refresh</button>
+  </div>
+
+  <div class="summary" id="summary"></div>
+
+  <div class="chart-card">
+    <h2>Interview Outcomes by Week</h2>
+    <div class="chart-wrap"><canvas id="chart"></canvas></div>
+  </div>
+
+  <div class="table-card">
+    <h2>Weekly Breakdown</h2>
+    <div class="scrollx"><table id="tbl"><thead></thead><tbody><tr><td colspan="20" class="loading">Loading&hellip;</td></tr></tbody></table></div>
+  </div>
+</div>
+
+<script>
+if (window.Chart && window.ChartDataLabels) Chart.register(window.ChartDataLabels);
+
+var PALETTE = ['#2563eb','#059669','#dc2626','#d97706','#7c3aed','#0891b2','#db2777','#475569','#16a34a','#ea580c','#9333ea','#0284c7','#be185d','#64748b','#15803d'];
+function colorFor(i){ return PALETTE[i % PALETTE.length]; }
+function fmtWeek(w) {
+  var d = new Date(w);
+  if (isNaN(d)) return w;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+var chart = null;
+
+async function loadJobSources() {
+  var sel = document.getElementById('jobSource');
+  try {
+    var r = await fetch('/api/candidate-interviews/job-sources');
+    var data = await r.json();
+    (data.options || []).forEach(function(o) {
+      var opt = document.createElement('option');
+      opt.value = o.value;
+      opt.textContent = o.label;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    console.error('Failed to load job sources', e);
+  }
+}
+
+async function loadData() {
+  var jobSource = document.getElementById('jobSource').value;
+  var weeks = document.getElementById('weeks').value;
+  var tbl = document.getElementById('tbl');
+  tbl.querySelector('tbody').innerHTML = '<tr><td colspan="20" class="loading">Loading&hellip;</td></tr>';
+  document.getElementById('summary').innerHTML = '';
+
+  var qs = 'weeks=' + encodeURIComponent(weeks);
+  if (jobSource) qs += '&jobSource=' + encodeURIComponent(jobSource);
+  var res = await fetch('/api/candidate-interviews?' + qs);
+  var data = await res.json();
+  if (data.error) {
+    tbl.querySelector('tbody').innerHTML = '<tr><td colspan="20" class="loading" style="color:var(--red)">Error: ' + (data.error||'') + '</td></tr>';
+    return;
+  }
+
+  renderSummary(data);
+  renderChart(data);
+  renderTable(data);
+}
+
+function renderSummary(d) {
+  var outcomeCounts = {};
+  var totalsPerWeek = {};
+  (d.weeks || []).forEach(function(w) { totalsPerWeek[w] = 0; });
+  Object.keys(d.buckets || {}).forEach(function(wk) {
+    Object.keys(d.buckets[wk]).forEach(function(out) {
+      outcomeCounts[out] = (outcomeCounts[out] || 0) + d.buckets[wk][out];
+      totalsPerWeek[wk] = (totalsPerWeek[wk] || 0) + d.buckets[wk][out];
+    });
+  });
+  var weekCount = d.weeks ? d.weeks.length : 0;
+  var avgPerWeek = weekCount ? (d.totalEvents / weekCount).toFixed(1) : 0;
+  var topOutcome = Object.keys(outcomeCounts).sort(function(a,b){ return outcomeCounts[b]-outcomeCounts[a]; })[0] || '—';
+
+  var cards = [
+    { lbl: 'Total Outcomes Recorded', val: (d.totalEvents || 0).toLocaleString() },
+    { lbl: 'Applications Matched', val: (d.totalApplications || 0).toLocaleString() },
+    { lbl: 'Weeks in Range', val: weekCount },
+    { lbl: 'Avg Outcomes/Week', val: avgPerWeek },
+    { lbl: 'Top Outcome', val: topOutcome }
+  ];
+  document.getElementById('summary').innerHTML = cards.map(function(c) {
+    return '<div class="card"><div class="lbl">' + c.lbl + '</div><div class="val">' + c.val + '</div></div>';
+  }).join('');
+}
+
+function renderChart(d) {
+  if (chart) { chart.destroy(); chart = null; }
+  var ctx = document.getElementById('chart').getContext('2d');
+  var outcomes = d.outcomes || [];
+  var weeks = d.weeks || [];
+  var datasets = outcomes.map(function(o, i) {
+    return {
+      label: o,
+      data: weeks.map(function(w) { return (d.buckets[w] && d.buckets[w][o]) || 0; }),
+      backgroundColor: colorFor(i)
+    };
+  });
+  chart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: weeks.map(fmtWeek), datasets: datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { stacked: true, ticks: { maxRotation: 0, autoSkip: true } },
+        y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
+      },
+      plugins: {
+        legend: { position: 'bottom' },
+        datalabels: { display: false },
+        tooltip: { callbacks: { footer: function(items) {
+          var sum = items.reduce(function(acc, i) { return acc + i.parsed.y; }, 0);
+          return 'Total: ' + sum;
+        }}}
+      }
+    }
+  });
+}
+
+function renderTable(d) {
+  var weeks = d.weeks || [];
+  var outcomes = d.outcomes || [];
+  var thead = document.querySelector('#tbl thead');
+  var tbody = document.querySelector('#tbl tbody');
+  var h = '<tr><th>Week (starting)</th>';
+  outcomes.forEach(function(o) { h += '<th>' + o + '</th>'; });
+  h += '<th>Total</th></tr>';
+  thead.innerHTML = h;
+
+  var rows = '';
+  // Reverse so most recent week is first
+  var weeksDesc = weeks.slice().reverse();
+  weeksDesc.forEach(function(w) {
+    rows += '<tr><td>' + fmtWeek(w) + '<span style="color:var(--muted);font-size:11px;margin-left:6px">' + w.substring(5) + '</span></td>';
+    var total = 0;
+    outcomes.forEach(function(o) {
+      var v = (d.buckets[w] && d.buckets[w][o]) || 0;
+      total += v;
+      rows += '<td>' + (v || '<span style="color:#cbd5e1">0</span>') + '</td>';
+    });
+    rows += '<td style="font-weight:600">' + total + '</td></tr>';
+  });
+
+  // Grand total row
+  var totals = {};
+  weeks.forEach(function(w) {
+    outcomes.forEach(function(o) {
+      totals[o] = (totals[o] || 0) + ((d.buckets[w] && d.buckets[w][o]) || 0);
+    });
+  });
+  var grand = 0;
+  rows += '<tr style="background:#f1f5f9;font-weight:700"><td>Total</td>';
+  outcomes.forEach(function(o) { rows += '<td>' + (totals[o] || 0) + '</td>'; grand += totals[o] || 0; });
+  rows += '<td>' + grand + '</td></tr>';
+
+  tbody.innerHTML = rows || '<tr><td colspan="20" class="loading">No data</td></tr>';
+}
+
+document.getElementById('refreshBtn').addEventListener('click', loadData);
+document.getElementById('jobSource').addEventListener('change', loadData);
+document.getElementById('weeks').addEventListener('change', loadData);
+
+loadJobSources().then(loadData);
+</script>
+</body>
+</html>
