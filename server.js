@@ -408,6 +408,26 @@ app.get('/api/debug/sa-email', function(req, res) {
   res.json({ serviceAccountEmail: GOOGLE_SA_KEY ? GOOGLE_SA_KEY.client_email : 'NOT CONFIGURED' });
 });
 
+// DEBUG: List Application object properties (to find interview outcome property names)
+app.get('/api/debug/app-properties', async function(req, res) {
+  try {
+    var url = 'https://api.hubapi.com/crm/v3/properties/2-38227027';
+    var headers = { 'Content-Type': 'application/json' };
+    if (HUBSPOT_KEY && HUBSPOT_KEY.startsWith('pat-')) headers['Authorization'] = 'Bearer ' + HUBSPOT_KEY;
+    var r = await fetch(url, { headers: headers });
+    var data = await r.json();
+    var props = (data.results || []).map(function(p) {
+      return { name: p.name, label: p.label, type: p.type, fieldType: p.fieldType };
+    });
+    // Filter to interview/outcome related
+    var q = (req.query.q || '').toLowerCase();
+    if (q) props = props.filter(function(p) { return (p.label + ' ' + p.name).toLowerCase().indexOf(q) !== -1; });
+    res.json({ count: props.length, props: props });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // One-time: update header label in KPI sheet
 app.post('/api/debug/fix-header', async function(req, res) {
   try {
