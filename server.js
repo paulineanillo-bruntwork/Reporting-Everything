@@ -408,6 +408,56 @@ app.get('/api/debug/sa-email', function(req, res) {
   res.json({ serviceAccountEmail: GOOGLE_SA_KEY ? GOOGLE_SA_KEY.client_email : 'NOT CONFIGURED' });
 });
 
+// DEBUG: Candidate interviews diagnostic
+app.get('/api/debug/ci-diag', async function(req, res) {
+  try {
+    var slots = [
+      { prop: 'n1st_client_interview_outcome', dateProp: 'n1st_client_interview_date' },
+      { prop: 'n2nd_client_interview_outcome', dateProp: 'n2nd_client_interview_date' },
+      { prop: 'n3rd_client_interview_outcome', dateProp: 'n3rd_client_interview_date' },
+      { prop: 'n4th_client_interview_outcome', dateProp: 'n4th_interview_date_and_time__your_timezone_' },
+      { prop: 'n5th_client_interview_outcome', dateProp: 'n5th_interview_date_and_time__your_timezone_' }
+    ];
+    var results = {};
+    for (var i = 0; i < slots.length; i++) {
+      var slot = slots[i];
+      var slotOut = {};
+      // Total with outcome property set (any value)
+      try {
+        var r1 = await hubspotSearchObject('2-38227027', {
+          filterGroups: [{ filters: [{ propertyName: slot.prop, operator: 'HAS_PROPERTY' }] }],
+          properties: [slot.prop], limit: 1
+        });
+        slotOut.outcome_set = r1.total;
+      } catch (e) { slotOut.outcome_err = e.message.substring(0,150); }
+      // Total with date property set
+      try {
+        var r2 = await hubspotSearchObject('2-38227027', {
+          filterGroups: [{ filters: [{ propertyName: slot.dateProp, operator: 'HAS_PROPERTY' }] }],
+          properties: [slot.dateProp], limit: 1
+        });
+        slotOut.date_set = r2.total;
+      } catch (e) { slotOut.date_err = e.message.substring(0,150); }
+      // Both set
+      try {
+        var r3 = await hubspotSearchObject('2-38227027', {
+          filterGroups: [{ filters: [
+            { propertyName: slot.prop, operator: 'HAS_PROPERTY' },
+            { propertyName: slot.dateProp, operator: 'HAS_PROPERTY' }
+          ]}],
+          properties: [slot.prop, slot.dateProp], limit: 3
+        });
+        slotOut.both_set = r3.total;
+        slotOut.sample = (r3.results || []).map(function(x) { return { id: x.id, outcome: x.properties[slot.prop], date: x.properties[slot.dateProp] }; });
+      } catch (e) { slotOut.both_err = e.message.substring(0,150); }
+      results[slot.prop] = slotOut;
+    }
+    res.json(results);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // DEBUG: List Application object properties (to find interview outcome property names)
 app.get('/api/debug/app-properties', async function(req, res) {
   try {
