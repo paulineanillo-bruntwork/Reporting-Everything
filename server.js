@@ -408,6 +408,41 @@ app.get('/api/debug/sa-email', function(req, res) {
   res.json({ serviceAccountEmail: GOOGLE_SA_KEY ? GOOGLE_SA_KEY.client_email : 'NOT CONFIGURED' });
 });
 
+// DEBUG: Which date fields are populated for outcome rows?
+app.get('/api/debug/ci-datefields', async function(req, res) {
+  try {
+    var slotNums = ['n1st', 'n2nd', 'n3rd', 'n4th', 'n5th'];
+    var out = {};
+    for (var i = 0; i < slotNums.length; i++) {
+      var n = slotNums[i];
+      var outcome = n + '_client_interview_outcome';
+      var candidates = [
+        n + '_client_interview_date',
+        n + '_interview_date_and_time__your_timezone_',
+        n + '_interview__created_date'
+      ];
+      var slotOut = { outcome_prop: outcome };
+      for (var c = 0; c < candidates.length; c++) {
+        var dp = candidates[c];
+        try {
+          var r = await hubspotSearchObject('2-38227027', {
+            filterGroups: [{ filters: [
+              { propertyName: outcome, operator: 'HAS_PROPERTY' },
+              { propertyName: dp, operator: 'HAS_PROPERTY' }
+            ]}],
+            properties: [outcome, dp], limit: 2
+          });
+          slotOut[dp] = { count: r.total, sample: (r.results||[]).map(function(x){ return x.properties; }) };
+        } catch (e) { slotOut[dp] = { err: e.message.substring(0,150) }; }
+      }
+      out[n] = slotOut;
+    }
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // DEBUG: Candidate interviews diagnostic
 app.get('/api/debug/ci-diag', async function(req, res) {
   try {
