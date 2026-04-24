@@ -3026,10 +3026,12 @@ var IC_EXCLUDED_NAMES = ['Pamela Larranaga', 'Michelle Kacarovski'];
 
 // ===== Candidate Interviews =====
 var APPLICATIONS_OBJECT = '2-38227027';
+// Use the *_interview_date_and_time__your_timezone_ fields — they have much better coverage
+// than the *_client_interview_date fields (~7260 vs ~81 for the 1st interview slot).
 var CI_OUTCOME_SLOTS = [
-  { prop: 'n1st_client_interview_outcome', dateProp: 'n1st_client_interview_date' },
-  { prop: 'n2nd_client_interview_outcome', dateProp: 'n2nd_client_interview_date' },
-  { prop: 'n3rd_client_interview_outcome', dateProp: 'n3rd_client_interview_date' },
+  { prop: 'n1st_client_interview_outcome', dateProp: 'n1st_interview_date_and_time__your_timezone_' },
+  { prop: 'n2nd_client_interview_outcome', dateProp: 'n2nd_interview_date_and_time__your_timezone_' },
+  { prop: 'n3rd_client_interview_outcome', dateProp: 'n3rd_interview_date_and_time__your_timezone_' },
   { prop: 'n4th_client_interview_outcome', dateProp: 'n4th_interview_date_and_time__your_timezone_' },
   { prop: 'n5th_client_interview_outcome', dateProp: 'n5th_interview_date_and_time__your_timezone_' }
 ];
