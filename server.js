@@ -217,8 +217,20 @@ app.get('/logout', function(req, res) {
 
 // Auth middleware - protect everything except auth routes and robots.txt
 var PUBLIC_PATHS = ['/auth/login', '/auth/callback', '/login', '/logout', '/access-denied', '/robots.txt', '/api/debug/schemas'];
+
+// Service-to-service auth: requests with a matching X-Internal-Key header
+// bypass session auth. Used by sibling apps (e.g., CRO Dashboard) to fetch
+// cached data without going through Keycloak. Set INTERNAL_API_KEY on Railway.
+var INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
+function isInternalServiceRequest(req) {
+  if (!INTERNAL_API_KEY) return false;
+  var hdr = req.headers['x-internal-key'];
+  return typeof hdr === 'string' && hdr === INTERNAL_API_KEY;
+}
+
 app.use(async function(req, res, next) {
   if (PUBLIC_PATHS.indexOf(req.path) !== -1 || req.path.startsWith('/api/debug/')) return next();
+  if (isInternalServiceRequest(req)) return next();
   if (!req.session.user) {
     if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Unauthorized' });
     return res.redirect('/auth/login');
