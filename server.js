@@ -1586,16 +1586,14 @@ app.post('/api/quarterly', async function(req, res) {
 });
 
 // POST /api/report/generate — pull automated KPIs from HubSpot + Google Ads
-app.post('/api/report/generate', async function(req, res) {
-  try {
-    var month = req.body.month;
-    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
-      return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
-    }
-    if (!REPORT_SHEET_ID || !GOOGLE_SA_KEY) {
-      return res.status(500).json({ error: 'Reports not configured' });
-    }
-    await ensureSheetTabs();
+async function runReportGenerate(month) {
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    var e = new Error('Invalid month format. Use YYYY-MM'); e.status = 400; throw e;
+  }
+  if (!REPORT_SHEET_ID || !GOOGLE_SA_KEY) {
+    var e2 = new Error('Reports not configured'); e2.status = 500; throw e2;
+  }
+  await ensureSheetTabs();
 
     console.log('[Report] Generating automated data for ' + month);
     var parts = month.split('-');
@@ -1852,11 +1850,27 @@ app.post('/api/report/generate', async function(req, res) {
     // Write to sheet
     await writeReportRow(month, kpiData);
     console.log('[Report] Saved report for ' + month);
+    return kpiData;
+}
 
-    res.json({ success: true, month: month, kpis: kpiData });
+app.post('/api/report/generate', async function(req, res) {
+  try {
+    var data = await runReportGenerate(req.body.month);
+    res.json({ success: true, month: req.body.month, kpis: data });
   } catch (err) {
     console.error('POST /api/report/generate error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+// DEBUG: Trigger report generation without auth
+app.post('/api/debug/generate-report', async function(req, res) {
+  try {
+    var data = await runReportGenerate(req.body.month);
+    res.json({ success: true, month: req.body.month, kpis: data });
+  } catch (err) {
+    console.error('[debug] generate-report error:', err.message);
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
