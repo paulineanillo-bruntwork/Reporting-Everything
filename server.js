@@ -185,12 +185,16 @@ app.get('/auth/callback', async function(req, res) {
     delete req.session.oidcState;
     delete req.session.oidcNonce;
     delete req.session.pendingEmail;
+    var dest = req.session.postLoginRedirect || '/';
+    delete req.session.postLoginRedirect;
+    // Sanity-check destination — only allow same-origin paths
+    if (typeof dest !== 'string' || !dest.startsWith('/') || dest.startsWith('//')) dest = '/';
     req.session.save(function(err) {
       if (err) {
         console.error('Session save error:', err);
         return res.status(500).send('Session error');
       }
-      res.redirect('/');
+      res.redirect(dest);
     });
   } catch (err) {
     console.error('OIDC callback error:', err.message);
@@ -233,6 +237,14 @@ app.use(async function(req, res, next) {
   if (isInternalServiceRequest(req)) return next();
   if (!req.session.user) {
     if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Unauthorized' });
+    // Capture the originally requested URL so we can redirect back to it after login
+    var requested = req.originalUrl || req.url;
+    if (requested && requested !== '/' && !requested.startsWith('/auth/') && !requested.startsWith('/logout')) {
+      req.session.postLoginRedirect = requested;
+      return req.session.save(function() {
+        res.redirect('/auth/login');
+      });
+    }
     return res.redirect('/auth/login');
   }
   // Re-verify email against allowlist (cached for 5 min, so this is cheap)
