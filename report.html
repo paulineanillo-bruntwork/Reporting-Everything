@@ -411,11 +411,14 @@ Promise.all([
     if (pm && pm.year===prevYr && pm.month===prevMo) prevIdx=i;
   }
 
-  // Overwrite Cost Per Discovery Call (col 16) = Ads Spend (col 15) / MQLs (col 6)
+  // Compute Cost Per Discovery Call = Ads Spend / MQLs and Show Rate = Sales Calls / MQLs
+  // client-side so they're always fresh, regardless of whether calc-ratios has been run.
   for (var mi = 0; mi < allMonths.length; mi++) {
     var spend = pn(allMonths[mi][C.adsSpend]);
     var mqls = pn(allMonths[mi][C.mqls]);
+    var calls = pn(allMonths[mi][C.fabiusCalls]);
     allMonths[mi][C.costPerCall] = (spend && mqls) ? (spend / mqls).toFixed(2) : '';
+    allMonths[mi][C.showRate] = (calls && mqls) ? (calls / mqls) : '';
   }
 
   document.getElementById('loading').style.display='none';
