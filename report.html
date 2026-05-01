@@ -753,7 +753,7 @@ function renderSubBlocks(containerId, sections, cur, prev, slice, labels) {
       ds2.data = item.slice.map(function(m){return pn(m[ov.col]);});
       ds2.yAxisID = 'y1';
       var ovFmt = ov.pct===false ? function(v){return v!==null?Number(v).toFixed(1):'';} : function(v){return v!==null?Math.round(v)+'%':'';};
-      ds2.datalabels = { display:true, anchor:'end', align:'top', offset:4, color:ovColor, font:{size:9,weight:'bold'}, formatter:ovFmt };
+      ds2.datalabels = { display:true, anchor:'center', align:'bottom', offset:6, color:ovColor, font:{size:9,weight:'bold'}, formatter:ovFmt, backgroundColor:'rgba(255,255,255,0.85)', borderRadius:3, padding:{top:1,bottom:1,left:3,right:3} };
       ds2.borderColor = ovColor;
       ds2.pointBackgroundColor = ovColor;
       ds2.pointBorderColor = ovColor;
