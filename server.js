@@ -420,6 +420,27 @@ app.get('/api/debug/sa-email', function(req, res) {
   res.json({ serviceAccountEmail: GOOGLE_SA_KEY ? GOOGLE_SA_KEY.client_email : 'NOT CONFIGURED' });
 });
 
+// DEBUG: Inspect a specific month row in the KPI history sheet
+app.get('/api/debug/kpi-row', async function(req, res) {
+  try {
+    var monthLabel = req.query.month || 'April 2026';
+    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, KPI_SOURCE_TAB + '!A1:AZ');
+    var rows = data.values || [];
+    var headers = rows[2] || [];
+    var dataRows = rows.slice(3);
+    var row = null;
+    for (var i = 0; i < dataRows.length; i++) {
+      if (dataRows[i][0] && dataRows[i][0].trim() === monthLabel.trim()) { row = dataRows[i]; break; }
+    }
+    if (!row) return res.json({ error: 'Month not found: ' + monthLabel });
+    var cells = [];
+    for (var c = 0; c < Math.max(headers.length, row.length); c++) {
+      cells.push({ col: c, header: (headers[c] || '').replace(/\n/g, ' '), value: row[c] || '' });
+    }
+    res.json({ month: monthLabel, cells: cells });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // DEBUG: Which date fields are populated for outcome rows?
 app.get('/api/debug/ci-datefields', async function(req, res) {
   try {
