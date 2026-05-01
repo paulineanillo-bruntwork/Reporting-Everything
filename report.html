@@ -618,13 +618,13 @@ Promise.all([
       { label:'Number of Active Clients', col:C.existingClients, color:'#d97706', type:'bar' }
     ]},
     { title:'Sales', link:'/sales', rows:[
-      { label:'Discovery Calls Completed', col:C.gongCalls, format:'num' },
-      { label:'Show Rate (Booked Vs Completed Discovery Calls)', col:C.gongShowRate, format:'pctRound' },
+      { label:'Discovery Calls Completed', col:C.fabiusCalls, format:'num' },
+      { label:'Show Rate (Booked Vs Completed Discovery Calls)', col:C.showRate, format:'pctRound' },
       { label:'New Client Jobs Opened', col:C.newClientJobs, format:'num' },
       { label:'MQL to New Client Job Opened Conversion Rate', col:C.salesConvRate, format:'pctR' },
       { label:'MQL to New Client FTE Conversion Rate (1 Month Conversion Window)', col:C.newClientFTEConv, format:'pctR' }
     ], charts:[
-      { label:'Discovery Calls Completed', col:C.gongCalls, color:'#0891b2', type:'bar', overlay:{ label:'Show Rate (Booked Vs Completed Discovery Calls)', col:C.gongShowRate, color:'#6d28d9' } },
+      { label:'Discovery Calls Completed', col:C.fabiusCalls, color:'#0891b2', type:'bar', overlay:{ label:'Show Rate (Booked Vs Completed Discovery Calls)', col:C.showRate, color:'#6d28d9' } },
       { label:'New Client Jobs Opened', col:C.newClientJobs, color:'#059669', type:'bar' },
       { label:'MQL to New Client Job Opened Conversion Rate', col:C.salesConvRate, color:'#d97706', type:'line', pct:true },
       { label:'MQL to New Client FTE Conversion Rate', col:C.newClientFTEConv, color:'#7c3aed', type:'line', pct:true }
@@ -684,22 +684,8 @@ Promise.all([
   _projectsData = groupProjects(projectsData);
   renderUpdates(false);
 
-  // Fetch Gong discovery call counts from persistent Google Sheet cache
-  // (populated by /sales page when it loads from Gong API)
-  fetch('/api/gong/sheet-counts')
-    .then(function(r) { return r.json(); })
-    .then(function(gongData) {
-      var gongCounts = gongData.counts || {};
-      for (var gi2 = 0; gi2 < curSlice.length; gi2++) {
-        var mk2 = monthToKey(curSlice[gi2][0]);
-        var gongCount = (mk2 && gongCounts[mk2] != null) ? gongCounts[mk2] : null;
-        var mqlsBooked = pn(curSlice[gi2][C.mqls]);
-        curSlice[gi2][C.gongCalls] = gongCount;
-        curSlice[gi2][C.gongShowRate] = (gongCount !== null && mqlsBooked) ? ((gongCount / mqlsBooked) * 100).toFixed(1) : '';
-      }
-      renderSubBlocks('acqBlocks', acqSections, cur, prev, curSlice, curLabels);
-    })
-    .catch(function(e) { console.error('Gong sheet data fetch failed:', e); });
+  // Discovery Calls Completed and Show Rate now read directly from /kpi cols 5 and 6
+  // (Sales Calls Completed (Gong) + Show Rate). No need for separate Gong cache fetch.
 
 }).catch(function(err){
   document.getElementById('loading').innerHTML = '<div style="color:var(--red)">Error: '+err.message+'</div>';
