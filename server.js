@@ -2320,9 +2320,11 @@ app.post('/api/kpi-history/calc-ratios', async function(req, res) {
     var prevChurned = parseSheetNum(prevRow[32]) || 0;
     var prevExistingClientJobs = parseSheetNum(prevRow[39]) || 0;
 
-    // Col 2: Active Staff Per Admin
-    if (adminStaff > 0 && startOfPeriodFTE > 0)
-      updates['Active Staff Per Admin'] = { col: 1, value: Math.round((startOfPeriodFTE / adminStaff) * 100) / 100 };
+    // Col 1: Active Staff Per Admin = NEXT month's start-of-period FTE (i.e. THIS month's end) / THIS month's BW Admin Staff
+    var nextRow = (targetRowIdx + 1 < dataRows.length) ? dataRows[targetRowIdx + 1] : null;
+    var endOfPeriodFTE = nextRow ? (parseSheetNum(nextRow[2]) || 0) : 0;
+    if (adminStaff > 0 && endOfPeriodFTE > 0)
+      updates['Active Staff Per Admin'] = { col: 1, value: Math.round((endOfPeriodFTE / adminStaff) * 100) / 100 };
 
     // Col 8: Show Rate = Fabius Calls / MQLs
     if (_mqlCount > 0)
@@ -2946,11 +2948,12 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       updates['Role Churn Rate'] = { col: 33, value: Math.round((_lostFTEs / startOfPeriodFTE) * 10000) / 10000 };
     }
 
-    // Col 2: Active Staff Headcount Per Admin Staff = Active FTE / BW Admin Staff
+    // Col 1: Active Staff Per Admin = NEXT month's start-of-period FTE (i.e. THIS month's end) / THIS month's BW Admin Staff
     var adminStaff = updates['BW Admin Staff'] ? updates['BW Admin Staff'].value : (parseSheetNum(dataRows[targetRowIdx][3]) || 0);
-    var currentActiveFTE = startOfPeriodFTE;
-    if (adminStaff > 0 && currentActiveFTE > 0) {
-      updates['Active Staff Per Admin'] = { col: 1, value: Math.round((currentActiveFTE / adminStaff) * 100) / 100 };
+    var nextRowGen = (targetRowIdx + 1 < dataRows.length) ? dataRows[targetRowIdx + 1] : null;
+    var endOfPeriodFTE = nextRowGen ? (parseSheetNum(nextRowGen[2]) || 0) : 0;
+    if (adminStaff > 0 && endOfPeriodFTE > 0) {
+      updates['Active Staff Per Admin'] = { col: 1, value: Math.round((endOfPeriodFTE / adminStaff) * 100) / 100 };
     }
 
     // Col 8: Show Rate = Fabius Calls / MQLs (skip if no Fabius data — col 7 is manual)
@@ -3064,8 +3067,11 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       if (startOfPeriodFTE > 0) {
         updates['Role Churn Rate'] = { col: 33, value: Math.round((_lostFTEs / startOfPeriodFTE) * 10000) / 10000 };
       }
-      if (adminStaff > 0 && currentActiveFTE > 0) {
-        updates['Active Staff Per Admin'] = { col: 1, value: Math.round((currentActiveFTE / adminStaff) * 100) / 100 };
+      // Use next month's start-of-period FTE = this month's end of period
+      var nextRowFix = (targetRowIdx + 1 < dataRows.length) ? dataRows[targetRowIdx + 1] : null;
+      var endFTE = nextRowFix ? (parseSheetNum(nextRowFix[2]) || 0) : 0;
+      if (adminStaff > 0 && endFTE > 0) {
+        updates['Active Staff Per Admin'] = { col: 1, value: Math.round((endFTE / adminStaff) * 100) / 100 };
       }
 
       // Step 2: Compute next month's Col 4 = current month Col 4 + this month's net FTE
