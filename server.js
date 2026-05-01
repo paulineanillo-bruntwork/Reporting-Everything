@@ -1616,26 +1616,26 @@ async function runReportGenerate(month) {
 
     var kpiData = Object.assign({}, existing);
 
-    // ===== 1. HubSpot Tickets: Hires (onboarding_date in month) =====
+    // ===== 1. HubSpot Tickets: Hires (createdate in month — matches main dashboard) =====
     console.log('[Report] Fetching HubSpot hires...');
     var hireResults = await fetchAllPagesWithRetry({
       filterGroups: [{
         filters: [
           { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-          { propertyName: 'onboarding_date', operator: 'GTE', value: startMs },
-          { propertyName: 'onboarding_date', operator: 'LTE', value: endMs }
+          { propertyName: 'createdate', operator: 'GTE', value: startMs },
+          { propertyName: 'createdate', operator: 'LTE', value: endMs }
         ]
       }],
-      properties: ['onboarding_date', 'assignment_type', 'type_of_recruitment', 'hs_pipeline'],
-      sorts: [{ propertyName: 'onboarding_date', direction: 'ASCENDING' }]
+      properties: ['createdate', 'onboarding_date', 'assignment_type', 'type_of_recruitment', 'hs_pipeline'],
+      sorts: [{ propertyName: 'createdate', direction: 'ASCENDING' }]
     });
     console.log('[Report] Hires found: ' + hireResults.length);
 
-    // FTE weighting
+    // FTE weighting — must match index.html getFTEWeight() exactly
     function fteWeight(type) {
       if (type === 'Full-Time') return 1;
-      if (type === 'Part-Time') return 0.5;
-      return 0.25; // PT-Under-20, Project-Based, Output-Based
+      if (type === 'Part-Time-Under-20-Hours') return 0.25;
+      return 0.5; // Part-Time, Project-Based, Output-Based, Trial — everything else
     }
 
     var totalFTEHires = 0;
