@@ -445,6 +445,49 @@ app.post('/api/debug/kpi-calc', function(req, res) {
   res.status(500).json({ error: 'kpi-history/calc-ratios handler not found' });
 });
 
+// DEBUG: Set a column's number format to NUMBER (fixes cells wrongly formatted as percent)
+// Usage: GET /api/debug/fix-col-format?col=5  (col is 0-indexed, sheet column index)
+app.get('/api/debug/fix-col-format', async function(req, res) {
+  try {
+    var col = parseInt(req.query.col);
+    if (isNaN(col)) return res.status(400).json({ error: 'col query param required (0-indexed)' });
+    var format = req.query.format || 'NUMBER'; // NUMBER, PERCENT, etc.
+    var pattern = req.query.pattern || (format === 'PERCENT' ? '0.0%' : '#,##0.##');
+
+    // Find sheetId for the "Monthly" tab
+    var token = await getGoogleAccessToken();
+    var metaRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + KPI_SOURCE_SHEET_ID + '?fields=sheets.properties', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    var meta = await metaRes.json();
+    var sheet = (meta.sheets || []).find(function(s) { return s.properties.title === KPI_SOURCE_TAB; });
+    if (!sheet) return res.status(500).json({ error: 'Tab not found: ' + KPI_SOURCE_TAB });
+    var sheetId = sheet.properties.sheetId;
+
+    // Apply numberFormat to the entire column starting from row 4 (data rows)
+    var body = {
+      requests: [{
+        repeatCell: {
+          range: { sheetId: sheetId, startRowIndex: 3, startColumnIndex: col, endColumnIndex: col + 1 },
+          cell: { userEnteredFormat: { numberFormat: { type: format, pattern: pattern } } },
+          fields: 'userEnteredFormat.numberFormat'
+        }
+      }]
+    };
+    var resp = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + KPI_SOURCE_SHEET_ID + ':batchUpdate', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    var data = await resp.json();
+    if (!resp.ok) return res.status(500).json({ error: 'batchUpdate failed', details: data });
+    kpiHistoryCache = { data: null, ts: 0 };
+    res.json({ success: true, col: col, format: format, pattern: pattern });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // DEBUG: Inspect a specific month row in the KPI history sheet
 app.get('/api/debug/kpi-row', async function(req, res) {
   try {
