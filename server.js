@@ -2204,100 +2204,100 @@ app.post('/api/kpi-history/calc-ratios', async function(req, res) {
     var updates = {};
 
     // Read current month values from sheet
-    var _adsSpend = parseSheetNum(cur[15]) || 0;
-    var _mqlCount = parseSheetNum(cur[6]) || 0;
-    var _totalFTEHires = parseSheetNum(cur[12]) || 0;
-    var _lostFTEs = parseSheetNum(cur[34]) || 0;
-    var _backfillFTE = parseSheetNum(cur[38]) || 0;
-    var _existingClientFTE = parseSheetNum(cur[43]) || 0;
-    var _newClientJobs = parseSheetNum(cur[9]) || 0;
-    var fabiusCalls = parseSheetNum(cur[7]) || 0;
-    var adminStaff = parseSheetNum(cur[5]) || 0;
-    var startOfPeriodFTE = parseSheetNum(cur[4]) || 0;
-    var endorsements = parseSheetNum(cur[24]) || 0;
-    var recruitmentHC = parseSheetNum(cur[23]) || 0;
-    var salesHC = parseSheetNum(cur[22]) || 0;
-    var rolesToBackfill = parseSheetNum(cur[36]) || 0;
-    var existingClients = parseSheetNum(cur[40]) || 0;
-    var existingClientJobs = parseSheetNum(cur[41]) || 0;
-    var newClientHires = parseSheetNum(cur[48]) || 0;
-    var under30FTE = parseSheetNum(cur[26]) || 0;
+    var _adsSpend = parseSheetNum(cur[13]) || 0;
+    var _mqlCount = parseSheetNum(cur[4]) || 0;
+    var _totalFTEHires = parseSheetNum(cur[10]) || 0;
+    var _lostFTEs = parseSheetNum(cur[32]) || 0;
+    var _backfillFTE = parseSheetNum(cur[36]) || 0;
+    var _existingClientFTE = parseSheetNum(cur[41]) || 0;
+    var _newClientJobs = parseSheetNum(cur[7]) || 0;
+    var fabiusCalls = parseSheetNum(cur[5]) || 0;
+    var adminStaff = parseSheetNum(cur[3]) || 0;
+    var startOfPeriodFTE = parseSheetNum(cur[2]) || 0;
+    var endorsements = parseSheetNum(cur[22]) || 0;
+    var recruitmentHC = parseSheetNum(cur[21]) || 0;
+    var salesHC = parseSheetNum(cur[20]) || 0;
+    var rolesToBackfill = parseSheetNum(cur[34]) || 0;
+    var existingClients = parseSheetNum(cur[38]) || 0;
+    var existingClientJobs = parseSheetNum(cur[39]) || 0;
+    var newClientHires = parseSheetNum(cur[46]) || 0;
+    var under30FTE = parseSheetNum(cur[24]) || 0;
 
     // Previous month values
-    var prevMQLs = parseSheetNum(prevRow[6]) || 0;
-    var prevTotalHires = parseSheetNum(prevRow[12]) || 0;
-    var prevNewClientJobs = parseSheetNum(prevRow[9]) || 0;
-    var prevExistingClients = parseSheetNum(prevRow[40]) || 0;
-    var prevChurned = parseSheetNum(prevRow[34]) || 0;
-    var prevExistingClientJobs = parseSheetNum(prevRow[41]) || 0;
+    var prevMQLs = parseSheetNum(prevRow[4]) || 0;
+    var prevTotalHires = parseSheetNum(prevRow[10]) || 0;
+    var prevNewClientJobs = parseSheetNum(prevRow[7]) || 0;
+    var prevExistingClients = parseSheetNum(prevRow[38]) || 0;
+    var prevChurned = parseSheetNum(prevRow[32]) || 0;
+    var prevExistingClientJobs = parseSheetNum(prevRow[39]) || 0;
 
     // Col 2: Active Staff Per Admin
     if (adminStaff > 0 && startOfPeriodFTE > 0)
-      updates['Active Staff Per Admin'] = { col: 2, value: Math.round((startOfPeriodFTE / adminStaff) * 100) / 100 };
+      updates['Active Staff Per Admin'] = { col: 1, value: Math.round((startOfPeriodFTE / adminStaff) * 100) / 100 };
 
     // Col 8: Show Rate = Fabius Calls / MQLs
     if (_mqlCount > 0)
-      updates['Show Rate'] = { col: 8, value: Math.round((fabiusCalls / _mqlCount) * 10000) / 10000 };
+      updates['Show Rate'] = { col: 6, value: Math.round((fabiusCalls / _mqlCount) * 10000) / 10000 };
 
     // Col 10: New Client Jobs vs Discovery Calls
     if (fabiusCalls > 0)
-      updates['New Client Jobs vs Discovery Calls'] = { col: 10, value: Math.round((_newClientJobs / fabiusCalls) * 10000) / 10000 };
+      updates['New Client Jobs vs Discovery Calls'] = { col: 8, value: Math.round((_newClientJobs / fabiusCalls) * 10000) / 10000 };
 
     // Col 13: FTE Close Rate = Total FTE Hires / prev month MQLs
     if (prevMQLs > 0)
-      updates['FTE Close Rate'] = { col: 13, value: Math.round((_totalFTEHires / prevMQLs) * 10000) / 10000 };
+      updates['FTE Close Rate'] = { col: 11, value: Math.round((_totalFTEHires / prevMQLs) * 10000) / 10000 };
 
     // Col 14: FTE Conv from Job = Total FTE Hires / prev month Jobs
     if (prevNewClientJobs > 0)
-      updates['FTE Conv Close Rate from Job'] = { col: 14, value: Math.round((_totalFTEHires / prevNewClientJobs) * 10000) / 10000 };
+      updates['FTE Conv Close Rate from Job'] = { col: 12, value: Math.round((_totalFTEHires / prevNewClientJobs) * 10000) / 10000 };
 
     // Col 16: Cost Per Discovery Call = Ads Spend / MQLs
     if (_mqlCount > 0)
-      updates['Cost Per Discovery Call'] = { col: 16, value: Math.round((_adsSpend / _mqlCount) * 100) / 100 };
+      updates['Cost Per Discovery Call'] = { col: 14, value: Math.round((_adsSpend / _mqlCount) * 100) / 100 };
 
     // Col 17: Sales Conversion Rate = New Client Jobs / MQLs
     if (_mqlCount > 0)
-      updates['Sales Conversion Rate'] = { col: 17, value: Math.round((_newClientJobs / _mqlCount) * 10000) / 10000 };
+      updates['Sales Conversion Rate'] = { col: 15, value: Math.round((_newClientJobs / _mqlCount) * 10000) / 10000 };
 
     // Col 25: Endorsements Per Recruitment HC
     if (recruitmentHC > 0)
-      updates['Endorsements Per Recruitment HC'] = { col: 25, value: Math.round((endorsements / recruitmentHC) * 100) / 100 };
+      updates['Endorsements Per Recruitment HC'] = { col: 23, value: Math.round((endorsements / recruitmentHC) * 100) / 100 };
 
     // Col 27: Staff churned <1m as % of hires
     if (prevTotalHires > 0)
-      updates['Staff churned <1m as % of hires'] = { col: 27, value: Math.round((under30FTE / prevTotalHires) * 10000) / 10000 };
+      updates['Staff churned <1m as % of hires'] = { col: 25, value: Math.round((under30FTE / prevTotalHires) * 10000) / 10000 };
 
     // Col 33: Hires Per Sales/Recruitment HC
     if ((recruitmentHC + salesHC) > 0)
-      updates['Hires Per Sales/Recruitment HC'] = { col: 33, value: Math.round((_totalFTEHires / (recruitmentHC + salesHC)) * 100) / 100 };
+      updates['Hires Per Sales/Recruitment HC'] = { col: 31, value: Math.round((_totalFTEHires / (recruitmentHC + salesHC)) * 100) / 100 };
 
     // Col 35: Role Churn Rate
     if (startOfPeriodFTE > 0)
-      updates['Role Churn Rate'] = { col: 35, value: Math.round((_lostFTEs / startOfPeriodFTE) * 10000) / 10000 };
+      updates['Role Churn Rate'] = { col: 33, value: Math.round((_lostFTEs / startOfPeriodFTE) * 10000) / 10000 };
 
     // Col 37: Backfill rate
     if (_lostFTEs > 0)
-      updates['Backfill rate'] = { col: 37, value: Math.round((rolesToBackfill / _lostFTEs) * 10000) / 10000 };
+      updates['Backfill rate'] = { col: 35, value: Math.round((rolesToBackfill / _lostFTEs) * 10000) / 10000 };
 
     // Col 39: Backfill Close Rate
     if (prevChurned > 0)
-      updates['Backfill Close Rate'] = { col: 39, value: Math.round((_backfillFTE / prevChurned) * 10000) / 10000 };
+      updates['Backfill Close Rate'] = { col: 37, value: Math.round((_backfillFTE / prevChurned) * 10000) / 10000 };
 
     // Col 44: FTE/Client Expansion Rate
     if (existingClients > 0)
-      updates['FTE/Client Expansion Rate'] = { col: 44, value: Math.round((_existingClientFTE / existingClients) * 10000) / 10000 };
+      updates['FTE/Client Expansion Rate'] = { col: 42, value: Math.round((_existingClientFTE / existingClients) * 10000) / 10000 };
 
     // Col 45: Jobs Expansion Rate
     if (prevExistingClients > 0)
-      updates['Jobs Expansion Rate'] = { col: 45, value: Math.round((existingClientJobs / prevExistingClients) * 10000) / 10000 };
+      updates['Jobs Expansion Rate'] = { col: 43, value: Math.round((existingClientJobs / prevExistingClients) * 10000) / 10000 };
 
     // Col 46: FTE Close Rate Existing Client
     if (prevExistingClientJobs > 0)
-      updates['FTE Close Rate Existing Client'] = { col: 46, value: Math.round((_existingClientFTE / prevExistingClientJobs) * 10000) / 10000 };
+      updates['FTE Close Rate Existing Client'] = { col: 44, value: Math.round((_existingClientFTE / prevExistingClientJobs) * 10000) / 10000 };
 
     // Col 49: New Client FTE Conv Rate
     if (prevMQLs > 0)
-      updates['New Client FTE Conv Rate'] = { col: 49, value: Math.round((newClientHires / prevMQLs) * 10000) / 10000 };
+      updates['New Client FTE Conv Rate'] = { col: 47, value: Math.round((newClientHires / prevMQLs) * 10000) / 10000 };
 
     // Write updates
     var written = [];
@@ -2452,19 +2452,19 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       totalFTEHires = Math.round(totalFTEHires * 100) / 100;
 
       // Col 12: Total FTE Hires (Sales)
-      updates['Total FTE Hires (Col 12)'] = { col: 12, value: totalFTEHires };
+      updates['Total FTE Hires (Col 12)'] = { col: 10, value: totalFTEHires };
       // Col 32: Total Hires FTE (Recruitment) — same value
-      updates['Total Hires FTE (Col 32)'] = { col: 32, value: totalFTEHires };
+      updates['Total Hires FTE (Col 32)'] = { col: 30, value: totalFTEHires };
       // Col 47: Total FTE Hires (Client Services) — same value
-      updates['Total FTE Hires (Col 47)'] = { col: 47, value: totalFTEHires };
+      updates['Total FTE Hires (Col 47)'] = { col: 45, value: totalFTEHires };
       // Col 38: Backfill FTE hires
-      updates['Backfill FTE hires'] = { col: 38, value: Math.round(backfillFTEHires * 100) / 100 };
+      updates['Backfill FTE hires'] = { col: 36, value: Math.round(backfillFTEHires * 100) / 100 };
       // Col 43: FTE Hires (Existing Client)
-      updates['FTE Hires (Existing Client)'] = { col: 43, value: Math.round(existingClientFTEHires * 100) / 100 };
+      updates['FTE Hires (Existing Client)'] = { col: 41, value: Math.round(existingClientFTEHires * 100) / 100 };
       // Col 42: Headcount Hires (Existing Client)
-      updates['Headcount Hires (Existing Client)'] = { col: 42, value: existingClientHC };
+      updates['Headcount Hires (Existing Client)'] = { col: 40, value: existingClientHC };
       // Col 48: New Client Hires (from job_source = "New")
-      updates['New Client Hires'] = { col: 48, value: Math.round(newClientFTEHires * 100) / 100 };
+      updates['New Client Hires'] = { col: 46, value: Math.round(newClientFTEHires * 100) / 100 };
 
       console.log('[KPI Generate] FTE Hires: ' + totalFTEHires + ' (backfill=' + backfillFTEHires + ', newClient=' + newClientFTEHires + ', existing=' + existingClientFTEHires + ')');
     } catch (hireErr) {
@@ -2513,14 +2513,14 @@ app.post('/api/kpi-history/generate', async function(req, res) {
         }
       }
       console.log('[KPI Generate] Existing clients (total_active_staff_count > 0): ' + existingClientCount);
-      updates['Number of Existing Clients'] = { col: 40, value: existingClientCount };
+      updates['Number of Existing Clients'] = { col: 38, value: existingClientCount };
     } catch (ecErr) {
       console.error('[KPI Generate] Existing clients count failed:', ecErr.message);
       errors.push('Existing clients count failed: ' + ecErr.message);
       // Fallback: preserve existing value from sheet so downstream calcs don't break
-      var existingVal = parseSheetNum(dataRows[targetRowIdx][40]);
+      var existingVal = parseSheetNum(dataRows[targetRowIdx][38]);
       if (existingVal > 0) {
-        updates['Number of Existing Clients'] = { col: 40, value: existingVal };
+        updates['Number of Existing Clients'] = { col: 38, value: existingVal };
         console.log('[KPI Generate] Using existing sheet value for Existing Clients: ' + existingVal);
       }
     }
@@ -2604,7 +2604,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       lostFTEs = Math.round(lostFTEs * 100) / 100;
 
       // Col 34: Churned Staff (FTE)
-      updates['Churned Staff (FTE)'] = { col: 34, value: lostFTEs };
+      updates['Churned Staff (FTE)'] = { col: 32, value: lostFTEs };
 
       console.log('[KPI Generate] Lost FTEs: ' + lostFTEs + ', <30 day FTE: ' + under30FTE);
     } catch (offErr) {
@@ -2633,7 +2633,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
         sorts: [{ propertyName: 'offboarding_date', direction: 'ASCENDING' }]
       });
       console.log('[KPI Generate] Roles to be backfilled: ' + backfillResults.length);
-      updates['Roles to be backfilled'] = { col: 36, value: backfillResults.length };
+      updates['Roles to be backfilled'] = { col: 34, value: backfillResults.length };
     } catch (bfErr) {
       console.error('[KPI Generate] Backfill roles fetch failed:', bfErr.message);
     }
@@ -2657,7 +2657,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       });
       var mqlCount = mqlResults.length;
       console.log('[KPI Generate] MQLs found: ' + mqlCount);
-      updates['Discovery Calls / MQLs'] = { col: 6, value: mqlCount };
+      updates['Discovery Calls / MQLs'] = { col: 4, value: mqlCount };
     } catch (mqlErr) {
       console.error('[KPI Generate] MQL fetch failed:', mqlErr.message);
     }
@@ -2679,7 +2679,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
         properties: ['staff_status', 'bw_internal_secondary_team']
       });
       console.log('[KPI Generate] BW Admin Staff (Active, excl Digital): ' + bwResults.length);
-      updates['BW Admin Staff'] = { col: 5, value: bwResults.length };
+      updates['BW Admin Staff'] = { col: 3, value: bwResults.length };
     } catch (bwErr) {
       console.error('[KPI Generate] BW Admin Staff fetch failed:', bwErr.message);
     }
@@ -2710,7 +2710,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
         properties: ['staff_status', 'bw_internal_secondary_team']
       });
       console.log('[KPI Generate] Recruitment Team HC: ' + recruitResults.length);
-      updates['Recruitment Team HC'] = { col: 23, value: recruitResults.length };
+      updates['Recruitment Team HC'] = { col: 21, value: recruitResults.length };
     } catch (recruitErr) {
       console.error('[KPI Generate] Recruitment Team HC fetch failed:', recruitErr.message);
     }
@@ -2755,7 +2755,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
         return (src === 'new client' || src === 'new_client' || src === 'new') && billing.indexOf('bruntwork') === -1;
       });
       console.log('[KPI Generate] New Client Jobs: ' + newClientJobs.length + ' (excluded BruntWork: ' + (allJobResults.length - newClientJobs.length) + ')');
-      updates['New Client Jobs Opened'] = { col: 9, value: newClientJobs.length };
+      updates['New Client Jobs Opened'] = { col: 7, value: newClientJobs.length };
 
       // Filter: job_source != "New Client" and not empty, exclude BruntWork billing (i.e. existing client jobs)
       var existingClientJobs = allJobResults.filter(function(j) {
@@ -2773,7 +2773,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
         existingSources[esrc] = (existingSources[esrc] || 0) + 1;
       }
       if (Object.keys(existingSources).length > 0) console.log('[KPI Generate] Existing client job_source values: ' + JSON.stringify(existingSources));
-      updates['Jobs Opened (Existing Clients)'] = { col: 41, value: existingClientJobs.length };
+      updates['Jobs Opened (Existing Clients)'] = { col: 39, value: existingClientJobs.length };
     } catch (jobsErr) {
       console.error('[KPI Generate] Jobs fetch failed:', jobsErr.message);
       errors.push('Jobs: ' + jobsErr.message);
@@ -2817,7 +2817,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       });
       var endorsementCount = endData1.total || 0;
       console.log('[KPI Generate] Endorsements: ' + endorsementCount);
-      updates['Endorsements'] = { col: 24, value: endorsementCount };
+      updates['Endorsements'] = { col: 22, value: endorsementCount };
     } catch (endErr) {
       console.error('[KPI Generate] Endorsements fetch failed:', endErr.message);
       errors.push('Endorsements: ' + endErr.message);
@@ -2838,107 +2838,107 @@ app.post('/api/kpi-history/generate', async function(req, res) {
 
     // Previous month values (for rates that reference prior month)
     var prevRow = targetRowIdx > 0 ? dataRows[targetRowIdx - 1] : [];
-    var prevActiveFTE = parseSheetNum(prevRow[4]) || 0;
-    var prevMQLs = parseSheetNum(prevRow[6]) || 0;
-    var prevTotalHires = parseSheetNum(prevRow[12]) || 0;
-    var prevNewClientJobs = parseSheetNum(prevRow[9]) || 0;
-    var prevExistingClients = parseSheetNum(prevRow[40]) || 0;
-    var prevExistingJobs = parseSheetNum(prevRow[41]) || 0;
-    var prevChurned = parseSheetNum(prevRow[34]) || 0;
+    var prevActiveFTE = parseSheetNum(prevRow[2]) || 0;
+    var prevMQLs = parseSheetNum(prevRow[4]) || 0;
+    var prevTotalHires = parseSheetNum(prevRow[10]) || 0;
+    var prevNewClientJobs = parseSheetNum(prevRow[7]) || 0;
+    var prevExistingClients = parseSheetNum(prevRow[38]) || 0;
+    var prevExistingJobs = parseSheetNum(prevRow[39]) || 0;
+    var prevChurned = parseSheetNum(prevRow[32]) || 0;
 
     // Col 16: Cost Per Discovery Call = Google Ads Spend / MQLs
     if (_mqlCount > 0) {
-      updates['Cost Per Discovery Call'] = { col: 16, value: Math.round((_adsSpend / _mqlCount) * 100) / 100 };
+      updates['Cost Per Discovery Call'] = { col: 14, value: Math.round((_adsSpend / _mqlCount) * 100) / 100 };
     }
 
     // Col 35: Role Churn Rate = Churned Staff (FTE) / Active Staff Assignments - start of period (FTE) for same month
-    var startOfPeriodFTE = parseSheetNum(dataRows[targetRowIdx][4]) || 0;
+    var startOfPeriodFTE = parseSheetNum(dataRows[targetRowIdx][2]) || 0;
     if (startOfPeriodFTE > 0) {
-      updates['Role Churn Rate'] = { col: 35, value: Math.round((_lostFTEs / startOfPeriodFTE) * 10000) / 10000 };
+      updates['Role Churn Rate'] = { col: 33, value: Math.round((_lostFTEs / startOfPeriodFTE) * 10000) / 10000 };
     }
 
     // Col 2: Active Staff Headcount Per Admin Staff = Active FTE / BW Admin Staff
-    var adminStaff = updates['BW Admin Staff'] ? updates['BW Admin Staff'].value : (parseSheetNum(dataRows[targetRowIdx][5]) || 0);
+    var adminStaff = updates['BW Admin Staff'] ? updates['BW Admin Staff'].value : (parseSheetNum(dataRows[targetRowIdx][3]) || 0);
     var currentActiveFTE = startOfPeriodFTE;
     if (adminStaff > 0 && currentActiveFTE > 0) {
-      updates['Active Staff Per Admin'] = { col: 2, value: Math.round((currentActiveFTE / adminStaff) * 100) / 100 };
+      updates['Active Staff Per Admin'] = { col: 1, value: Math.round((currentActiveFTE / adminStaff) * 100) / 100 };
     }
 
     // Col 8: Show Rate = Fabius Calls / MQLs (skip if no Fabius data — col 7 is manual)
-    var fabiusCalls = parseSheetNum(dataRows[targetRowIdx][7]) || 0;
+    var fabiusCalls = parseSheetNum(dataRows[targetRowIdx][5]) || 0;
     if (fabiusCalls > 0 && _mqlCount > 0) {
-      updates['Show Rate'] = { col: 8, value: Math.round((fabiusCalls / _mqlCount) * 10000) / 10000 };
+      updates['Show Rate'] = { col: 6, value: Math.round((fabiusCalls / _mqlCount) * 10000) / 10000 };
     }
 
     // Col 10: New Client Jobs vs Discovery Calls = New Client Jobs / Fabius Calls
-    var _newClientJobs = updates['New Client Jobs Opened'] ? updates['New Client Jobs Opened'].value : (parseSheetNum(dataRows[targetRowIdx][9]) || 0);
+    var _newClientJobs = updates['New Client Jobs Opened'] ? updates['New Client Jobs Opened'].value : (parseSheetNum(dataRows[targetRowIdx][7]) || 0);
     if (fabiusCalls > 0 && _newClientJobs > 0) {
-      updates['New Client Jobs vs Discovery Calls'] = { col: 10, value: Math.round((_newClientJobs / fabiusCalls) * 10000) / 10000 };
+      updates['New Client Jobs vs Discovery Calls'] = { col: 8, value: Math.round((_newClientJobs / fabiusCalls) * 10000) / 10000 };
     }
 
     // Col 13: FTE Close Rate (1 month window) = Total FTE Hires / prev month MQLs
     if (prevMQLs > 0) {
-      updates['FTE Close Rate'] = { col: 13, value: Math.round((_totalFTEHires / prevMQLs) * 10000) / 10000 };
+      updates['FTE Close Rate'] = { col: 11, value: Math.round((_totalFTEHires / prevMQLs) * 10000) / 10000 };
     }
 
     // Col 14: FTE Conv Close Rate from Job = Total FTE Hires / prev month New Client Jobs
     if (prevNewClientJobs > 0) {
-      updates['FTE Conv Close Rate from Job'] = { col: 14, value: Math.round((_totalFTEHires / prevNewClientJobs) * 10000) / 10000 };
+      updates['FTE Conv Close Rate from Job'] = { col: 12, value: Math.round((_totalFTEHires / prevNewClientJobs) * 10000) / 10000 };
     }
 
     // Col 17: Sales Conversion Rate = New Client Jobs / MQLs
     if (_mqlCount > 0 && _newClientJobs > 0) {
-      updates['Sales Conversion Rate'] = { col: 17, value: Math.round((_newClientJobs / _mqlCount) * 10000) / 10000 };
+      updates['Sales Conversion Rate'] = { col: 15, value: Math.round((_newClientJobs / _mqlCount) * 10000) / 10000 };
     }
 
     // Col 25: Endorsements Per Recruitment HC
-    var endorsements = updates['Endorsements'] ? updates['Endorsements'].value : (parseSheetNum(dataRows[targetRowIdx][24]) || 0);
-    var recruitmentHC = updates['Recruitment Team HC'] ? updates['Recruitment Team HC'].value : (parseSheetNum(dataRows[targetRowIdx][23]) || 0);
+    var endorsements = updates['Endorsements'] ? updates['Endorsements'].value : (parseSheetNum(dataRows[targetRowIdx][22]) || 0);
+    var recruitmentHC = updates['Recruitment Team HC'] ? updates['Recruitment Team HC'].value : (parseSheetNum(dataRows[targetRowIdx][21]) || 0);
     if (recruitmentHC > 0 && endorsements > 0) {
-      updates['Endorsements Per Recruitment HC'] = { col: 25, value: Math.round((endorsements / recruitmentHC) * 100) / 100 };
+      updates['Endorsements Per Recruitment HC'] = { col: 23, value: Math.round((endorsements / recruitmentHC) * 100) / 100 };
     }
 
     // Col 27: Staff churned <1 month as % of last month hires
     // Col 26 is <1 month FTE churned (formula in sheet, but we compute here)
     // For now skip 26 as it needs specific ticket-level data already computed above
     if (prevTotalHires > 0 && under30FTE > 0) {
-      updates['Staff churned <1m as % of hires'] = { col: 27, value: Math.round((under30FTE / prevTotalHires) * 10000) / 10000 };
+      updates['Staff churned <1m as % of hires'] = { col: 25, value: Math.round((under30FTE / prevTotalHires) * 10000) / 10000 };
     }
 
     // Col 33: Hires Per Sales/Recruitment HC
-    var salesHC = parseSheetNum(dataRows[targetRowIdx][22]) || 0;
+    var salesHC = parseSheetNum(dataRows[targetRowIdx][20]) || 0;
     if ((recruitmentHC + salesHC) > 0) {
-      updates['Hires Per Sales/Recruitment HC'] = { col: 33, value: Math.round((_totalFTEHires / (recruitmentHC + salesHC)) * 100) / 100 };
+      updates['Hires Per Sales/Recruitment HC'] = { col: 31, value: Math.round((_totalFTEHires / (recruitmentHC + salesHC)) * 100) / 100 };
     }
 
     // Col 37: Backfill rate = Roles to be backfilled / total offboardings
-    var rolesToBackfill = updates['Roles to be backfilled'] ? updates['Roles to be backfilled'].value : (parseSheetNum(dataRows[targetRowIdx][36]) || 0);
+    var rolesToBackfill = updates['Roles to be backfilled'] ? updates['Roles to be backfilled'].value : (parseSheetNum(dataRows[targetRowIdx][34]) || 0);
     if (_lostFTEs > 0 && rolesToBackfill > 0) {
-      updates['Backfill rate'] = { col: 37, value: Math.round((rolesToBackfill / _lostFTEs) * 10000) / 10000 };
+      updates['Backfill rate'] = { col: 35, value: Math.round((rolesToBackfill / _lostFTEs) * 10000) / 10000 };
     }
 
     // Col 39: Backfill Close Rate = Backfill FTE hires / prev month churned
     if (prevChurned > 0 && _backfillFTE > 0) {
-      updates['Backfill Close Rate'] = { col: 39, value: Math.round((_backfillFTE / prevChurned) * 10000) / 10000 };
+      updates['Backfill Close Rate'] = { col: 37, value: Math.round((_backfillFTE / prevChurned) * 10000) / 10000 };
     }
 
     // Col 44: FTE/Client Expansion Rate = Existing Client FTE / Existing Clients
     // Use freshly fetched value if available, otherwise fall back to sheet
-    var existingClients = (updates['Number of Existing Clients'] ? updates['Number of Existing Clients'].value : 0) || parseSheetNum(dataRows[targetRowIdx][40]) || 0;
+    var existingClients = (updates['Number of Existing Clients'] ? updates['Number of Existing Clients'].value : 0) || parseSheetNum(dataRows[targetRowIdx][38]) || 0;
     if (existingClients > 0 && _existingClientFTE > 0) {
-      updates['FTE/Client Expansion Rate'] = { col: 44, value: Math.round((_existingClientFTE / existingClients) * 10000) / 10000 };
+      updates['FTE/Client Expansion Rate'] = { col: 42, value: Math.round((_existingClientFTE / existingClients) * 10000) / 10000 };
     }
 
     // Col 45: Jobs Expansion Rate = Existing Client Jobs / prev month Existing Clients
-    var existingClientJobs = parseSheetNum(dataRows[targetRowIdx][41]) || 0;
+    var existingClientJobs = parseSheetNum(dataRows[targetRowIdx][39]) || 0;
     if (prevExistingClients > 0 && existingClientJobs > 0) {
-      updates['Jobs Expansion Rate'] = { col: 45, value: Math.round((existingClientJobs / prevExistingClients) * 10000) / 10000 };
+      updates['Jobs Expansion Rate'] = { col: 43, value: Math.round((existingClientJobs / prevExistingClients) * 10000) / 10000 };
     }
 
     // Col 46: FTE Close Rate Existing Client = Existing Client FTE / prev month Existing Client Jobs
-    var prevExistingClientJobs = parseSheetNum(prevRow[41]) || 0;
+    var prevExistingClientJobs = parseSheetNum(prevRow[39]) || 0;
     if (prevExistingClientJobs > 0 && _existingClientFTE > 0) {
-      updates['FTE Close Rate Existing Client'] = { col: 46, value: Math.round((_existingClientFTE / prevExistingClientJobs) * 10000) / 10000 };
+      updates['FTE Close Rate Existing Client'] = { col: 44, value: Math.round((_existingClientFTE / prevExistingClientJobs) * 10000) / 10000 };
     }
 
     // Col 48: New Client Hires — now set directly from job_source="New" in hire loop above
@@ -2946,7 +2946,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     // Col 49: New Client FTE Conv Rate = New Client Hires / prev month MQLs
     var newClientHires = updates['New Client Hires'] ? updates['New Client Hires'].value : 0;
     if (prevMQLs > 0 && newClientHires > 0) {
-      updates['New Client FTE Conv Rate'] = { col: 49, value: Math.round((newClientHires / prevMQLs) * 10000) / 10000 };
+      updates['New Client FTE Conv Rate'] = { col: 47, value: Math.round((newClientHires / prevMQLs) * 10000) / 10000 };
     }
 
     // ===== Active FTE: First recalculate CURRENT month's Col 4 from prev month, then compute next month =====
@@ -2955,9 +2955,9 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       var currentCol4;
       // Step 1: Recalculate current month's Col 4 = prev month Col 4 + prev month net FTE
       if (targetRowIdx > 0) {
-        var prevCol4 = parseSheetNum(dataRows[targetRowIdx - 1][4]) || 0;
-        var prevHires = parseSheetNum(dataRows[targetRowIdx - 1][12]) || 0;
-        var prevChurnedFTE = parseSheetNum(dataRows[targetRowIdx - 1][34]) || 0;
+        var prevCol4 = parseSheetNum(dataRows[targetRowIdx - 1][2]) || 0;
+        var prevHires = parseSheetNum(dataRows[targetRowIdx - 1][10]) || 0;
+        var prevChurnedFTE = parseSheetNum(dataRows[targetRowIdx - 1][32]) || 0;
         var prevNetFTE = prevHires - prevChurnedFTE;
         currentCol4 = Math.round((prevCol4 + prevNetFTE) * 100) / 100;
         // Write corrected value to current month's Col 4
@@ -2965,7 +2965,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
         await sheetsUpdate(KPI_SOURCE_SHEET_ID, currentCell, [[currentCol4]]);
         console.log('[KPI Generate] Recalculated current month Col 4: ' + currentCol4 + ' (prev ' + prevCol4 + ' + prevNet ' + prevNetFTE + ' [hires ' + prevHires + ' - churned ' + prevChurnedFTE + '])');
       } else {
-        currentCol4 = parseSheetNum(dataRows[targetRowIdx][4]) || 0;
+        currentCol4 = parseSheetNum(dataRows[targetRowIdx][2]) || 0;
         console.log('[KPI Generate] First month row, using existing Col 4: ' + currentCol4);
       }
 
@@ -2973,10 +2973,10 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       startOfPeriodFTE = currentCol4;
       currentActiveFTE = currentCol4;
       if (startOfPeriodFTE > 0) {
-        updates['Role Churn Rate'] = { col: 35, value: Math.round((_lostFTEs / startOfPeriodFTE) * 10000) / 10000 };
+        updates['Role Churn Rate'] = { col: 33, value: Math.round((_lostFTEs / startOfPeriodFTE) * 10000) / 10000 };
       }
       if (adminStaff > 0 && currentActiveFTE > 0) {
-        updates['Active Staff Per Admin'] = { col: 2, value: Math.round((currentActiveFTE / adminStaff) * 100) / 100 };
+        updates['Active Staff Per Admin'] = { col: 1, value: Math.round((currentActiveFTE / adminStaff) * 100) / 100 };
       }
 
       // Step 2: Compute next month's Col 4 = current month Col 4 + this month's net FTE
