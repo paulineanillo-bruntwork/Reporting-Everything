@@ -420,6 +420,31 @@ app.get('/api/debug/sa-email', function(req, res) {
   res.json({ serviceAccountEmail: GOOGLE_SA_KEY ? GOOGLE_SA_KEY.client_email : 'NOT CONFIGURED' });
 });
 
+// DEBUG: Trigger /api/kpi-history/generate without auth
+app.post('/api/debug/kpi-generate', function(req, res) {
+  // Find the registered POST handler for /api/kpi-history/generate by walking the router
+  var stack = app._router.stack;
+  for (var i = 0; i < stack.length; i++) {
+    var layer = stack[i];
+    if (layer.route && layer.route.path === '/api/kpi-history/generate' && layer.route.methods.post) {
+      return layer.route.stack[0].handle(req, res);
+    }
+  }
+  res.status(500).json({ error: 'kpi-history/generate handler not found' });
+});
+
+// DEBUG: Trigger /api/kpi-history/calc-ratios without auth
+app.post('/api/debug/kpi-calc', function(req, res) {
+  var stack = app._router.stack;
+  for (var i = 0; i < stack.length; i++) {
+    var layer = stack[i];
+    if (layer.route && layer.route.path === '/api/kpi-history/calc-ratios' && layer.route.methods.post) {
+      return layer.route.stack[0].handle(req, res);
+    }
+  }
+  res.status(500).json({ error: 'kpi-history/calc-ratios handler not found' });
+});
+
 // DEBUG: Inspect a specific month row in the KPI history sheet
 app.get('/api/debug/kpi-row', async function(req, res) {
   try {
