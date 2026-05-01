@@ -418,7 +418,7 @@ Promise.all([
     var mqls = pn(allMonths[mi][C.mqls]);
     var calls = pn(allMonths[mi][C.fabiusCalls]);
     allMonths[mi][C.costPerCall] = (spend && mqls) ? (spend / mqls).toFixed(2) : '';
-    allMonths[mi][C.showRate] = (calls && mqls) ? (calls / mqls) : '';
+    allMonths[mi][C.showRate] = (calls && mqls) ? ((calls / mqls) * 100).toFixed(1) : '';
   }
 
   document.getElementById('loading').style.display='none';
