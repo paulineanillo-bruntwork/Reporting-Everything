@@ -430,18 +430,17 @@ Promise.all([
 
 
   // === Highlight Panels ===
-  // Override FTEs Hired / Lost / Active with HubSpot-generated data when available (same source as main dashboard)
-  var rpt = (reportData && reportData.current) || {};
-  var rptPrev = (reportData && reportData.previous) || {};
-  var activeFTE = (rpt.active_outsource_fte != null && rpt.generated_at) ? pn(rpt.active_outsource_fte) : (next ? pn(next[C.activeFTE]) : cv(C.activeFTE));
-  var hiredFTE = (rpt.total_fte_hires != null && rpt.generated_at) ? pn(rpt.total_fte_hires) : cv(C.totalHires);
-  var lostFTE = (rpt.lost_ftes != null && rpt.generated_at) ? pn(rpt.lost_ftes) : cv(C.churnedFTE);
+  // Pull from KPI sheet so top cards match the trend charts below them.
+  // Active FTE: end-of-period = next month's start-of-period
+  var activeFTE = next ? pn(next[C.activeFTE]) : cv(C.activeFTE);
+  var hiredFTE = cv(C.totalHires);
+  var lostFTE = cv(C.churnedFTE);
   var netFTE = (hiredFTE!==null && lostFTE!==null) ? Math.round((hiredFTE - lostFTE)*100)/100 : null;
 
-  // Previous month: use generated report data when available
-  var prevActiveFTE = (rptPrev.active_outsource_fte != null && rptPrev.generated_at) ? pn(rptPrev.active_outsource_fte) : cv(C.activeFTE);
-  var prevHiredFTE = (rptPrev.total_fte_hires != null && rptPrev.generated_at) ? pn(rptPrev.total_fte_hires) : pv(C.totalHires);
-  var prevLostFTE = (rptPrev.lost_ftes != null && rptPrev.generated_at) ? pn(rptPrev.lost_ftes) : pv(C.churnedFTE);
+  // Previous month: same source (KPI sheet)
+  var prevActiveFTE = cv(C.activeFTE); // current month's start = previous month's end
+  var prevHiredFTE = pv(C.totalHires);
+  var prevLostFTE = pv(C.churnedFTE);
   var prevNetFTE = (prevHiredFTE!==null && prevLostFTE!==null) ? Math.round((prevHiredFTE - prevLostFTE)*100)/100 : null;
 
   var highlights = [
