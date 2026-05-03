@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<title>Quarterly KPI Report</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<style>
+:root{--bg:#f4f6fb;--surface:#fff;--border:#e2e8f0;--text:#1e293b;--text-muted:#64748b;--blue:#2563eb;--blue-dark:#1e40af;--green:#059669;--green-light:#d1fae5;--red:#dc2626;--red-light:#fee2e2;--orange:#d97706;--orange-light:#fef3c7;--purple:#7c3aed;--radius:16px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
+.header{background:#fff;color:var(--text);padding:28px 40px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border)}
+.header-left{display:flex;align-items:center;gap:16px}
+.header-logo{height:36px}
+.header h1{font-size:22px;font-weight:700;letter-spacing:-.3px;color:var(--text)}
+.header-right{display:flex;gap:12px;align-items:center}
+.header-link{font-size:12px;color:var(--text-muted);text-decoration:none;padding:4px 8px;border-radius:4px;transition:all .15s}
+.header-link:hover{color:var(--text);background:#f1f5f9}
+.quarter-nav{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.quarter-nav a{padding:6px 14px;background:#f1f5f9;color:var(--text-muted);border:1px solid var(--border);border-radius:6px;font-size:13px;text-decoration:none;cursor:pointer;transition:all .15s}
+.quarter-nav a:hover{background:#e2e8f0;color:var(--text)}
+.quarter-nav .current{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
+.main{padding:28px 40px 60px;max-width:1400px;margin:0 auto}
+.loading{text-align:center;padding:80px 20px;color:var(--text-muted)}
+.loading .spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Highlight Panels */
+.highlight-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px}
+.highlight-panel{background:var(--surface);border-radius:var(--radius);padding:24px 28px;box-shadow:var(--shadow);border:1px solid var(--border);position:relative;overflow:hidden}
+.highlight-panel .accent{position:absolute;top:0;left:0;width:4px;height:100%;border-radius:4px 0 0 4px}
+.highlight-panel .label{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:8px}
+.highlight-panel .value{font-size:32px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.1}
+.highlight-panel .meta{display:flex;gap:12px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.highlight-panel .change{font-size:12px;font-weight:600;padding:2px 8px;border-radius:4px}
+.highlight-panel .change.pos{color:var(--green);background:var(--green-light)}
+.highlight-panel .change.neg{color:var(--red);background:var(--red-light)}
+.highlight-panel .change.neutral{color:var(--text-muted);background:#f1f5f9}
+.highlight-panel .prev-val{font-size:11px;color:var(--text-muted)}
+
+/* Section */
+.section{margin-bottom:32px}
+.section-title{font-size:18px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:10px}
+.section-title .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+
+/* Sub-section blocks */
+.sub-block{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);margin-bottom:16px;overflow:hidden}
+.sub-block-header{padding:12px 16px;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);background:#f8fafc;border-bottom:1px solid var(--border)}
+
+/* KPI Table */
+.kpi-table{width:100%;border-collapse:collapse;font-size:13px}
+.kpi-table thead th{text-align:left;padding:12px 16px;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);border-bottom:2px solid var(--border);background:#f8fafc}
+.kpi-table tbody td{padding:10px 16px;border-bottom:1px solid var(--border)}
+.kpi-table tbody tr:hover{background:#f8fafc}
+.kpi-table tbody tr:last-child td{border-bottom:none}
+.kpi-table .ar{text-align:right;font-variant-numeric:tabular-nums}
+.change-pos{color:var(--green);font-weight:600}
+.change-neg{color:var(--red);font-weight:600}
+.change-zero{color:var(--text-muted)}
+
+/* Show Trend toggle */
+.trend-toggle{padding:8px 16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;font-size:12px;font-weight:600;color:var(--blue);background:#fafbfc}
+.trend-toggle:hover{background:#f1f5f9}
+.trend-toggle .arrow{transition:transform .2s;display:inline-block}
+.trend-toggle.open .arrow{transform:rotate(180deg)}
+.trend-chart{display:block;padding:16px;border-top:1px solid var(--border)}
+.trend-chart.closed{display:none}
+.trend-chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.trend-chart-item{position:relative}
+.trend-chart-item h4{font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px}
+.trend-chart-item canvas{width:100%!important;height:200px!important}
+@media(max-width:900px){.trend-chart-grid{grid-template-columns:1fr}}
+
+.side-nav{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:100;display:flex;flex-direction:column;gap:2px;padding:8px 0}
+.side-nav a{display:block;padding:8px 14px 8px 12px;font-size:11px;font-weight:600;color:var(--text-muted);text-decoration:none;border-left:3px solid transparent;transition:all .15s;white-space:nowrap;background:rgba(255,255,255,.9);backdrop-filter:blur(8px)}
+.side-nav a:hover{color:var(--text);background:#f1f5f9;border-left-color:var(--blue)}
+.side-nav a.active{color:var(--blue);border-left-color:var(--blue);background:#eff6ff}
+.side-nav .nav-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.side-nav{transition:transform .2s}
+.side-nav.collapsed{transform:translateY(-50%) translateX(-100%)}
+.side-nav .nav-hide{display:block;padding:6px 12px;border:none;border-bottom:1px solid var(--border);background:transparent;cursor:pointer;font-size:10px;font-weight:600;color:var(--text-muted);text-align:center;width:100%;white-space:nowrap}
+.side-nav .nav-hide:hover{color:var(--blue);background:#f1f5f9}
+.nav-show{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:101;width:24px;height:32px;border:1px solid var(--border);border-left:none;border-radius:0 6px 6px 0;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);cursor:pointer;display:none;align-items:center;justify-content:center;font-size:11px;color:var(--text-muted);padding:0}
+.nav-show:hover{color:var(--blue);background:#f1f5f9}
+.nav-show.visible{display:flex}
+.quarter-badge{display:inline-block;padding:3px 10px;background:#eff6ff;color:var(--blue);border-radius:6px;font-size:11px;font-weight:600;margin-left:8px;letter-spacing:.3px}
+@media(max-width:1100px){.highlight-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:900px){.chart-grid{grid-template-columns:1fr}.header,.main{padding-left:20px;padding-right:20px}.highlight-grid{grid-template-columns:1fr}}
+@media print{.header{background:#1e293b!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.nav-links,.quarter-nav{display:none!important}.main{padding:16px}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <img src="/bruntwork-logo.svg" alt="BruntWork" class="header-logo">
+    <div>
+      <h1 id="reportTitle">Quarterly KPI Report</h1>
+      <div class="quarter-nav" id="quarterNav"></div>
+    </div>
+  </div>
+  <div class="header-right">
+    <a href="/report" class="header-link">Monthly Report</a>
+    <a href="/kpi" class="header-link">KPI Tracker</a>
+    <a href="/logout" class="header-link">Log out</a>
+  </div>
+</div>
+<div class="main">
+<div id="loading" class="loading"><div class="spinner"></div><div>Loading quarterly report data...</div></div>
+<nav class="side-nav" id="sideNav">
+  <button class="nav-hide" id="navHide">Hide Menu &#9664;</button>
+  <a href="#" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;" data-section="top"><span class="nav-dot" style="background:var(--text-muted)"></span>Company KPI Summary</a>
+  <a href="#salesAcquisition" data-section="salesAcquisition"><span class="nav-dot" style="background:var(--blue)"></span>Sales &amp; New FTE Acquisition</a>
+  <a href="#clientExpansion" data-section="clientExpansion"><span class="nav-dot" style="background:var(--green)"></span>Client FTE Expansion</a>
+  <a href="#churnRetention" data-section="churnRetention"><span class="nav-dot" style="background:var(--red)"></span>Churn &amp; Backfill Retention</a>
+  <a href="#teamScalability" data-section="teamScalability"><span class="nav-dot" style="background:var(--purple)"></span>Team Scalability</a>
+</nav>
+<button class="nav-show" id="navShow" title="Show menu">&#9654;</button>
+<div id="content" style="display:none">
+
+<!-- Highlight Panels -->
+<div class="highlight-grid" id="highlightPanels"></div>
+<div class="sub-block" style="margin-bottom:28px">
+  <div class="trend-toggle open" data-target="highlightTrends" onclick="toggleTrend(this)"><span class="arrow">&#9650;</span> Hide Trend</div>
+  <div class="trend-chart" id="highlightTrends"><div class="trend-chart-grid" id="highlightCharts"></div></div>
+</div>
+
+<!-- New Client FTE Acquisition Section -->
+<div class="section" id="salesAcquisition">
+  <div class="section-title"><span class="dot" style="background:var(--blue)"></span> New Client FTE Acquisition</div>
+  <div id="acqBlocks"></div>
+</div>
+
+<!-- Client Expansion Section -->
+<div class="section" id="clientExpansion">
+  <div class="section-title"><span class="dot" style="background:var(--green)"></span> Existing Client FTE Expansion</div>
+  <div id="expBlocks"></div>
+</div>
+
+<!-- Churn & Backfill Retention Section -->
+<div class="section" id="churnRetention">
+  <div class="section-title"><span class="dot" style="background:var(--red)"></span> Churn &amp; Backfill Retention</div>
+  <div id="churnBlocks"></div>
+</div>
+
+<!-- Team Scalability Section -->
+<div class="section" id="teamScalability">
+  <div class="section-title"><span class="dot" style="background:var(--purple)"></span> Team Scalability</div>
+  <div id="scalBlocks"></div>
+</div>
+
+</div><!-- /content -->
+</div><!-- /main -->
+
+<script>
+// Register datalabels but disable globally
+if (typeof ChartDataLabels !== 'undefined') Chart.register(ChartDataLabels);
+Chart.defaults.plugins.datalabels = { display: false };
+Chart.defaults.font.family = 'Inter,-apple-system,BlinkMacSystemFont,sans-serif';
+Chart.defaults.font.size = 11;
+
+var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+var SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+// Column index map (from KPI sheet — must match report.html)
+var C = {
+  month:0, perAdmin:1, activeFTE:2, adminStaff:3,
+  mqls:4, fabiusCalls:5, showRate:6, newClientJobs:7, jobsVsCalls:8,
+  salesAgentFTE:9, totalHires:10, fteCloseRate:11, fteConvJob:12,
+  adsSpend:13, costPerCall:14, salesConvRate:15,
+  recruitHC:21, endorsements:22, endorsePerHC:23,
+  churnUnder1m:24,
+  totalHiresHC:30, hiresPerHC:31,
+  churnedFTE:32, churnRate:33, rolesToBackfill:34, backfillRate:35,
+  backfillFTE:36, backfillCloseRate:37,
+  existingClients:38, existingJobs:39,
+  existingFTE:41, fteClientExpRate:42, jobsExpRate:43,
+  existingFTECloseRate:44, totalHires47:45, newClientHires:46, newClientFTEConv:47
+};
+
+// ===== Financial Year Quarter Utilities =====
+// FY runs Jul-Jun: Q1=Jul-Sep, Q2=Oct-Dec, Q3=Jan-Mar, Q4=Apr-Jun
+function getQuarterInfo(yr, mo) {
+  // mo is 0-indexed (0=Jan)
+  if (mo >= 6 && mo <= 8) return { q: 1, fy: yr + 1 };       // Jul-Sep
+  if (mo >= 9 && mo <= 11) return { q: 2, fy: yr + 1 };      // Oct-Dec
+  if (mo >= 0 && mo <= 2) return { q: 3, fy: yr };            // Jan-Mar
+  return { q: 4, fy: yr };                                     // Apr-Jun
+}
+
+function quarterLabel(q, fy) {
+  return 'Q' + q + ' FY' + String(fy).slice(-2);
+}
+
+function quarterDateRange(q, fy) {
+  var calYear = fy;
+  if (q <= 2) calYear = fy - 1;
+  var ranges = { 1: ['Jul','Sep'], 2: ['Oct','Dec'], 3: ['Jan','Mar'], 4: ['Apr','Jun'] };
+  var r = ranges[q];
+  return r[0] + ' – ' + r[1] + ' ' + calYear;
+}
+
+// Get months (0-indexed) belonging to a quarter
+function quarterMonths(q, fy) {
+  var calYear = fy;
+  if (q <= 2) calYear = fy - 1;
+  var monthMap = { 1: [6,7,8], 2: [9,10,11], 3: [0,1,2], 4: [3,4,5] };
+  return monthMap[q].map(function(m) { return { year: calYear, month: m }; });
+}
+
+function parseMonth(label) {
+  if (!label) return null;
+  var s = label.trim();
+  var parts = s.split(/\s+/);
+  if (parts.length === 2) {
+    var mi = MONTHS.indexOf(parts[0]);
+    if (mi === -1) mi = SHORT.indexOf(parts[0]);
+    var yr = parseInt(parts[1]);
+    if (mi >= 0 && !isNaN(yr)) return { year: yr, month: mi };
+  }
+  var dp = s.split('-');
+  if (dp.length === 2) {
+    var mi2 = SHORT.indexOf(dp[0]);
+    if (mi2 === -1) mi2 = MONTHS.indexOf(dp[0]);
+    var yr2 = parseInt(dp[1]);
+    if (mi2 >= 0 && !isNaN(yr2)) {
+      if (yr2 < 100) yr2 += yr2 < 50 ? 2000 : 1900;
+      return { year: yr2, month: mi2 };
+    }
+  }
+  return null;
+}
+
+function pn(v) {
+  if (v === undefined || v === null || v === '') return null;
+  var n = parseFloat(String(v).replace(/[$,%]/g, '').replace(/,/g, ''));
+  return isNaN(n) ? null : n;
+}
+
+function fmt(n) { return n === null || n === undefined ? '—' : Number(n).toLocaleString('en-US'); }
+function fmtD(n, d) { return n === null || n === undefined ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d || 1, maximumFractionDigits: d || 1 }); }
+function fmtM(n) { return n === null || n === undefined ? '—' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
+function fmtPct(n) { return n === null || n === undefined ? '—' : (Number(n) * 100).toFixed(1) + '%'; }
+function fmtPctRaw(n) { return n === null || n === undefined ? '—' : Number(n).toFixed(1) + '%'; }
+
+function formatVal(v, format) {
+  if (v === null || v === undefined) return '—';
+  if (format === 'money') return fmtM(v);
+  if (format === 'pct') return fmtPct(v);
+  if (format === 'pctR') return fmtPctRaw(v);
+  if (format === 'pctRound') return v === null || v === undefined ? '—' : Math.round(Number(v)) + '%';
+  if (format === 'dec') return fmtD(v);
+  if (format === 'dec2') return fmtD(v, 2);
+  return fmt(v);
+}
+
+function changeHtml(cur, prev, invertColor) {
+  if (cur === null || prev === null || prev === 0) return '<td class="ar change-zero">—</td>';
+  var diff = cur - prev;
+  var pctC = (diff / Math.abs(prev)) * 100;
+  var label = (pctC >= 0 ? '+' : '') + pctC.toFixed(1) + '%';
+  var cls;
+  if (diff === 0) cls = 'change-zero';
+  else if (invertColor) cls = diff > 0 ? 'change-neg' : 'change-pos';
+  else cls = diff > 0 ? 'change-pos' : 'change-neg';
+  return '<td class="ar ' + cls + '">' + label + '</td>';
+}
+
+// ===== Determine current quarter from URL or date =====
+function getQuarterParam() {
+  var p = new URLSearchParams(window.location.search).get('q');
+  if (p && /^Q[1-4]\sFY\d{2}$/.test(p)) {
+    var qn = parseInt(p[1]);
+    var fy = 2000 + parseInt(p.slice(5));
+    return { q: qn, fy: fy };
+  }
+  // Default to current quarter based on today
+  var now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return getQuarterInfo(now.getUTCFullYear(), now.getUTCMonth());
+}
+
+var selectedQ = getQuarterParam();
+var selectedQLabel = quarterLabel(selectedQ.q, selectedQ.fy);
+
+document.getElementById('reportTitle').textContent = selectedQLabel + ' Quarterly KPI Report';
+
+// ===== Aggregate monthly rows into quarterly =====
+// SUM columns: accumulate across 3 months
+var SUM_COLS = [C.mqls, C.fabiusCalls, C.newClientJobs, C.totalHires, C.adsSpend,
+  C.endorsements, C.churnUnder1m, C.totalHiresHC, C.churnedFTE,
+  C.rolesToBackfill, C.backfillFTE, C.existingJobs, C.existingFTE,
+  C.totalHires47, C.newClientHires];
+
+// LAST-MONTH columns: take last available month's value (point-in-time)
+var LAST_COLS = [C.activeFTE, C.adminStaff, C.existingClients, C.recruitHC];
+
+// RATIO columns: recomputed from aggregated data
+// perAdmin, showRate, costPerCall, salesConvRate, fteCloseRate, fteConvJob,
+// churnRate, backfillRate, backfillCloseRate, fteClientExpRate, jobsExpRate,
+// existingFTECloseRate, newClientFTEConv, endorsePerHC, hiresPerHC, jobsVsCalls
+
+function aggregateQuarter(allMonths, q, fy) {
+  var qMonths = quarterMonths(q, fy);
+  var monthRows = [];
+  var nextMonthRow = null;
+
+  for (var i = 0; i < allMonths.length; i++) {
+    var pm = parseMonth(allMonths[i][0]);
+    if (!pm) continue;
+    for (var j = 0; j < qMonths.length; j++) {
+      if (pm.year === qMonths[j].year && pm.month === qMonths[j].month) {
+        monthRows.push(allMonths[i]);
+      }
+    }
+    // Also find the row AFTER the quarter's last month (for end-of-quarter FTE)
+    var lastQMonth = qMonths[2];
+    var nextMo = lastQMonth.month + 1;
+    var nextYr = lastQMonth.year;
+    if (nextMo > 11) { nextMo = 0; nextYr++; }
+    if (pm.year === nextYr && pm.month === nextMo) {
+      nextMonthRow = allMonths[i];
+    }
+  }
+
+  if (monthRows.length === 0) return null;
+
+  // Build aggregated row
+  var agg = [];
+  // label
+  agg[C.month] = quarterLabel(q, fy);
+
+  // SUM cols
+  for (var si = 0; si < SUM_COLS.length; si++) {
+    var col = SUM_COLS[si];
+    var sum = null;
+    for (var mi = 0; mi < monthRows.length; mi++) {
+      var v = pn(monthRows[mi][col]);
+      if (v !== null) sum = (sum || 0) + v;
+    }
+    agg[col] = sum;
+  }
+
+  // LAST-MONTH cols (use last available month in the quarter)
+  for (var li = 0; li < LAST_COLS.length; li++) {
+    var col2 = LAST_COLS[li];
+    var lastVal = null;
+    for (var mi2 = 0; mi2 < monthRows.length; mi2++) {
+      var v2 = pn(monthRows[mi2][col2]);
+      if (v2 !== null) lastVal = v2;
+    }
+    agg[col2] = lastVal;
+  }
+
+  // Recompute derived ratios from aggregated sums
+  var totalMQLs = pn(agg[C.mqls]);
+  var totalCalls = pn(agg[C.fabiusCalls]);
+  var totalSpend = pn(agg[C.adsSpend]);
+  var totalHires = pn(agg[C.totalHires]);
+  var totalNewClientJobs = pn(agg[C.newClientJobs]);
+  var totalChurned = pn(agg[C.churnedFTE]);
+  var totalBackfillRoles = pn(agg[C.rolesToBackfill]);
+  var totalBackfillFTE = pn(agg[C.backfillFTE]);
+  var totalExistingJobs = pn(agg[C.existingJobs]);
+  var totalExistingFTE = pn(agg[C.existingFTE]);
+  var totalNewClientHires = pn(agg[C.newClientHires]);
+  var existingClients = pn(agg[C.existingClients]);
+
+  // Show Rate = total calls / total MQLs * 100
+  agg[C.showRate] = (totalCalls && totalMQLs) ? ((totalCalls / totalMQLs) * 100).toFixed(1) : null;
+  // Cost Per Discovery Call
+  agg[C.costPerCall] = (totalSpend && totalMQLs) ? (totalSpend / totalMQLs).toFixed(2) : null;
+  // Sales Conversion Rate = New Client Jobs / MQLs * 100
+  agg[C.salesConvRate] = (totalNewClientJobs && totalMQLs) ? ((totalNewClientJobs / totalMQLs) * 100).toFixed(1) : null;
+  // FTE Close Rate = Total Hires / New Client Jobs * 100 (or average the monthly values)
+  agg[C.fteCloseRate] = avgCol(monthRows, C.fteCloseRate);
+  // FTE Conv from Job
+  agg[C.fteConvJob] = avgCol(monthRows, C.fteConvJob);
+  // MQL to New Client FTE Conv = New Client Hires / MQLs * 100
+  agg[C.newClientFTEConv] = (totalNewClientHires && totalMQLs) ? ((totalNewClientHires / totalMQLs) * 100).toFixed(1) : null;
+  // Jobs vs Calls
+  agg[C.jobsVsCalls] = avgCol(monthRows, C.jobsVsCalls);
+
+  // Churn Rate — average monthly churn rates
+  agg[C.churnRate] = avgCol(monthRows, C.churnRate);
+  // Backfill Rate
+  agg[C.backfillRate] = (totalBackfillRoles !== null && totalChurned) ? ((totalBackfillRoles / totalChurned) * 100).toFixed(1) : avgCol(monthRows, C.backfillRate);
+  // Backfill Close Rate
+  agg[C.backfillCloseRate] = (totalBackfillFTE !== null && totalBackfillRoles) ? ((totalBackfillFTE / totalBackfillRoles) * 100).toFixed(1) : avgCol(monthRows, C.backfillCloseRate);
+
+  // Expansion rates
+  agg[C.jobsExpRate] = (totalExistingJobs && existingClients) ? ((totalExistingJobs / existingClients) * 100).toFixed(1) : avgCol(monthRows, C.jobsExpRate);
+  agg[C.fteClientExpRate] = (totalExistingFTE && existingClients) ? ((totalExistingFTE / existingClients) * 100).toFixed(1) : avgCol(monthRows, C.fteClientExpRate);
+  agg[C.existingFTECloseRate] = avgCol(monthRows, C.existingFTECloseRate);
+
+  // Per-HC metrics
+  var recruitHC = pn(agg[C.recruitHC]);
+  agg[C.endorsePerHC] = (pn(agg[C.endorsements]) && recruitHC) ? (pn(agg[C.endorsements]) / recruitHC).toFixed(1) : null;
+  agg[C.hiresPerHC] = (pn(agg[C.totalHiresHC]) && recruitHC) ? (pn(agg[C.totalHiresHC]) / recruitHC).toFixed(1) : null;
+
+  // Per Admin ratio — use end-of-quarter active FTE / last month's admin staff
+  var endOfQFTE = nextMonthRow ? pn(nextMonthRow[C.activeFTE]) : pn(agg[C.activeFTE]);
+  var adminStaff = pn(agg[C.adminStaff]);
+  agg[C.perAdmin] = (endOfQFTE && adminStaff) ? (endOfQFTE / adminStaff).toFixed(1) : null;
+
+  // Sales agent FTE — take last month
+  agg[C.salesAgentFTE] = lastCol(monthRows, C.salesAgentFTE);
+
+  // Staff churned <1m rate
+  agg[25] = avgCol(monthRows, 25);
+
+  // Store nextMonthRow for accessing end-of-quarter Active FTE
+  agg._nextRow = nextMonthRow;
+  agg._monthCount = monthRows.length;
+
+  return agg;
+}
+
+function avgCol(rows, col) {
+  var sum = 0, count = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var v = pn(rows[i][col]);
+    if (v !== null) { sum += v; count++; }
+  }
+  return count > 0 ? (sum / count) : null;
+}
+
+function lastCol(rows, col) {
+  var last = null;
+  for (var i = 0; i < rows.length; i++) {
+    var v = pn(rows[i][col]);
+    if (v !== null) last = v;
+  }
+  return last;
+}
+
+// ===== Build all quarters from the data =====
+function buildAllQuarters(allMonths) {
+  // Find min and max months
+  var seen = {};
+  for (var i = 0; i < allMonths.length; i++) {
+    var pm = parseMonth(allMonths[i][0]);
+    if (pm) {
+      var qi = getQuarterInfo(pm.year, pm.month);
+      var key = qi.q + '|' + qi.fy;
+      if (!seen[key]) seen[key] = { q: qi.q, fy: qi.fy };
+    }
+  }
+  // Sort quarters chronologically
+  var quarters = [];
+  for (var k in seen) quarters.push(seen[k]);
+  quarters.sort(function(a, b) {
+    if (a.fy !== b.fy) return a.fy - b.fy;
+    return a.q - b.q;
+  });
+
+  var result = [];
+  for (var j = 0; j < quarters.length; j++) {
+    var agg = aggregateQuarter(allMonths, quarters[j].q, quarters[j].fy);
+    if (agg) {
+      agg._qi = quarters[j];
+      result.push(agg);
+    }
+  }
+  return result;
+}
+
+// ===== Fetch and render =====
+fetch('/api/kpi-history').then(function(r) { return r.json(); }).then(function(data) {
+  if (data.error) {
+    document.getElementById('loading').innerHTML = '<div style="color:var(--red)">' + data.error + '</div>';
+    return;
+  }
+
+  var allMonths = data.months;
+
+  // Compute client-side ratios on raw monthly data first
+  for (var mi = 0; mi < allMonths.length; mi++) {
+    var spend = pn(allMonths[mi][C.adsSpend]);
+    var mqls = pn(allMonths[mi][C.mqls]);
+    var calls = pn(allMonths[mi][C.fabiusCalls]);
+    allMonths[mi][C.costPerCall] = (spend && mqls) ? (spend / mqls).toFixed(2) : '';
+    allMonths[mi][C.showRate] = (calls && mqls) ? ((calls / mqls) * 100).toFixed(1) : '';
+  }
+
+  var allQ = buildAllQuarters(allMonths);
+
+  // Find current and previous quarter index
+  var curIdx = -1, prevIdx = -1;
+  for (var i = 0; i < allQ.length; i++) {
+    if (allQ[i]._qi.q === selectedQ.q && allQ[i]._qi.fy === selectedQ.fy) curIdx = i;
+  }
+  if (curIdx > 0) prevIdx = curIdx - 1;
+
+  // Build quarter nav
+  var navHtml = '';
+  for (var ni = 0; ni < allQ.length; ni++) {
+    var ql = quarterLabel(allQ[ni]._qi.q, allQ[ni]._qi.fy);
+    var isCurrent = (allQ[ni]._qi.q === selectedQ.q && allQ[ni]._qi.fy === selectedQ.fy);
+    navHtml += '<a href="/report?quarterly&q=' + encodeURIComponent(ql) + '"' + (isCurrent ? ' class="current"' : '') + '>' + ql + '</a>';
+  }
+  document.getElementById('quarterNav').innerHTML = navHtml;
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('content').style.display = 'block';
+
+  if (curIdx < 0) {
+    document.getElementById('content').innerHTML = '<div style="text-align:center;padding:60px;color:var(--text-muted)">No data available for ' + selectedQLabel + '</div>';
+    return;
+  }
+
+  var cur = allQ[curIdx];
+  var prev = prevIdx >= 0 ? allQ[prevIdx] : null;
+
+  // Find next quarter's aggregated data for end-of-quarter active FTE
+  var nextQ = curIdx + 1 < allQ.length ? allQ[curIdx + 1] : null;
+
+  function cv(col) { return cur ? pn(cur[col]) : null; }
+  function pv(col) { return prev ? pn(prev[col]) : null; }
+
+  // === Highlight Panels ===
+  var activeFTE = cur._nextRow ? pn(cur._nextRow[C.activeFTE]) : cv(C.activeFTE);
+  var hiredFTE = cv(C.totalHires);
+  var lostFTE = cv(C.churnedFTE);
+  var netFTE = (hiredFTE !== null && lostFTE !== null) ? Math.round((hiredFTE - lostFTE) * 100) / 100 : null;
+
+  // Previous quarter
+  var prevActiveFTE = cv(C.activeFTE); // start of quarter = end of prev quarter
+  var prevHiredFTE = pv(C.totalHires);
+  var prevLostFTE = pv(C.churnedFTE);
+  var prevNetFTE = (prevHiredFTE !== null && prevLostFTE !== null) ? Math.round((prevHiredFTE - prevLostFTE) * 100) / 100 : null;
+
+  var highlights = [
+    { label: 'Total Active FTE Headcount (Outsource)', value: activeFTE, prev: prevActiveFTE, format: 'num', color: 'var(--blue)' },
+    { label: 'FTEs Hired (Quarter)', value: hiredFTE, prev: prevHiredFTE, format: 'num', color: 'var(--green)' },
+    { label: 'Lost FTEs (Quarter)', value: lostFTE, prev: prevLostFTE, format: 'num', color: 'var(--red)', invert: true },
+    { label: 'Net FTE Gain/Loss (Quarter)', value: netFTE, prev: prevNetFTE, format: 'num', color: 'var(--purple)' }
+  ];
+
+  var hHtml = '';
+  for (var t = 0; t < highlights.length; t++) {
+    var h = highlights[t];
+    var valStr = '—';
+    if (h.value !== null) {
+      var rv = Math.round(h.value);
+      valStr = fmt(rv);
+      if (h.label.indexOf('Net') === 0 && rv > 0) valStr = '+' + valStr;
+    }
+    var changeBadge = '';
+    if (h.value !== null && h.prev !== null && h.prev !== 0) {
+      var diff = h.value - h.prev;
+      var pctC = (diff / Math.abs(h.prev)) * 100;
+      var cls = diff === 0 ? 'neutral' : (h.invert ? (diff > 0 ? 'neg' : 'pos') : (diff > 0 ? 'pos' : 'neg'));
+      changeBadge = '<span class="change ' + cls + '">' + (pctC >= 0 ? '+' : '') + pctC.toFixed(1) + '%</span>';
+    }
+    var prevStr = h.prev !== null ? '<span class="prev-val">Prev Q: ' + fmt(Math.round(h.prev)) + '</span>' : '';
+    hHtml += '<div class="highlight-panel"><div class="accent" style="background:' + h.color + '"></div><div class="label">' + h.label + '</div><div class="value">' + valStr + '</div><div class="meta">' + changeBadge + prevStr + '</div></div>';
+  }
+  document.getElementById('highlightPanels').innerHTML = hHtml;
+
+  // === Quarterly trend slices ===
+  // Show up to 8 quarters of trend data ending at the selected quarter
+  var endSlice = curIdx + 1;
+  var startSlice = Math.max(0, endSlice - 8);
+  var qSlice = allQ.slice(startSlice, endSlice);
+  var qLabels = qSlice.map(function(q) { return quarterLabel(q._qi.q, q._qi.fy); });
+
+  // FTE slice includes next quarter for end-of-quarter value
+  var endFTE = curIdx + 2;
+  var startFTE = Math.max(0, endFTE - 8);
+  var fteSl = allQ.slice(startFTE, Math.min(endFTE, allQ.length));
+  var fteLabels = fteSl.map(function(q) { return quarterLabel(q._qi.q, q._qi.fy); });
+
+  // === Highlight trend charts ===
+  var hlCharts = [
+    { label: 'Active Staff FTE - end of quarter', col: C.activeFTE, color: '#2563eb', type: 'bar', slice: qSlice, labels: qLabels,
+      compute: function(q) { return q._nextRow ? pn(q._nextRow[C.activeFTE]) : pn(q[C.activeFTE]); } },
+    { label: 'Net FTE Gain/Loss', col: null, color: '#7c3aed', type: 'bar', slice: qSlice, labels: qLabels,
+      compute: function(q) { var h = pn(q[C.totalHires]), l = pn(q[C.churnedFTE]); return (h !== null && l !== null) ? Math.round((h - l) * 100) / 100 : null; } },
+    { label: 'FTEs Hired', col: C.totalHires, color: '#059669', type: 'bar', slice: qSlice, labels: qLabels,
+      stacked: true,
+      stackCols: [
+        { label: 'New Client', col: C.newClientHires, color: '#2563eb' },
+        { label: 'Existing Client', col: C.existingFTE, color: '#059669' },
+        { label: 'Backfill', col: C.backfillFTE, color: '#d97706' }
+      ], height: 280
+    },
+    { label: 'Lost FTEs', col: C.churnedFTE, color: '#dc2626', type: 'bar', slice: qSlice, labels: qLabels, height: 150 }
+  ];
+
+  var hlHtml = '';
+  for (var hi = 0; hi < hlCharts.length; hi++) {
+    var chH = hlCharts[hi].height ? hlCharts[hi].height + 'px' : '200px';
+    hlHtml += '<div class="trend-chart-item"><h4>' + hlCharts[hi].label + '</h4><canvas id="hlchart_' + hi + '" style="height:' + chH + '!important"></canvas></div>';
+  }
+  document.getElementById('highlightCharts').innerHTML = hlHtml;
+
+  for (var hj = 0; hj < hlCharts.length; hj++) {
+    var hc = hlCharts[hj];
+    var hCtx = document.getElementById('hlchart_' + hj);
+    if (!hCtx) continue;
+
+    if (hc.stacked && hc.stackCols) {
+      var stackDatasets = [];
+      var totalData = hc.slice.map(function(q) { return pn(q[hc.col]); });
+      for (var si2 = 0; si2 < hc.stackCols.length; si2++) {
+        (function(idx) {
+          var sc = hc.stackCols[idx];
+          var sData = hc.slice.map(function(q) { return pn(q[sc.col]) || 0; });
+          stackDatasets.push({
+            type: 'bar', label: sc.label, data: sData, stack: 'stack0',
+            backgroundColor: hexAlpha(sc.color, 0.7), borderColor: sc.color, borderWidth: 1, borderRadius: 0,
+            datalabels: { display: false }
+          });
+        })(si2);
+      }
+      var otherData = hc.slice.map(function(q, i) {
+        var total = totalData[i] || 0;
+        var sum = 0;
+        for (var k = 0; k < hc.stackCols.length; k++) { sum += (pn(q[hc.stackCols[k].col]) || 0); }
+        var diff = Math.round((total - sum) * 100) / 100;
+        return diff > 0 ? diff : 0;
+      });
+      var hasOther = otherData.some(function(v) { return v > 0; });
+      if (hasOther) {
+        stackDatasets.push({
+          type: 'bar', label: 'Untagged', data: otherData, stack: 'stack0',
+          backgroundColor: 'rgba(148,163,184,0.5)', borderColor: '#94a3b8', borderWidth: 1, borderRadius: 2,
+          datalabels: { display: false }
+        });
+      }
+      var stackTotalPlugin = {
+        id: 'stackTotals_' + hj,
+        afterDraw: function(chart) {
+          var ctx2 = chart.ctx;
+          var datasets = chart.data.datasets;
+          var meta0 = chart.getDatasetMeta(0);
+          var td = totalData;
+          for (var i = 0; i < meta0.data.length; i++) {
+            var total = td[i];
+            if (!total) continue;
+            var minY = Infinity;
+            for (var d = 0; d < datasets.length; d++) {
+              var bar = chart.getDatasetMeta(d).data[i];
+              if (bar && bar.y < minY) minY = bar.y;
+            }
+            ctx2.save();
+            ctx2.font = 'bold 9px -apple-system, sans-serif';
+            ctx2.textAlign = 'center';
+            ctx2.fillStyle = '#1e293b';
+            ctx2.fillText(Number(total).toLocaleString(), meta0.data[i].x, minY - 5);
+            ctx2.restore();
+          }
+        }
+      };
+      var stackOpts = chartOpts();
+      stackOpts.plugins.legend = { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 }, padding: 12 } };
+      stackOpts.scales.x.stacked = true;
+      stackOpts.scales.y.stacked = true;
+      new Chart(hCtx.getContext('2d'), {
+        type: 'bar',
+        data: { labels: hc.labels, datasets: stackDatasets },
+        plugins: [stackTotalPlugin],
+        options: stackOpts
+      });
+    } else {
+      var hData = hc.compute ? hc.slice.map(hc.compute) : hc.slice.map(function(q) { return pn(q[hc.col]); });
+      var hds = makeDS(hc);
+      hds.data = hData;
+      hds.datalabels = { display: true, anchor: 'end', align: 'end', color: hc.color, font: { size: 9, weight: 'bold' }, formatter: function(v) { return v !== null ? Number(Math.round(v)).toLocaleString() : ''; } };
+      if (hc.label === 'Net FTE Gain/Loss') {
+        hds.backgroundColor = hData.map(function(v) { return v >= 0 ? 'rgba(5,150,105,0.65)' : 'rgba(220,38,38,0.65)'; });
+        hds.borderColor = hData.map(function(v) { return v >= 0 ? '#059669' : '#dc2626'; });
+        hds.datalabels.color = hData.map(function(v) { return v >= 0 ? '#059669' : '#dc2626'; });
+      }
+      new Chart(hCtx.getContext('2d'), {
+        type: hc.type === 'bar' ? 'bar' : 'line',
+        data: { labels: hc.labels, datasets: [hds] },
+        options: chartOpts()
+      });
+    }
+  }
+
+  // === Acquisition sub-blocks ===
+  var acqSections = [
+    { title: 'Marketing', rows: [
+      { label: 'Google Ads Spend', col: C.adsSpend, format: 'money' },
+      { label: 'Discovery Calls (MQLs) Booked', col: C.mqls, format: 'num' },
+      { label: 'Cost Per Discovery Call', col: C.costPerCall, format: 'money' },
+      { label: 'Number of Active Clients (end of quarter)', col: C.existingClients, format: 'num' }
+    ], charts: [
+      { label: 'Google Ads Spend', col: C.adsSpend, color: '#0891b2', type: 'bar', money: true },
+      { label: 'Discovery Calls (MQLs) Booked', col: C.mqls, color: '#7c3aed', type: 'bar' },
+      { label: 'Cost Per Discovery Call', col: C.costPerCall, color: '#e11d48', type: 'line', money: true },
+      { label: 'Number of Active Clients', col: C.existingClients, color: '#d97706', type: 'bar' }
+    ] },
+    { title: 'Sales', rows: [
+      { label: 'Discovery Calls Completed', col: C.fabiusCalls, format: 'num' },
+      { label: 'Show Rate (Booked Vs Completed Discovery Calls)', col: C.showRate, format: 'pctRound' },
+      { label: 'New Client Jobs Opened', col: C.newClientJobs, format: 'num' },
+      { label: 'MQL to New Client Job Opened Conversion Rate', col: C.salesConvRate, format: 'pctR' },
+      { label: 'MQL to New Client FTE Conversion Rate', col: C.newClientFTEConv, format: 'pctR' }
+    ], charts: [
+      { label: 'Discovery Calls Completed', col: C.fabiusCalls, color: '#0891b2', type: 'bar', overlay: { label: 'Show Rate', col: C.showRate, color: '#6d28d9' } },
+      { label: 'New Client Jobs Opened', col: C.newClientJobs, color: '#059669', type: 'bar' },
+      { label: 'MQL to New Client Job Conversion Rate', col: C.salesConvRate, color: '#d97706', type: 'line', pct: true },
+      { label: 'MQL to New Client FTE Conversion Rate', col: C.newClientFTEConv, color: '#7c3aed', type: 'line', pct: true }
+    ] }
+  ];
+  renderSubBlocks('acqBlocks', acqSections, cur, prev, qSlice, qLabels);
+
+  // === Expansion sub-blocks ===
+  var expSections = [
+    { title: 'Client Expansion', rows: [
+      { label: 'Jobs Opened (Existing Clients)', col: C.existingJobs, format: 'num' },
+      { label: 'Jobs Opened (Existing Clients) Vs Active Clients', col: C.jobsExpRate, format: 'pctR' },
+      { label: 'FTEs closed (Existing Clients) Vs Active Clients', col: C.fteClientExpRate, format: 'pctR' }
+    ], charts: [
+      { label: 'Jobs Opened (Existing Clients)', col: C.existingJobs, color: '#2563eb', type: 'bar' },
+      { label: 'Jobs Opened Vs Active Clients', col: C.jobsExpRate, color: '#d97706', type: 'line', pct: true },
+      { label: 'FTEs closed Vs Active Clients', col: C.fteClientExpRate, color: '#7c3aed', type: 'line', pct: true }
+    ] }
+  ];
+  renderSubBlocks('expBlocks', expSections, cur, prev, qSlice, qLabels);
+
+  // === Churn & Backfill sub-blocks ===
+  var churnSections = [
+    { title: 'Churn', rows: [
+      { label: 'Lost FTE', col: C.churnedFTE, format: 'num', invert: true },
+      { label: 'Churn Rate (avg monthly)', col: C.churnRate, format: 'pctR', invert: true }
+    ], charts: [
+      { label: 'Lost FTE', col: C.churnedFTE, color: '#dc2626', type: 'bar' },
+      { label: 'Churn Rate (avg monthly)', col: C.churnRate, color: '#e11d48', type: 'line', pct: true }
+    ] },
+    { title: 'Backfill', rows: [
+      { label: 'Offboarded Roles to be Backfilled', col: C.rolesToBackfill, format: 'num' },
+      { label: '% of offboarded roles tagged for backfill', col: C.backfillRate, format: 'pctR' },
+      { label: 'Backfill FTE Hires', col: C.backfillFTE, format: 'num' },
+      { label: 'Backfill Close Rate', col: C.backfillCloseRate, format: 'pctR' }
+    ], charts: [
+      { label: '% of offboarded roles tagged for backfill', col: C.backfillRate, color: '#d97706', type: 'line', pct: true },
+      { label: 'Backfill Close Rate', col: C.backfillCloseRate, color: '#059669', type: 'line', pct: true }
+    ] }
+  ];
+  renderSubBlocks('churnBlocks', churnSections, cur, prev, qSlice, qLabels);
+
+  // === Team Scalability sub-blocks ===
+  var scalSections = [
+    { title: 'Team Scalability', rows: [
+      { label: 'Internal Team Headcount (exc. Digital Team)', col: C.adminStaff, format: 'num' },
+      { label: 'Client FTE Vs BW Internal Headcount Ratio', col: C.perAdmin, format: 'dec2' }
+    ], charts: [
+      { label: 'Internal Team Headcount (exc. Digital Team)', col: C.adminStaff, color: '#2563eb', type: 'bar',
+        overlay: { label: 'Client FTE Vs BW Internal Headcount Ratio', col: C.perAdmin, color: '#d97706', pct: false } }
+    ] }
+  ];
+  renderSubBlocks('scalBlocks', scalSections, cur, prev, qSlice, qLabels);
+
+}).catch(function(err) {
+  document.getElementById('loading').innerHTML = '<div style="color:var(--red)">Error: ' + err.message + '</div>';
+});
+
+// === Sub-block renderer ===
+var _blockId = 0;
+var _chartId = 0;
+function renderSubBlocks(containerId, sections, cur, prev, slice, labels) {
+  var container = document.getElementById(containerId);
+  var html = '';
+  var chartQueue = [];
+  for (var s = 0; s < sections.length; s++) {
+    var sec = sections[s];
+    var bid = 'block_' + (++_blockId);
+    html += '<div class="sub-block">';
+    html += '<div class="sub-block-header">' + sec.title + '</div>';
+    html += '<table class="kpi-table"><thead><tr><th style="width:40%">Metric</th><th class="ar">' + selectedQLabel + '</th><th class="ar">Prev Quarter</th><th class="ar">Change</th></tr></thead><tbody>';
+    for (var i = 0; i < sec.rows.length; i++) {
+      var r = sec.rows[i];
+      var cv2 = cur ? pn(cur[r.col]) : null;
+      var pv2 = prev ? pn(prev[r.col]) : null;
+      html += '<tr><td>' + r.label + '</td><td class="ar" style="font-weight:600">' + formatVal(cv2, r.format) + '</td><td class="ar">' + formatVal(pv2, r.format) + '</td>' + changeHtml(cv2, pv2, r.invert) + '</tr>';
+    }
+    html += '</tbody></table>';
+    if (sec.charts && sec.charts.length > 0) {
+      html += '<div class="trend-toggle open" data-target="' + bid + '" onclick="toggleTrend(this)"><span class="arrow">&#9650;</span> Hide Trend</div>';
+      html += '<div class="trend-chart" id="' + bid + '"><div class="trend-chart-grid">';
+      for (var ci = 0; ci < sec.charts.length; ci++) {
+        var cid = 'tchart_' + (++_chartId);
+        var ch = sec.charts[ci];
+        html += '<div class="trend-chart-item"><h4>' + ch.label + '</h4><canvas id="' + cid + '"></canvas></div>';
+        chartQueue.push({ canvasId: cid, chart: ch, slice: slice, labels: labels });
+      }
+      html += '</div></div>';
+    }
+    html += '</div>';
+  }
+  container.innerHTML = html;
+
+  // Render each chart
+  for (var q2 = 0; q2 < chartQueue.length; q2++) {
+    var item = chartQueue[q2];
+    var ds = makeDS(item.chart);
+    ds.data = item.slice.map(function(q) { return pn(q[item.chart.col]); });
+    var opts = chartOpts();
+    if (item.chart.pct) {
+      ds.datalabels = { display: true, anchor: 'end', align: 'end', color: item.chart.color, font: { size: 9, weight: 'bold' }, formatter: function(v) { return v !== null ? v.toFixed(1) + '%' : ''; } };
+    } else if (item.chart.money) {
+      ds.datalabels = { display: true, anchor: 'end', align: 'end', color: item.chart.color, font: { size: 9, weight: 'bold' }, formatter: function(v) { return v !== null ? '$' + Number(Math.round(v)).toLocaleString() : ''; } };
+    } else {
+      ds.datalabels = { display: true, anchor: 'end', align: 'end', color: item.chart.color, font: { size: 9, weight: 'bold' }, formatter: function(v) { return v !== null ? Number(Math.round(v)).toLocaleString() : ''; } };
+    }
+    var datasets = [ds];
+
+    // Overlay
+    if (item.chart.overlay) {
+      var ov = item.chart.overlay;
+      var ovColor = ov.color || '#6d28d9';
+      ds.yAxisID = 'y';
+      var ds2 = makeDS({ type: 'line', label: ov.label, color: ovColor });
+      ds2.data = item.slice.map(function(q) { return pn(q[ov.col]); });
+      ds2.yAxisID = 'y1';
+      var ovFmt = ov.pct === false ? function(v) { return v !== null ? Number(v).toFixed(1) : ''; } : function(v) { return v !== null ? Math.round(v) + '%' : ''; };
+      ds2.datalabels = { display: true, anchor: 'center', align: 'bottom', offset: 6, color: ovColor, font: { size: 9, weight: 'bold' }, formatter: ovFmt, backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 3, padding: { top: 1, bottom: 1, left: 3, right: 3 } };
+      ds2.borderColor = ovColor;
+      ds2.pointBackgroundColor = ovColor;
+      ds2.pointBorderColor = ovColor;
+      ds2.backgroundColor = 'transparent';
+      datasets.push(ds2);
+      opts.scales.y = { display: false, beginAtZero: true, position: 'left' };
+      opts.scales.y1 = {
+        display: true, min: 0, position: 'right',
+        grid: { display: false },
+        ticks: { font: { size: 10 }, color: ovColor, callback: function(v) { return ov.pct === false ? v : v + '%'; } }
+      };
+      if (ov.pct === false) {
+        var ovMax = Math.max.apply(null, ds2.data.filter(function(v) { return v !== null; })) || 1;
+        opts.scales.y1.max = Math.ceil(ovMax * 1.25);
+      } else {
+        opts.scales.y1.max = 100;
+      }
+      opts.plugins.legend = { display: true, position: 'bottom', labels: { font: { size: 10 }, usePointStyle: true, padding: 12 } };
+    }
+
+    var ctx = document.getElementById(item.canvasId);
+    if (ctx) {
+      new Chart(ctx.getContext('2d'), {
+        type: item.chart.type === 'bar' ? 'bar' : 'line',
+        data: { labels: item.labels, datasets: datasets },
+        options: opts
+      });
+    }
+  }
+}
+
+function toggleTrend(el) {
+  var targetId = el.getAttribute('data-target');
+  var panel = document.getElementById(targetId);
+  el.classList.toggle('open');
+  panel.classList.toggle('closed');
+  if (el.classList.contains('open')) {
+    el.querySelector('.arrow').innerHTML = '&#9650;';
+    el.childNodes[1].textContent = ' Hide Trend';
+  } else {
+    el.querySelector('.arrow').innerHTML = '&#9660;';
+    el.childNodes[1].textContent = ' Show Trend';
+  }
+}
+
+// === Chart helpers ===
+function makeDS(s) {
+  if (s.type === 'bar') {
+    return { type: 'bar', label: s.label, data: s.data, backgroundColor: hexAlpha(s.color, 0.65), borderColor: s.color, borderWidth: 1, borderRadius: 3 };
+  }
+  return { type: 'line', label: s.label, data: s.data, borderColor: s.color, backgroundColor: hexAlpha(s.color, 0.08), borderDash: [5, 3], fill: false, tension: 0.3, borderWidth: 2.5, pointRadius: 3, pointHoverRadius: 5 };
+}
+
+function chartOpts() {
+  return {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    layout: { padding: { top: 20 } },
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+      y: { display: false, beginAtZero: true }
+    }
+  };
+}
+
+function hexAlpha(hex, alpha) {
+  var r = parseInt(hex.slice(1, 3), 16);
+  var g = parseInt(hex.slice(3, 5), 16);
+  var b = parseInt(hex.slice(5, 7), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+}
+
+// === Scroll spy for side nav ===
+(function() {
+  var sections = ['salesAcquisition', 'clientExpansion', 'churnRetention', 'teamScalability'];
+  var navLinks = document.querySelectorAll('.side-nav a');
+  function updateActive() {
+    var scrollY = window.scrollY + 120;
+    var active = 'top';
+    for (var i = 0; i < sections.length; i++) {
+      var el = document.getElementById(sections[i]);
+      if (el && el.offsetTop <= scrollY) active = sections[i];
+    }
+    for (var j = 0; j < navLinks.length; j++) {
+      var link = navLinks[j];
+      link.classList.toggle('active', link.getAttribute('data-section') === active);
+    }
+  }
+  window.addEventListener('scroll', updateActive);
+  updateActive();
+})();
+
+// === Side nav toggle ===
+(function() {
+  var sideNav = document.getElementById('sideNav');
+  var navHide = document.getElementById('navHide');
+  var navShow = document.getElementById('navShow');
+  navHide.addEventListener('click', function() {
+    sideNav.classList.add('collapsed');
+    navShow.classList.add('visible');
+  });
+  navShow.addEventListener('click', function() {
+    sideNav.classList.remove('collapsed');
+    navShow.classList.remove('visible');
+  });
+})();
+</script>
+</body>
+</html>

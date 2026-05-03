@@ -2107,6 +2107,9 @@ app.get('/reports', function(req, res) {
   res.sendFile(path.join(__dirname, 'reports.html'));
 });
 app.get('/report', function(req, res) {
+  if (req.query.quarterly !== undefined) {
+    return res.sendFile(path.join(__dirname, 'quarterly-report.html'));
+  }
   res.sendFile(path.join(__dirname, 'report.html'));
 });
 
