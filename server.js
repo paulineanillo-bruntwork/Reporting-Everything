@@ -232,6 +232,177 @@ function isInternalServiceRequest(req) {
   return typeof hdr === 'string' && hdr === INTERNAL_API_KEY;
 }
 
+// ===== Public embed routes (token-gated, no SSO) =====
+// Lets external dashboards (e.g. HubSpot iframe tiles) show the current-month
+// Running Update without going through Keycloak/Google auth (which Google blocks
+// inside cross-origin iframes via 403 / X-Frame-Options).
+// Set EMBED_TOKEN on Railway. URL: /embed/running-update?key=<EMBED_TOKEN>
+var EMBED_TOKEN = process.env.EMBED_TOKEN || '';
+
+function embedFTEWeight(t) {
+  if (t === 'Full-Time') return 1;
+  if (t === 'Part-Time-Under-20-Hours') return 0.25;
+  return 0.5;
+}
+function embedMonthKey(dateStr) {
+  var d = new Date(dateStr);
+  var gmt8 = new Date(d.getTime() + (8 * 60 * 60 * 1000));
+  return gmt8.getUTCFullYear() + '-' + String(gmt8.getUTCMonth() + 1).padStart(2, '0');
+}
+function embedFmtFTE(val) {
+  if (val % 1 === 0) return val.toFixed(0);
+  if ((val * 4) % 1 === 0 && val % 0.5 !== 0) return val.toFixed(2);
+  return val.toFixed(1);
+}
+
+async function loadTicketDataForEmbed() {
+  // Reuse the cache populated by /api/tickets when fresh
+  if (ticketCache.data && (Date.now() - ticketCache.timestamp) < CACHE_TTL) {
+    return ticketCache.data;
+  }
+  var cutoff = Date.now() - (120 * 24 * 60 * 60 * 1000);
+  var cutoffStr = String(cutoff);
+  var createdResults = await fetchAllPages({
+    filterGroups: [{ filters: [
+      { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+      { propertyName: 'createdate', operator: 'GTE', value: cutoffStr }
+    ]}],
+    properties: ['createdate', 'assignment_type', 'hs_pipeline', 'job_source', 'subject'],
+    sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }]
+  });
+  var offboardResults = await fetchAllPages({
+    filterGroups: [{ filters: [
+      { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+      { propertyName: 'offboarding_date', operator: 'GTE', value: cutoffStr }
+    ]}],
+    properties: ['offboarding_date', 'assignment_type', 'hs_pipeline', 'job_source', 'subject']
+  });
+  var raw = createdResults.map(function(r) {
+    return { d: r.properties.createdate, t: r.properties.assignment_type || 'Unknown',
+             p: r.properties.hs_pipeline, s: r.properties.job_source || '', n: r.properties.subject || '' };
+  });
+  var offboard = offboardResults.map(function(r) {
+    return { o: r.properties.offboarding_date, t: r.properties.assignment_type || 'Unknown',
+             s: r.properties.job_source || '', n: r.properties.subject || '' };
+  });
+  var data = { raw: raw, offboard: offboard, counts: { created: raw.length, offboarded: offboard.length } };
+  ticketCache.data = data;
+  ticketCache.timestamp = Date.now();
+  return data;
+}
+
+app.get('/embed/running-update', async function(req, res) {
+  // Token gate (iframes can't add custom headers, so use ?key=)
+  if (EMBED_TOKEN && req.query.key !== EMBED_TOKEN) {
+    res.status(403);
+    return res.send('<!DOCTYPE html><html><body style="font-family:-apple-system,sans-serif;padding:24px;color:#dc2626">Access denied. Invalid or missing key.</body></html>');
+  }
+  // Allow iframe embedding from HubSpot. Modern browsers honour frame-ancestors;
+  // X-Frame-Options is intentionally NOT set (would override CSP in some browsers).
+  res.setHeader('Content-Security-Policy',
+    "frame-ancestors 'self' https://*.hubspot.com https://app.hubspot.com https://*.hubspotpreview-na1.com https://*.hubspotusercontent.com");
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+
+  try {
+    var data = await loadTicketDataForEmbed();
+
+    var now = new Date();
+    var gmt8 = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+    var curMonthKey = gmt8.getUTCFullYear() + '-' + String(gmt8.getUTCMonth() + 1).padStart(2, '0');
+    var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var monthLabel = monthNames[gmt8.getUTCMonth()] + ' ' + gmt8.getUTCFullYear();
+
+    var types = ['Full-Time','Part-Time','Part-Time-Under-20-Hours','Output-Based','Project-Based','Trial'];
+    var typeLabels = {'Full-Time':'Full Time','Part-Time':'Part Time','Part-Time-Under-20-Hours':'Part Time under 20 hrs','Output-Based':'Output-Based','Project-Based':'Project-Based','Trial':'Trial'};
+    var counts = { hire: {}, churn: {} };
+    types.forEach(function(t) { counts.hire[t] = 0; counts.churn[t] = 0; });
+    counts.hire._total = 0; counts.churn._total = 0;
+    counts.hire._fte = 0; counts.churn._fte = 0;
+
+    data.raw.forEach(function(r) {
+      if (embedMonthKey(r.d) !== curMonthKey) return;
+      var t = r.t || 'Unknown';
+      if (counts.hire[t] === undefined) counts.hire[t] = 0;
+      counts.hire[t]++;
+      counts.hire._total++;
+      counts.hire._fte += embedFTEWeight(t);
+    });
+    data.offboard.forEach(function(r) {
+      if (!r.o) return;
+      if (embedMonthKey(r.o + 'T00:00:00Z') !== curMonthKey) return;
+      var t = r.t || 'Unknown';
+      if (counts.churn[t] === undefined) counts.churn[t] = 0;
+      counts.churn[t]++;
+      counts.churn._total++;
+      counts.churn._fte += embedFTEWeight(t);
+    });
+
+    var netFTE = Math.round((counts.hire._fte - counts.churn._fte) * 100) / 100;
+    var netColor = netFTE >= 0 ? '#16a34a' : '#dc2626';
+    var netPrefix = netFTE >= 0 ? '+' : '';
+
+    var rows = '';
+    types.forEach(function(t) {
+      var hCt = counts.hire[t] || 0;
+      var cCt = counts.churn[t] || 0;
+      if (hCt === 0 && cCt === 0) return;
+      rows += '<tr><td class="lbl">' + (typeLabels[t] || t) + '</td>'
+            + '<td>' + (hCt || '-') + '</td>'
+            + '<td>' + (cCt || '-') + '</td></tr>';
+    });
+
+    var h = gmt8.getUTCHours();
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    var h12 = h % 12 || 12;
+    var timeStr = monthNames[gmt8.getUTCMonth()] + ' ' + gmt8.getUTCDate() + ', ' + gmt8.getUTCFullYear() + ' ' + h12 + ':' + String(gmt8.getUTCMinutes()).padStart(2, '0') + ' ' + ampm + ' (GMT+8)';
+
+    var html = '<!DOCTYPE html><html lang="en"><head>'
+      + '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+      + '<meta http-equiv="refresh" content="300">' // auto-refresh every 5 min
+      + '<title>FTE Running Update</title>'
+      + '<style>'
+      + 'html,body{margin:0;padding:0;background:transparent;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#1e293b;-webkit-font-smoothing:antialiased}'
+      + '.card{background:#fff;border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);overflow:hidden;margin:8px}'
+      + '.card-head{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid #e2e8f0;background:#fafbfc}'
+      + '.card-head h1{font-size:16px;font-weight:700;margin:0;color:#1e293b}'
+      + '.card-head .sub{font-size:12px;color:#64748b;font-weight:500}'
+      + 'table{width:100%;border-collapse:collapse}'
+      + 'th,td{padding:10px 22px;text-align:center;font-size:14px;border-bottom:1px solid #f1f5f9}'
+      + 'th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#64748b;font-weight:600;background:#fafbfc;padding:11px 22px}'
+      + 'th:first-child,td:first-child{text-align:left;font-weight:500}'
+      + 'th.h-hire{color:#1e40af}'
+      + 'th.h-churn{color:#dc2626}'
+      + '.hc-row td{font-weight:700;font-size:15px;background:#fafbfc}'
+      + 'td.lbl{padding-left:40px;color:#64748b;font-size:13px;font-weight:500}'
+      + '.fte-row td{font-weight:700;font-size:15px;background:#dbeafe}'
+      + '.net-row td{font-weight:800;font-size:17px;background:#fef9c3;border-bottom:none}'
+      + '.foot{padding:8px 22px;font-size:11px;color:#94a3b8;text-align:right;background:#fafbfc;border-top:1px solid #f1f5f9}'
+      + '</style></head><body>'
+      + '<div class="card">'
+      + '  <div class="card-head">'
+      + '    <h1>Running Update</h1>'
+      + '    <div class="sub">Current Month &mdash; ' + monthLabel + '</div>'
+      + '  </div>'
+      + '  <table>'
+      + '    <thead><tr><th></th><th class="h-hire">New Hires</th><th class="h-churn">Churn</th></tr></thead>'
+      + '    <tbody>'
+      + '      <tr class="hc-row"><td><strong>Headcount</strong></td><td><strong>' + counts.hire._total + '</strong></td><td><strong>' + counts.churn._total + '</strong></td></tr>'
+      +        rows
+      + '      <tr class="fte-row"><td><strong>FTE Equivalent</strong></td><td><strong>' + embedFmtFTE(Math.round(counts.hire._fte * 100) / 100) + '</strong></td><td><strong>' + embedFmtFTE(Math.round(counts.churn._fte * 100) / 100) + '</strong></td></tr>'
+      + '      <tr class="net-row"><td><strong>Net FTE</strong></td><td colspan="2" style="text-align:center;color:' + netColor + '"><strong>' + netPrefix + embedFmtFTE(netFTE) + '</strong></td></tr>'
+      + '    </tbody>'
+      + '  </table>'
+      + '  <div class="foot">Data as of ' + timeStr + '</div>'
+      + '</div>'
+      + '</body></html>';
+
+    res.send(html);
+  } catch (err) {
+    console.error('[Embed] Error:', err.message);
+    res.status(500).send('<!DOCTYPE html><html><body style="font-family:-apple-system,sans-serif;padding:24px;color:#dc2626">Error loading data: ' + String(err.message || '').replace(/[<>&]/g, '') + '</body></html>');
+  }
+});
+
 app.use(async function(req, res, next) {
   if (PUBLIC_PATHS.indexOf(req.path) !== -1 || req.path.startsWith('/api/debug/')) return next();
   if (isInternalServiceRequest(req)) return next();
