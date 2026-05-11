@@ -297,10 +297,13 @@ app.get('/embed/running-update', async function(req, res) {
     res.status(403);
     return res.send('<!DOCTYPE html><html><body style="font-family:-apple-system,sans-serif;padding:24px;color:#dc2626">Access denied. Invalid or missing key.</body></html>');
   }
-  // Allow iframe embedding from HubSpot. Modern browsers honour frame-ancestors;
-  // X-Frame-Options is intentionally NOT set (would override CSP in some browsers).
-  res.setHeader('Content-Security-Policy',
-    "frame-ancestors 'self' https://*.hubspot.com https://app.hubspot.com https://*.hubspotpreview-na1.com https://*.hubspotusercontent.com");
+  // Allow iframe embedding from any origin. Security is via the EMBED_TOKEN in the
+  // URL query, not the embedding origin — so we don't need to restrict frame-ancestors.
+  // (HubSpot's dashboard tiles iframe from a domain that's hard to pin down precisely,
+  // so the safest approach for this token-gated public endpoint is to allow all.)
+  res.setHeader('Content-Security-Policy', "frame-ancestors *");
+  // Explicitly remove X-Frame-Options in case anything upstream set it
+  res.removeHeader('X-Frame-Options');
   res.setHeader('Cache-Control', 'no-cache, must-revalidate');
 
   try {
