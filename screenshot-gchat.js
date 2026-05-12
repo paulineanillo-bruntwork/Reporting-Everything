@@ -126,7 +126,9 @@ function buildMonthSummary(raw, offboard, monthKey) {
   raw.forEach(function(r) {
     var k = getMonthKey(r.properties.createdate);
     if (k !== monthKey) return;
-    var type = r.properties.assignment_type || 'Unknown';
+    // Skip tickets with no contract type — typically not real staff tickets
+    if (!r.properties.assignment_type) return;
+    var type = r.properties.assignment_type;
     if (counts.hire[type] === undefined) counts.hire[type] = 0;
     counts.hire[type]++;
     counts.hire._total++;
@@ -138,7 +140,9 @@ function buildMonthSummary(raw, offboard, monthKey) {
     if (!oDate) return;
     var k = getMonthKey(oDate + 'T00:00:00Z');
     if (k !== monthKey) return;
-    var type = r.properties.assignment_type || 'Unknown';
+    // Skip tickets with no contract type
+    if (!r.properties.assignment_type) return;
+    var type = r.properties.assignment_type;
     if (counts.churn[type] === undefined) counts.churn[type] = 0;
     counts.churn[type]++;
     counts.churn._total++;

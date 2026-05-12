@@ -255,11 +255,13 @@ function embedFmtFTE(val) {
   return val.toFixed(1);
 }
 
-async function loadTicketDataForEmbed() {
+async function loadTicketData() {
   // Reuse the cache populated by /api/tickets when fresh
   if (ticketCache.data && (Date.now() - ticketCache.timestamp) < CACHE_TTL) {
+    console.log('[Cache] Returning cached ticket data (' + Math.round((Date.now() - ticketCache.timestamp) / 1000) + 's old)');
     return ticketCache.data;
   }
+  console.log('[HubSpot] Fetching fresh ticket data...');
   var cutoff = Date.now() - (120 * 24 * 60 * 60 * 1000);
   var cutoffStr = String(cutoff);
   var createdResults = await fetchAllPages({
@@ -277,17 +279,53 @@ async function loadTicketDataForEmbed() {
     ]}],
     properties: ['offboarding_date', 'assignment_type', 'hs_pipeline', 'job_source', 'subject']
   });
-  var raw = createdResults.map(function(r) {
-    return { d: r.properties.createdate, t: r.properties.assignment_type || 'Unknown',
-             p: r.properties.hs_pipeline, s: r.properties.job_source || '', n: r.properties.subject || '' };
-  });
-  var offboard = offboardResults.map(function(r) {
-    return { o: r.properties.offboarding_date, t: r.properties.assignment_type || 'Unknown',
-             s: r.properties.job_source || '', n: r.properties.subject || '' };
-  });
-  var data = { raw: raw, offboard: offboard, counts: { created: raw.length, offboarded: offboard.length } };
+
+  // Drop tickets with no assignment_type — these are typically not real staff tickets
+  // (e.g., orphaned/test tickets). Including them inflated the headcount and added
+  // 0.5 FTE per unknown via the getFTEWeight() fallback.
+  var createdRawCount = createdResults.length;
+  var offboardRawCount = offboardResults.length;
+  var raw = createdResults
+    .filter(function(r) { return !!r.properties.assignment_type; })
+    .map(function(r) {
+      return {
+        d: r.properties.createdate,
+        t: r.properties.assignment_type,
+        p: r.properties.hs_pipeline,
+        s: r.properties.job_source || '',
+        n: r.properties.subject || ''
+      };
+    });
+  var offboard = offboardResults
+    .filter(function(r) { return !!r.properties.assignment_type; })
+    .map(function(r) {
+      return {
+        o: r.properties.offboarding_date,
+        t: r.properties.assignment_type,
+        s: r.properties.job_source || '',
+        n: r.properties.subject || ''
+      };
+    });
+  console.log('[HubSpot] Filtered out ' + (createdRawCount - raw.length) + ' created and '
+    + (offboardRawCount - offboard.length) + ' offboarded tickets with no contract type');
+
+  var now = new Date();
+  var pht = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+  var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var h = pht.getUTCHours();
+  var ampm = h >= 12 ? 'PM' : 'AM';
+  var h12 = h % 12 || 12;
+  var timestamp = months[pht.getUTCMonth()] + ' ' + pht.getUTCDate() + ', ' + pht.getUTCFullYear() + ' ' + h12 + ':' + String(pht.getUTCMinutes()).padStart(2, '0') + ' ' + ampm + ' (GMT+8)';
+
+  var data = {
+    raw: raw,
+    offboard: offboard,
+    timestamp: timestamp,
+    counts: { created: raw.length, offboarded: offboard.length }
+  };
   ticketCache.data = data;
   ticketCache.timestamp = Date.now();
+  console.log('[Cache] Ticket data cached (' + raw.length + ' created, ' + offboard.length + ' offboarded)');
   return data;
 }
 
@@ -307,7 +345,7 @@ app.get('/embed/running-update', async function(req, res) {
   res.setHeader('Cache-Control', 'no-cache, must-revalidate');
 
   try {
-    var data = await loadTicketDataForEmbed();
+    var data = await loadTicketData();
 
     var now = new Date();
     var gmt8 = new Date(now.getTime() + (8 * 60 * 60 * 1000));
@@ -965,77 +1003,8 @@ var CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 app.get('/api/tickets', async function(req, res) {
   try {
-    // Return cached data if fresh
-    if (ticketCache.data && (Date.now() - ticketCache.timestamp) < CACHE_TTL) {
-      console.log('[Cache] Returning cached ticket data (' + Math.round((Date.now() - ticketCache.timestamp) / 1000) + 's old)');
-      return res.json(ticketCache.data);
-    }
-
-    console.log('[HubSpot] Fetching fresh ticket data...');
-    var cutoff = Date.now() - (120 * 24 * 60 * 60 * 1000);
-    var cutoffStr = String(cutoff);
-
-    var createdResults = await fetchAllPages({
-      filterGroups: [{
-        filters: [
-          { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-          { propertyName: 'createdate', operator: 'GTE', value: cutoffStr }
-        ]
-      }],
-      properties: ['createdate', 'assignment_type', 'hs_pipeline', 'job_source', 'subject'],
-      sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }]
-    });
-
-    var offboardResults = await fetchAllPages({
-      filterGroups: [{
-        filters: [
-          { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
-          { propertyName: 'offboarding_date', operator: 'GTE', value: cutoffStr }
-        ]
-      }],
-      properties: ['offboarding_date', 'assignment_type', 'hs_pipeline', 'job_source', 'subject']
-    });
-
-    var raw = createdResults.map(function(r) {
-      return {
-        d: r.properties.createdate,
-        t: r.properties.assignment_type || 'Unknown',
-        p: r.properties.hs_pipeline,
-        s: r.properties.job_source || '',
-        n: r.properties.subject || ''
-      };
-    });
-
-    var offboard = offboardResults.map(function(r) {
-      return {
-        o: r.properties.offboarding_date,
-        t: r.properties.assignment_type || 'Unknown',
-        s: r.properties.job_source || '',
-        n: r.properties.subject || ''
-      };
-    });
-
-    var now = new Date();
-    var pht = new Date(now.getTime() + (8 * 60 * 60 * 1000));
-    var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    var h = pht.getUTCHours();
-    var ampm = h >= 12 ? 'PM' : 'AM';
-    var h12 = h % 12 || 12;
-    var timestamp = months[pht.getUTCMonth()] + ' ' + pht.getUTCDate() + ', ' + pht.getUTCFullYear() + ' ' + h12 + ':' + String(pht.getUTCMinutes()).padStart(2, '0') + ' ' + ampm + ' (GMT+8)';
-
-    var responseData = {
-      raw: raw,
-      offboard: offboard,
-      timestamp: timestamp,
-      counts: { created: raw.length, offboarded: offboard.length }
-    };
-
-    // Cache the response
-    ticketCache.data = responseData;
-    ticketCache.timestamp = Date.now();
-    console.log('[Cache] Ticket data cached (' + raw.length + ' created, ' + offboard.length + ' offboarded)');
-
-    res.json(responseData);
+    var data = await loadTicketData();
+    res.json(data);
   } catch (err) {
     console.error('API Error:', err.message);
     res.status(500).json({ error: err.message });
