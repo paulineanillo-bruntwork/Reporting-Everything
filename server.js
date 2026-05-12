@@ -238,6 +238,7 @@ function isInternalServiceRequest(req) {
 // inside cross-origin iframes via 403 / X-Frame-Options).
 // Set EMBED_TOKEN on Railway. URL: /embed/running-update?key=<EMBED_TOKEN>
 var EMBED_TOKEN = process.env.EMBED_TOKEN || '';
+var EMBED_DASHBOARD_URL = process.env.DASHBOARD_URL || 'https://fte-dashboard-production.up.railway.app';
 
 function embedFTEWeight(t) {
   if (t === 'Full-Time') return 1;
@@ -417,7 +418,10 @@ app.get('/embed/running-update', async function(req, res) {
       + 'td.lbl{padding-left:40px;color:#64748b;font-size:13px;font-weight:500}'
       + '.fte-row td{font-weight:700;font-size:15px;background:#dbeafe}'
       + '.net-row td{font-weight:800;font-size:17px;background:#fef9c3;border-bottom:none}'
-      + '.foot{padding:8px 22px;font-size:11px;color:#94a3b8;text-align:right;background:#fafbfc;border-top:1px solid #f1f5f9}'
+      + '.foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 22px;font-size:11px;color:#94a3b8;background:#fafbfc;border-top:1px solid #f1f5f9}'
+      + '.foot a{color:#2563eb;text-decoration:none;font-weight:600;font-size:12px}'
+      + '.foot a:hover{text-decoration:underline}'
+      + '.foot .ts{color:#94a3b8}'
       + '</style></head><body>'
       + '<div class="card">'
       + '  <div class="card-head">'
@@ -433,7 +437,10 @@ app.get('/embed/running-update', async function(req, res) {
       + '      <tr class="net-row"><td><strong>Net FTE</strong></td><td colspan="2" style="text-align:center;color:' + netColor + '"><strong>' + netPrefix + embedFmtFTE(netFTE) + '</strong></td></tr>'
       + '    </tbody>'
       + '  </table>'
-      + '  <div class="foot">Data as of ' + timeStr + '</div>'
+      + '  <div class="foot">'
+      + '    <a href="' + EMBED_DASHBOARD_URL + '" target="_blank" rel="noopener">Open full dashboard &rarr;</a>'
+      + '    <span class="ts">Data as of ' + timeStr + '</span>'
+      + '  </div>'
       + '</div>'
       + '</body></html>';
 
