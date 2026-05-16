@@ -2566,7 +2566,7 @@ app.post('/api/kpi-history/calc-ratios', async function(req, res) {
     }
 
     console.log('[KPI Calc Ratios] ' + month + ': wrote ' + written.length + ' ratios');
-    kpiCache = null;
+    kpiHistoryCache = { data: null, ts: 0 };
     res.json({ success: true, updated: written });
   } catch (e) {
     console.error('[KPI Calc Ratios] Error:', e);
