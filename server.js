@@ -2483,6 +2483,7 @@ app.post('/api/kpi-history/calc-ratios', async function(req, res) {
     var prevNewClientJobs = parseSheetNum(prevRow[7]) || 0;
     var prevExistingClients = parseSheetNum(prevRow[38]) || 0;
     var prevChurned = parseSheetNum(prevRow[32]) || 0;
+    var prevRolesToBackfill = parseSheetNum(prevRow[34]) || 0;
     var prevExistingClientJobs = parseSheetNum(prevRow[39]) || 0;
 
     // Col 1: Active Staff Per Admin = NEXT month's start-of-period FTE (i.e. THIS month's end) / THIS month's BW Admin Staff
@@ -2535,9 +2536,9 @@ app.post('/api/kpi-history/calc-ratios', async function(req, res) {
     if (_lostFTEs > 0)
       updates['Backfill rate'] = { col: 35, value: Math.round((rolesToBackfill / _lostFTEs) * 10000) / 10000 };
 
-    // Col 39: Backfill Close Rate
-    if (prevChurned > 0)
-      updates['Backfill Close Rate'] = { col: 37, value: Math.round((_backfillFTE / prevChurned) * 10000) / 10000 };
+    // Col 39: Backfill Close Rate = Backfill FTE hires / prev month Roles to be Backfilled
+    if (prevRolesToBackfill > 0)
+      updates['Backfill Close Rate'] = { col: 37, value: Math.round((_backfillFTE / prevRolesToBackfill) * 10000) / 10000 };
 
     // Col 44: FTE/Client Expansion Rate
     if (existingClients > 0)
@@ -3101,6 +3102,7 @@ app.post('/api/kpi-history/generate', async function(req, res) {
     var prevExistingClients = parseSheetNum(prevRow[38]) || 0;
     var prevExistingJobs = parseSheetNum(prevRow[39]) || 0;
     var prevChurned = parseSheetNum(prevRow[32]) || 0;
+    var prevRolesToBackfill = parseSheetNum(prevRow[34]) || 0;
 
     // Col 16: Cost Per Discovery Call = Google Ads Spend / MQLs
     if (_mqlCount > 0) {
@@ -3174,9 +3176,9 @@ app.post('/api/kpi-history/generate', async function(req, res) {
       updates['Backfill rate'] = { col: 35, value: Math.round((rolesToBackfill / _lostFTEs) * 10000) / 10000 };
     }
 
-    // Col 39: Backfill Close Rate = Backfill FTE hires / prev month churned
-    if (prevChurned > 0 && _backfillFTE > 0) {
-      updates['Backfill Close Rate'] = { col: 37, value: Math.round((_backfillFTE / prevChurned) * 10000) / 10000 };
+    // Col 39: Backfill Close Rate = Backfill FTE hires / prev month Roles to be Backfilled
+    if (prevRolesToBackfill > 0 && _backfillFTE > 0) {
+      updates['Backfill Close Rate'] = { col: 37, value: Math.round((_backfillFTE / prevRolesToBackfill) * 10000) / 10000 };
     }
 
     // Col 44: FTE/Client Expansion Rate = Existing Client FTE / Existing Clients
