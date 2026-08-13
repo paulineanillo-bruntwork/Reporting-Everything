@@ -3310,7 +3310,7 @@ var IC_STAGE_LABELS = {
 // Employee pipeline: BruntWork client only
 var BW_EMPLOYEE_PIPELINE = '20565603';
 var IC_EMPLOYEE_STAGE_ACTIVE = '49707899';
-var IC_EXCLUDED_NAMES = ['Pamela Larranaga', 'Michelle Kacarovski', 'Renier Linde', 'Shirley Marlando', 'Eric Jed Lolos'];
+var IC_EXCLUDED_NAMES = ['Pamela Larranaga', 'Michelle Kacarovski', 'Eric Jed Lolos'];
 
 // ===== Candidate Interviews =====
 var APPLICATIONS_OBJECT = '2-38227027';
