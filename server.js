@@ -4637,32 +4637,37 @@ app.get('/weekly-report', function(req, res) {
   res.sendFile(path.join(__dirname, 'weekly-report.html'));
 });
 
-// Read all stored weeks
+// Read all stored weeks (shared by API + email)
+async function readWeeklyWeeks() {
+  var now = Date.now();
+  if (weeklyCache.data && (now - weeklyCache.ts) < WEEKLY_CACHE_TTL) {
+    return weeklyCache.data;
+  }
+  await ensureWeeklyTab();
+  var data = await sheetsGet(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A:K', { valueRenderOption: 'UNFORMATTED_VALUE' });
+  var rows = (data.values || []).slice(1);
+  var weeks = rows.filter(function(r) { return r[0]; }).map(function(r) {
+    return {
+      week_start: String(r[0]), week_end: String(r[1] || ''),
+      ads_spend: r[2] === '' || r[2] === undefined ? null : parseFloat(r[2]),
+      leads: r[3] === '' || r[3] === undefined ? null : parseFloat(r[3]),
+      new_client_fte: parseFloat(r[4]) || 0,
+      existing_client_fte: parseFloat(r[5]) || 0,
+      backfill_fte: parseFloat(r[6]) || 0,
+      total_fte_hires: parseFloat(r[7]) || 0,
+      offboarded_fte: parseFloat(r[8]) || 0,
+      offboarded_hc: parseFloat(r[9]) || 0,
+      generated_at: String(r[10] || '')
+    };
+  }).sort(function(a, b) { return a.week_start.localeCompare(b.week_start); });
+  weeklyCache = { data: weeks, ts: now };
+  return weeks;
+}
+
 app.get('/api/weekly-report', async function(req, res) {
   try {
-    var now = Date.now();
-    if (weeklyCache.data && (now - weeklyCache.ts) < WEEKLY_CACHE_TTL) {
-      return res.json({ weeks: weeklyCache.data, cached: true });
-    }
-    await ensureWeeklyTab();
-    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A:K', { valueRenderOption: 'UNFORMATTED_VALUE' });
-    var rows = (data.values || []).slice(1);
-    var weeks = rows.filter(function(r) { return r[0]; }).map(function(r) {
-      return {
-        week_start: String(r[0]), week_end: String(r[1] || ''),
-        ads_spend: r[2] === '' || r[2] === undefined ? null : parseFloat(r[2]),
-        leads: r[3] === '' || r[3] === undefined ? null : parseFloat(r[3]),
-        new_client_fte: parseFloat(r[4]) || 0,
-        existing_client_fte: parseFloat(r[5]) || 0,
-        backfill_fte: parseFloat(r[6]) || 0,
-        total_fte_hires: parseFloat(r[7]) || 0,
-        offboarded_fte: parseFloat(r[8]) || 0,
-        offboarded_hc: parseFloat(r[9]) || 0,
-        generated_at: String(r[10] || '')
-      };
-    }).sort(function(a, b) { return a.week_start.localeCompare(b.week_start); });
-    weeklyCache = { data: weeks, ts: now };
-    res.json({ weeks: weeks, cached: false });
+    var weeks = await readWeeklyWeeks();
+    res.json({ weeks: weeks });
   } catch (e) {
     console.error('[Weekly Report] Read error:', e.message);
     res.status(500).json({ error: e.message });
@@ -4692,6 +4697,173 @@ app.post('/api/debug/weekly-generate', async function(req, res) {
   }
 });
 
+// ===== Weekly Report Email =====
+// Recipients live in a 'Weekly Report Recipients' tab (column A) of the KPI
+// spreadsheet. SMTP config comes from env: SMTP_HOST, SMTP_PORT, SMTP_USER,
+// SMTP_PASS, SMTP_FROM (falls back to SMTP_USER).
+var WEEKLY_EMAILS_TAB = 'Weekly Report Recipients';
+var weeklyEmailTabReady = false;
+
+async function ensureWeeklyEmailTab() {
+  if (weeklyEmailTabReady) return;
+  var token = await getGoogleAccessToken();
+  var metaResp = await fetch(
+    'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(KPI_SOURCE_SHEET_ID) + '?fields=sheets.properties',
+    { headers: { 'Authorization': 'Bearer ' + token } }
+  );
+  var meta = await metaResp.json();
+  var existing = (meta.sheets || []).map(function(s) { return s.properties.title; });
+  if (existing.indexOf(WEEKLY_EMAILS_TAB) === -1) {
+    await fetch(
+      'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(KPI_SOURCE_SHEET_ID) + ':batchUpdate',
+      { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: WEEKLY_EMAILS_TAB } } }] }) }
+    );
+    await sheetsUpdate(KPI_SOURCE_SHEET_ID, WEEKLY_EMAILS_TAB + '!A1', [['email']]);
+    console.log('[Weekly Email] Created recipients tab');
+  }
+  weeklyEmailTabReady = true;
+}
+
+async function getWeeklyRecipients() {
+  await ensureWeeklyEmailTab();
+  var data = await sheetsGet(KPI_SOURCE_SHEET_ID, WEEKLY_EMAILS_TAB + '!A:A');
+  var rows = (data.values || []).slice(1);
+  return rows.map(function(r) { return (r[0] || '').trim(); })
+    .filter(function(e) { return e && e.indexOf('@') > 0; });
+}
+
+function wkEmailFmtRange(w) {
+  var M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var s = w.week_start.split('-'), e = w.week_end.split('-');
+  return M[parseInt(s[1])-1] + ' ' + parseInt(s[2]) + ' – ' + M[parseInt(e[1])-1] + ' ' + parseInt(e[2]) + ', ' + e[0];
+}
+function wkFmtN(n) { return (n === null || n === undefined) ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
+function wkFmtM(n) { return (n === null || n === undefined) ? '—' : '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
+function wkChange(cur, prev, invert) {
+  if (cur === null || prev === null || cur === undefined || prev === undefined || prev === 0) return '';
+  var pct = ((cur - prev) / Math.abs(prev)) * 100;
+  var good = invert ? pct < 0 : pct > 0;
+  var color = pct === 0 ? '#64748b' : (good ? '#059669' : '#dc2626');
+  return '<span style="color:' + color + ';font-weight:600">' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</span>';
+}
+
+function buildWeeklyEmailHtml(weeks) {
+  var latest = weeks[weeks.length - 1];
+  var prev = weeks.length > 1 ? weeks[weeks.length - 2] : null;
+  var cpl = (latest.ads_spend && latest.leads) ? latest.ads_spend / latest.leads : null;
+  var prevCpl = (prev && prev.ads_spend && prev.leads) ? prev.ads_spend / prev.leads : null;
+  var net = Math.round((latest.total_fte_hires - latest.offboarded_fte) * 100) / 100;
+  var prevNet = prev ? Math.round((prev.total_fte_hires - prev.offboarded_fte) * 100) / 100 : null;
+
+  var td = 'padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:14px;color:#1e293b';
+  var tdr = td + ';text-align:right';
+  var th = 'padding:8px 12px;border-bottom:2px solid #cbd5e1;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#64748b;text-align:right;background:#f8fafc';
+  var thl = th + ';text-align:left';
+
+  function row(label, cur, prv, fmt, invert) {
+    return '<tr><td style="' + td + '">' + label + '</td>'
+      + '<td style="' + tdr + ';font-weight:700">' + fmt(cur) + '</td>'
+      + '<td style="' + tdr + '">' + fmt(prv) + '</td>'
+      + '<td style="' + tdr + '">' + wkChange(cur, prv, invert) + '</td></tr>';
+  }
+
+  var html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:720px;margin:0 auto;color:#1e293b">';
+  html += '<h2 style="font-size:20px;margin:0 0 4px">Weekly KPI Report</h2>';
+  html += '<p style="font-size:14px;color:#64748b;margin:0 0 20px">Week of ' + wkEmailFmtRange(latest) + '</p>';
+
+  html += '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;margin-bottom:28px">';
+  html += '<tr><th style="' + thl + '">Metric</th><th style="' + th + '">This Week</th><th style="' + th + '">Last Week</th><th style="' + th + '">Change</th></tr>';
+  html += row('Google Ads Spend', latest.ads_spend, prev ? prev.ads_spend : null, wkFmtM, true);
+  html += row('Leads', latest.leads, prev ? prev.leads : null, wkFmtN);
+  html += row('Cost Per Lead', cpl, prevCpl, wkFmtM, true);
+  html += row('FTE Hires — New Clients', latest.new_client_fte, prev ? prev.new_client_fte : null, wkFmtN);
+  html += row('FTE Hires — Existing Clients', latest.existing_client_fte, prev ? prev.existing_client_fte : null, wkFmtN);
+  html += row('FTE Hires — Backfill', latest.backfill_fte, prev ? prev.backfill_fte : null, wkFmtN);
+  html += row('Total FTE Hires', latest.total_fte_hires, prev ? prev.total_fte_hires : null, wkFmtN);
+  html += row('Offboardings (FTE)', latest.offboarded_fte, prev ? prev.offboarded_fte : null, wkFmtN, true);
+  html += row('Net FTE Gain/Loss', net, prevNet, wkFmtN);
+  html += '</table>';
+
+  var hist = weeks.slice(-8).reverse();
+  html += '<h3 style="font-size:15px;margin:0 0 10px">Last ' + hist.length + ' Weeks</h3>';
+  html += '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;margin-bottom:24px">';
+  html += '<tr><th style="' + thl + '">Week</th><th style="' + th + '">Ads Spend</th><th style="' + th + '">Leads</th><th style="' + th + '">Cost/Lead</th><th style="' + th + '">New</th><th style="' + th + '">Existing</th><th style="' + th + '">Backfill</th><th style="' + th + '">Total Hires</th><th style="' + th + '">Offboarded</th><th style="' + th + '">Net</th></tr>';
+  for (var i = 0; i < hist.length; i++) {
+    var w = hist[i];
+    var wCpl = (w.ads_spend && w.leads) ? w.ads_spend / w.leads : null;
+    var wNet = Math.round((w.total_fte_hires - w.offboarded_fte) * 100) / 100;
+    html += '<tr><td style="' + td + ';white-space:nowrap;font-weight:600">' + wkEmailFmtRange(w) + '</td>'
+      + '<td style="' + tdr + '">' + wkFmtM(w.ads_spend) + '</td>'
+      + '<td style="' + tdr + '">' + wkFmtN(w.leads) + '</td>'
+      + '<td style="' + tdr + '">' + wkFmtM(wCpl) + '</td>'
+      + '<td style="' + tdr + '">' + wkFmtN(w.new_client_fte) + '</td>'
+      + '<td style="' + tdr + '">' + wkFmtN(w.existing_client_fte) + '</td>'
+      + '<td style="' + tdr + '">' + wkFmtN(w.backfill_fte) + '</td>'
+      + '<td style="' + tdr + '">' + wkFmtN(w.total_fte_hires) + '</td>'
+      + '<td style="' + tdr + '">' + wkFmtN(w.offboarded_fte) + '</td>'
+      + '<td style="' + tdr + ';font-weight:600;color:' + (wNet >= 0 ? '#059669' : '#dc2626') + '">' + (wNet > 0 ? '+' : '') + wkFmtN(wNet) + '</td></tr>';
+  }
+  html += '</table>';
+  html += '<p style="font-size:12px;color:#64748b">Full interactive report: <a href="' + (process.env.APP_URL || 'https://fte-dashboard-production.up.railway.app') + '/weekly-report" style="color:#2563eb">' + (process.env.APP_URL || 'https://fte-dashboard-production.up.railway.app') + '/weekly-report</a></p>';
+  html += '</div>';
+  return html;
+}
+
+async function sendWeeklyEmail(overrideTo) {
+  var SMTP_HOST = process.env.SMTP_HOST;
+  var SMTP_USER = process.env.SMTP_USER;
+  var SMTP_PASS = process.env.SMTP_PASS;
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+    throw new Error('SMTP not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS (and optionally SMTP_FROM) env vars on Railway.');
+  }
+  var recipients = overrideTo ? [overrideTo] : await getWeeklyRecipients();
+  if (recipients.length === 0) {
+    console.log('[Weekly Email] No recipients in "' + WEEKLY_EMAILS_TAB + '" tab, skipping');
+    return { sent: false, reason: 'no recipients' };
+  }
+  var weeks = await readWeeklyWeeks();
+  if (weeks.length === 0) throw new Error('No weekly data to send');
+  var latest = weeks[weeks.length - 1];
+  var html = buildWeeklyEmailHtml(weeks);
+
+  var nodemailer = require('nodemailer');
+  var transport = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: (process.env.SMTP_PORT || '587') === '465',
+    auth: { user: SMTP_USER, pass: SMTP_PASS }
+  });
+  var info = await transport.sendMail({
+    from: process.env.SMTP_FROM || SMTP_USER,
+    to: recipients.join(', '),
+    subject: 'Weekly KPI Report — ' + wkEmailFmtRange(latest),
+    html: html
+  });
+  console.log('[Weekly Email] Sent to ' + recipients.length + ' recipient(s): ' + info.messageId);
+  return { sent: true, recipients: recipients, messageId: info.messageId };
+}
+
+// Send the weekly email (auth-protected)
+app.post('/api/weekly-report/email', async function(req, res) {
+  try {
+    var result = await sendWeeklyEmail(req.body && req.body.to);
+    res.json(result);
+  } catch (e) {
+    console.error('[Weekly Email] Error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Debug (no-auth) trigger — optional {"to":"someone@x.com"} overrides recipients for testing
+app.post('/api/debug/weekly-email', async function(req, res) {
+  try {
+    var result = await sendWeeklyEmail(req.body && req.body.to);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Scheduler: fire every Monday at 09:00 Sydney time (DST-safe via Intl timezone)
 var lastWeeklyRunKey = '';
 setInterval(async function() {
@@ -4705,6 +4877,11 @@ setInterval(async function() {
       lastWeeklyRunKey = key;
       console.log('[Weekly Report] Scheduled Monday 9AM Sydney run');
       await runWeeklyGenerate(lastCompletedWeekStart());
+      try {
+        await sendWeeklyEmail();
+      } catch (mailErr) {
+        console.error('[Weekly Email] Scheduled send failed:', mailErr.message);
+      }
     }
   } catch (e) {
     console.error('[Weekly Report] Scheduler error:', e.message);
