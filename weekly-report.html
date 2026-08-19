@@ -213,42 +213,21 @@ function render(weeks) {
     options:baseOpts()
   }));
 
-  var stackedOpts = baseOpts();
-  stackedOpts.plugins.legend = {display:true, position:'bottom', labels:{boxWidth:10,font:{size:10},padding:12}};
-  stackedOpts.scales.x.stacked = true;
-  stackedOpts.scales.y.stacked = true;
-  var totals = slice.map(function(w){ return Math.round(w.total_fte_hires*100)/100; });
-  var stackTotalPlugin = {
-    id:'wkStackTotals',
-    afterDraw:function(chart){
-      var ctx = chart.ctx, meta0 = chart.getDatasetMeta(0);
-      for (var i=0;i<meta0.data.length;i++) {
-        if (!totals[i]) continue;
-        var minY = Infinity;
-        for (var d=0;d<chart.data.datasets.length;d++) {
-          var bar = chart.getDatasetMeta(d).data[i];
-          if (bar && bar.y < minY) minY = bar.y;
-        }
-        ctx.save(); ctx.font='bold 9px -apple-system,sans-serif'; ctx.textAlign='center'; ctx.fillStyle='#1e293b';
-        ctx.fillText(Number(totals[i]).toLocaleString(), meta0.data[i].x, minY-5); ctx.restore();
-      }
-    }
-  };
-  function untagged(w) {
-    var u = w.total_fte_hires - w.new_client_fte - w.existing_client_fte - w.backfill_fte;
-    u = Math.round(u*100)/100;
-    return u > 0 ? u : 0;
+  var hiresOpts = baseOpts();
+  hiresOpts.layout.padding.top = 28;
+  hiresOpts.plugins.legend = {display:true, position:'bottom', labels:{boxWidth:10,font:{size:10},padding:12}};
+  function hiresDL(color) {
+    return { display:true, anchor:'end', align:'end', color:color, font:{size:8,weight:'bold'}, rotation:-90, offset:2,
+      formatter:function(v){return v!==null&&v>0?Number(Math.round(v)).toLocaleString():'';} };
   }
   _charts.push(new Chart(document.getElementById('chartHires').getContext('2d'), {
     type:'bar',
     data:{labels:labels, datasets:[
-      {type:'bar', label:'New Client', stack:'s', data:slice.map(function(w){return w.new_client_fte;}), backgroundColor:hexAlpha('#2563eb',0.7), borderColor:'#2563eb', borderWidth:1},
-      {type:'bar', label:'Existing Client', stack:'s', data:slice.map(function(w){return w.existing_client_fte;}), backgroundColor:hexAlpha('#059669',0.7), borderColor:'#059669', borderWidth:1},
-      {type:'bar', label:'Backfill', stack:'s', data:slice.map(function(w){return w.backfill_fte;}), backgroundColor:hexAlpha('#d97706',0.7), borderColor:'#d97706', borderWidth:1},
-      {type:'bar', label:'Untagged', stack:'s', data:slice.map(untagged), backgroundColor:'rgba(148,163,184,0.5)', borderColor:'#94a3b8', borderWidth:1}
+      {type:'bar', label:'New Client', data:slice.map(function(w){return w.new_client_fte;}), backgroundColor:hexAlpha('#2563eb',0.7), borderColor:'#2563eb', borderWidth:1, borderRadius:2, datalabels:hiresDL('#2563eb')},
+      {type:'bar', label:'Existing Client', data:slice.map(function(w){return w.existing_client_fte;}), backgroundColor:hexAlpha('#059669',0.7), borderColor:'#059669', borderWidth:1, borderRadius:2, datalabels:hiresDL('#059669')},
+      {type:'bar', label:'Backfill', data:slice.map(function(w){return w.backfill_fte;}), backgroundColor:hexAlpha('#d97706',0.7), borderColor:'#d97706', borderWidth:1, borderRadius:2, datalabels:hiresDL('#d97706')}
     ]},
-    plugins:[stackTotalPlugin],
-    options:stackedOpts
+    options:hiresOpts
   }));
 
   _charts.push(new Chart(document.getElementById('chartOff').getContext('2d'), {
