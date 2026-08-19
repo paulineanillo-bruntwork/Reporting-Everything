@@ -83,12 +83,12 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
     <div class="chart-block"><h3>Weekly Leads</h3><canvas id="chartLeads"></canvas></div>
   </div>
   <div class="chart-grid">
+    <div class="chart-block"><h3>Cost Per Lead</h3><canvas id="chartCpl"></canvas></div>
     <div class="chart-block"><h3>FTE Hires by Type</h3><canvas id="chartHires"></canvas></div>
-    <div class="chart-block"><h3>Offboardings (FTE)</h3><canvas id="chartOff"></canvas></div>
   </div>
   <div class="chart-grid">
+    <div class="chart-block"><h3>Offboardings (FTE)</h3><canvas id="chartOff"></canvas></div>
     <div class="chart-block"><h3>Net FTE (Hires − Offboardings)</h3><canvas id="chartNet"></canvas></div>
-    <div class="chart-block"><h3>Cost Per Lead</h3><canvas id="chartCpl"></canvas></div>
   </div>
   <div class="tbl-block">
     <h3>Weekly History</h3>
@@ -219,10 +219,9 @@ function render(weeks) {
   }));
 
   var hiresOpts = baseOpts();
-  hiresOpts.layout.padding.top = 28;
   hiresOpts.plugins.legend = {display:true, position:'bottom', labels:{boxWidth:10,font:{size:10},padding:12}};
   function hiresDL(color) {
-    return { display:true, anchor:'end', align:'end', color:color, font:{size:8,weight:'bold'}, rotation:-90, offset:2,
+    return { display:true, anchor:'end', align:'end', color:color, font:{size:8,weight:'bold'},
       formatter:function(v){return v!==null&&v>0?Number(Math.round(v)).toLocaleString():'';} };
   }
   _charts.push(new Chart(document.getElementById('chartHires').getContext('2d'), {
