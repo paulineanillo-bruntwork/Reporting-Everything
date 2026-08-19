@@ -4767,9 +4767,11 @@ function buildWeeklyEmailHtml(weeks) {
       + '<td style="' + tdr + '">' + wkChange(cur, prv, invert) + '</td></tr>';
   }
 
+  var appUrl = process.env.APP_URL || 'https://fte-dashboard-production.up.railway.app';
   var html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:720px;margin:0 auto;color:#1e293b">';
   html += '<h2 style="font-size:20px;margin:0 0 4px">Weekly KPI Report</h2>';
-  html += '<p style="font-size:14px;color:#64748b;margin:0 0 20px">Week of ' + wkEmailFmtRange(latest) + '</p>';
+  html += '<p style="font-size:14px;color:#64748b;margin:0 0 16px">Week of ' + wkEmailFmtRange(latest) + '</p>';
+  html += '<p style="margin:0 0 24px"><a href="' + appUrl + '/weekly-report" style="display:inline-block;background:#2563eb;color:#ffffff;font-size:14px;font-weight:bold;text-decoration:none;padding:12px 24px;border-radius:6px">View Full Interactive Report &rarr;</a></p>';
 
   html += '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;margin-bottom:28px">';
   html += '<tr><th style="' + thl + '">Metric</th><th style="' + th + '">This Week</th><th style="' + th + '">Last Week</th><th style="' + th + '">Change</th></tr>';
@@ -4804,7 +4806,6 @@ function buildWeeklyEmailHtml(weeks) {
       + '<td style="' + tdr + ';font-weight:600;color:' + (wNet >= 0 ? '#059669' : '#dc2626') + '">' + (wNet > 0 ? '+' : '') + wkFmtN(wNet) + '</td></tr>';
   }
   html += '</table>';
-  html += '<p style="font-size:12px;color:#64748b">Full interactive report: <a href="' + (process.env.APP_URL || 'https://fte-dashboard-production.up.railway.app') + '/weekly-report" style="color:#2563eb">' + (process.env.APP_URL || 'https://fte-dashboard-production.up.railway.app') + '/weekly-report</a></p>';
   html += '</div>';
   return html;
 }
