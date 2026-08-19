@@ -4452,6 +4452,255 @@ initOIDC().then(function() {
   process.exit(1);
 });
 
+// ===== Weekly Report =====
+// Snapshots key metrics for each Mon-Sun week into a 'Weekly Report' tab of the
+// KPI source spreadsheet. Auto-generated every Monday 9:00 AM Sydney time.
+var WEEKLY_TAB = 'Weekly Report';
+var WEEKLY_HEADERS = ['week_start', 'week_end', 'ads_spend', 'new_client_fte', 'existing_client_fte', 'backfill_fte', 'total_fte_hires', 'offboarded_fte', 'offboarded_hc', 'generated_at'];
+var weeklyTabReady = false;
+var weeklyCache = { data: null, ts: 0 };
+var WEEKLY_CACHE_TTL = 5 * 60 * 1000;
+
+async function ensureWeeklyTab() {
+  if (weeklyTabReady) return;
+  var token = await getGoogleAccessToken();
+  var metaResp = await fetch(
+    'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(KPI_SOURCE_SHEET_ID) + '?fields=sheets.properties',
+    { headers: { 'Authorization': 'Bearer ' + token } }
+  );
+  var meta = await metaResp.json();
+  var existing = (meta.sheets || []).map(function(s) { return s.properties.title; });
+  if (existing.indexOf(WEEKLY_TAB) === -1) {
+    await fetch(
+      'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(KPI_SOURCE_SHEET_ID) + ':batchUpdate',
+      { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: WEEKLY_TAB } } }] }) }
+    );
+    console.log('[Weekly Report] Created tab');
+  }
+  var h = await sheetsGet(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A1:J1');
+  if (!h.values || !h.values[0] || h.values[0][0] !== WEEKLY_HEADERS[0]) {
+    await sheetsUpdate(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A1:J1', [WEEKLY_HEADERS]);
+  }
+  weeklyTabReady = true;
+}
+
+// Current date in Sydney as { y, m, d } (m is 1-based)
+function sydneyDateParts() {
+  var fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' });
+  var s = fmt.format(new Date()); // YYYY-MM-DD
+  var p = s.split('-');
+  return { y: parseInt(p[0]), m: parseInt(p[1]), d: parseInt(p[2]) };
+}
+
+// Monday of the last fully completed Mon-Sun week (Sydney calendar), as YYYY-MM-DD
+function lastCompletedWeekStart() {
+  var p = sydneyDateParts();
+  var todayUtc = Date.UTC(p.y, p.m - 1, p.d);
+  var dow = new Date(todayUtc).getUTCDay(); // 0=Sun..6=Sat
+  var daysSinceMonday = (dow + 6) % 7; // Mon=0
+  var thisMonday = todayUtc - daysSinceMonday * 86400000;
+  return new Date(thisMonday - 7 * 86400000).toISOString().slice(0, 10);
+}
+
+async function runWeeklyGenerate(weekStart) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart || '')) throw new Error('weekStart must be YYYY-MM-DD');
+  var wsDate = new Date(weekStart + 'T00:00:00Z');
+  if (wsDate.getUTCDay() !== 1) throw new Error('weekStart must be a Monday');
+  var weekEnd = new Date(wsDate.getTime() + 6 * 86400000).toISOString().slice(0, 10);
+  var startMs = String(wsDate.getTime());
+  var endMs = String(new Date(weekEnd + 'T23:59:59Z').getTime());
+  console.log('[Weekly Report] Generating for week ' + weekStart + ' to ' + weekEnd);
+
+  // --- Google Ads spend for the week ---
+  var adsSpend = null;
+  try {
+    var adsCsv = await fetchAdsCsv(ADS_CSV_URL);
+    var adsResult = processAdsData(parseAdsCsv(adsCsv));
+    var wkDays = adsResult.timeseries.filter(function(d) { return d.day >= weekStart && d.day <= weekEnd; });
+    adsSpend = 0;
+    for (var ai = 0; ai < wkDays.length; ai++) adsSpend += wkDays[ai].cost;
+    adsSpend = Math.round(adsSpend * 100) / 100;
+  } catch (e) {
+    console.error('[Weekly Report] Ads fetch failed:', e.message);
+  }
+
+  // --- FTE hires (createdate in week), categorized by job_source ---
+  var newClientFTE = 0, existingClientFTE = 0, backfillFTE = 0, totalFTE = 0;
+  var hireResults = await fetchAllPagesWithRetry({
+    filterGroups: [{
+      filters: [
+        { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+        { propertyName: 'createdate', operator: 'GTE', value: startMs },
+        { propertyName: 'createdate', operator: 'LTE', value: endMs }
+      ]
+    }],
+    properties: ['createdate', 'assignment_type', 'job_source', 'subject'],
+    sorts: [{ propertyName: 'createdate', direction: 'ASCENDING' }]
+  });
+  hireResults = hireResults.filter(function(t) {
+    return ((t.properties.subject || '').toLowerCase().indexOf('bruntwork') === -1);
+  });
+  for (var hi = 0; hi < hireResults.length; hi++) {
+    var hp = hireResults[hi].properties;
+    var w = fteWeight(hp.assignment_type || 'Unknown');
+    totalFTE += w;
+    var src = (hp.job_source || '').toLowerCase().trim();
+    if (src === 'backfill' || src === 'back up') backfillFTE += w;
+    else if (src === 'new') newClientFTE += w;
+    else if (src === 'existing') existingClientFTE += w;
+  }
+
+  await sleep(1000);
+
+  // --- Offboardings (offboarding_date in week) ---
+  var offboardedFTE = 0, offboardedHC = 0;
+  var offResults = await fetchAllPagesWithRetry({
+    filterGroups: [{
+      filters: [
+        { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
+        { propertyName: 'offboarding_date', operator: 'GTE', value: startMs },
+        { propertyName: 'offboarding_date', operator: 'LTE', value: endMs }
+      ]
+    }],
+    properties: ['offboarding_date', 'assignment_type'],
+    sorts: [{ propertyName: 'offboarding_date', direction: 'ASCENDING' }]
+  });
+  for (var oi = 0; oi < offResults.length; oi++) {
+    offboardedFTE += fteWeight(offResults[oi].properties.assignment_type || 'Unknown');
+    offboardedHC++;
+  }
+
+  var row = [
+    weekStart,
+    weekEnd,
+    adsSpend === null ? '' : adsSpend,
+    Math.round(newClientFTE * 100) / 100,
+    Math.round(existingClientFTE * 100) / 100,
+    Math.round(backfillFTE * 100) / 100,
+    Math.round(totalFTE * 100) / 100,
+    Math.round(offboardedFTE * 100) / 100,
+    offboardedHC,
+    new Date().toISOString()
+  ];
+
+  // Upsert by week_start
+  await ensureWeeklyTab();
+  var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A:A');
+  var rows = existing.values || [];
+  var rowIdx = -1;
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][0] === weekStart) { rowIdx = i + 1; break; } // 1-indexed sheet row
+  }
+  if (rowIdx > 0) {
+    await sheetsUpdate(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A' + rowIdx + ':J' + rowIdx, [row]);
+  } else {
+    await sheetsAppend(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A:J', [row]);
+  }
+  weeklyCache = { data: null, ts: 0 };
+  console.log('[Weekly Report] Saved week ' + weekStart + ': ads=$' + row[2] + ', new=' + row[3] + ', existing=' + row[4] + ', backfill=' + row[5] + ', total=' + row[6] + ', offboardedFTE=' + row[7]);
+  return {
+    week_start: weekStart, week_end: weekEnd, ads_spend: row[2],
+    new_client_fte: row[3], existing_client_fte: row[4], backfill_fte: row[5],
+    total_fte_hires: row[6], offboarded_fte: row[7], offboarded_hc: row[8]
+  };
+}
+
+// Serve the weekly report page
+app.get('/weekly-report', function(req, res) {
+  res.sendFile(path.join(__dirname, 'weekly-report.html'));
+});
+
+// Read all stored weeks
+app.get('/api/weekly-report', async function(req, res) {
+  try {
+    var now = Date.now();
+    if (weeklyCache.data && (now - weeklyCache.ts) < WEEKLY_CACHE_TTL) {
+      return res.json({ weeks: weeklyCache.data, cached: true });
+    }
+    await ensureWeeklyTab();
+    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A:J', { valueRenderOption: 'UNFORMATTED_VALUE' });
+    var rows = (data.values || []).slice(1);
+    var weeks = rows.filter(function(r) { return r[0]; }).map(function(r) {
+      return {
+        week_start: String(r[0]), week_end: String(r[1] || ''),
+        ads_spend: r[2] === '' || r[2] === undefined ? null : parseFloat(r[2]),
+        new_client_fte: parseFloat(r[3]) || 0,
+        existing_client_fte: parseFloat(r[4]) || 0,
+        backfill_fte: parseFloat(r[5]) || 0,
+        total_fte_hires: parseFloat(r[6]) || 0,
+        offboarded_fte: parseFloat(r[7]) || 0,
+        offboarded_hc: parseFloat(r[8]) || 0,
+        generated_at: String(r[9] || '')
+      };
+    }).sort(function(a, b) { return a.week_start.localeCompare(b.week_start); });
+    weeklyCache = { data: weeks, ts: now };
+    res.json({ weeks: weeks, cached: false });
+  } catch (e) {
+    console.error('[Weekly Report] Read error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Generate/regenerate a week (defaults to last completed week)
+app.post('/api/weekly-report/generate', async function(req, res) {
+  try {
+    var weekStart = (req.body && req.body.weekStart) || lastCompletedWeekStart();
+    var result = await runWeeklyGenerate(weekStart);
+    res.json({ success: true, week: result });
+  } catch (e) {
+    console.error('[Weekly Report] Generate error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Debug (no-auth) trigger, same behavior
+app.post('/api/debug/weekly-generate', async function(req, res) {
+  try {
+    var weekStart = (req.body && req.body.weekStart) || lastCompletedWeekStart();
+    var result = await runWeeklyGenerate(weekStart);
+    res.json({ success: true, week: result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Scheduler: fire every Monday at 09:00 Sydney time (DST-safe via Intl timezone)
+var lastWeeklyRunKey = '';
+setInterval(async function() {
+  try {
+    var fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'Australia/Sydney', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+    var parts = {};
+    fmt.formatToParts(new Date()).forEach(function(p) { parts[p.type] = p.value; });
+    if (parts.weekday === 'Mon' && parts.hour === '09' && parts.minute === '00') {
+      var key = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+      if (lastWeeklyRunKey === key) return;
+      lastWeeklyRunKey = key;
+      console.log('[Weekly Report] Scheduled Monday 9AM Sydney run');
+      await runWeeklyGenerate(lastCompletedWeekStart());
+    }
+  } catch (e) {
+    console.error('[Weekly Report] Scheduler error:', e.message);
+  }
+}, 30 * 1000);
+
+// Catch-up on boot: if the last completed week has no row yet (e.g. server was
+// deploying/restarting on Monday 9AM), generate it ~45s after startup.
+setTimeout(async function() {
+  try {
+    var target = lastCompletedWeekStart();
+    await ensureWeeklyTab();
+    var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A:A');
+    var rows = existing.values || [];
+    for (var i = 1; i < rows.length; i++) {
+      if (rows[i][0] === target) return; // already generated
+    }
+    console.log('[Weekly Report] Catch-up: generating missing week ' + target);
+    await runWeeklyGenerate(target);
+  } catch (e) {
+    console.error('[Weekly Report] Catch-up error:', e.message);
+  }
+}, 45 * 1000);
+
 // ===== Google Ads Spend API =====
 var ADS_SHEET_ID = '13vyeLZXZnw4jPjlVS6Q2z2299ZT_76D1ne0jVknh2kc';
 var ADS_SHEET_GID = '243603327';
