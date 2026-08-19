@@ -4843,6 +4843,58 @@ async function sendWeeklyEmail(overrideTo) {
   return { sent: true, recipients: recipients, messageId: info.messageId };
 }
 
+// --- Self-serve subscription management (uses the logged-in user's email) ---
+app.get('/api/weekly-report/subscription', async function(req, res) {
+  try {
+    var email = (req.session.user && req.session.user.email || '').toLowerCase().trim();
+    var recipients = await getWeeklyRecipients();
+    var subscribed = recipients.some(function(r) { return r.toLowerCase() === email; });
+    res.json({ email: email, subscribed: subscribed, recipients: recipients });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/weekly-report/subscribe', async function(req, res) {
+  try {
+    var email = (req.session.user && req.session.user.email || '').toLowerCase().trim();
+    if (!email) return res.status(400).json({ error: 'No session email' });
+    var recipients = await getWeeklyRecipients();
+    if (recipients.some(function(r) { return r.toLowerCase() === email; })) {
+      return res.json({ subscribed: true, already: true });
+    }
+    await sheetsAppend(KPI_SOURCE_SHEET_ID, WEEKLY_EMAILS_TAB + '!A:A', [[email]]);
+    console.log('[Weekly Email] Subscribed: ' + email);
+    res.json({ subscribed: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/weekly-report/unsubscribe', async function(req, res) {
+  try {
+    var email = (req.session.user && req.session.user.email || '').toLowerCase().trim();
+    if (!email) return res.status(400).json({ error: 'No session email' });
+    await ensureWeeklyEmailTab();
+    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, WEEKLY_EMAILS_TAB + '!A:A');
+    var rows = (data.values || []);
+    var originalCount = rows.length; // includes header
+    var remaining = rows.slice(1)
+      .map(function(r) { return (r[0] || '').trim(); })
+      .filter(function(e) { return e && e.toLowerCase() !== email; });
+    // Rewrite the column, padding with blanks to erase removed rows
+    var values = remaining.map(function(e) { return [e]; });
+    while (values.length < originalCount - 1) values.push(['']);
+    if (values.length > 0) {
+      await sheetsUpdate(KPI_SOURCE_SHEET_ID, WEEKLY_EMAILS_TAB + '!A2:A' + (values.length + 1), values);
+    }
+    console.log('[Weekly Email] Unsubscribed: ' + email);
+    res.json({ subscribed: false });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Send the weekly email (auth-protected)
 app.post('/api/weekly-report/email', async function(req, res) {
   try {

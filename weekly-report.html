@@ -52,6 +52,15 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .wk-table tbody tr:hover{background:#f8fafc}
 .wk-table tbody tr:last-child td{border-bottom:none}
 .gen-status{font-size:12px;color:var(--text-muted);margin-left:8px}
+.sub-box{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);padding:16px 20px;margin-bottom:24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.sub-box .sub-icon{font-size:22px}
+.sub-box .sub-text{flex:1;min-width:220px}
+.sub-box .sub-title{font-size:13px;font-weight:700}
+.sub-box .sub-desc{font-size:12px;color:var(--text-muted)}
+.btn-sub{padding:7px 18px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:var(--green);color:#fff}
+.btn-sub.unsub{background:#f1f5f9;color:var(--text-muted);border:1px solid var(--border)}
+.btn-sub:disabled{opacity:.5;cursor:default}
+.sub-count{font-size:11px;color:var(--text-muted)}
 @media(max-width:1100px){.card-grid{grid-template-columns:repeat(2,1fr)}.chart-grid{grid-template-columns:1fr}}
 @media(max-width:700px){.header,.main{padding-left:20px;padding-right:20px}.card-grid{grid-template-columns:1fr}}
 </style>
@@ -76,6 +85,15 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 <div class="main">
 <div id="loading" class="loading"><div class="spinner"></div><div>Loading weekly data...</div></div>
 <div id="content" style="display:none">
+  <div class="sub-box" id="subBox" style="display:none">
+    <span class="sub-icon">&#128231;</span>
+    <div class="sub-text">
+      <div class="sub-title">Weekly Email Subscription</div>
+      <div class="sub-desc" id="subDesc">This report is emailed every Monday 9:00 AM Sydney time.</div>
+    </div>
+    <span class="sub-count" id="subCount"></span>
+    <button class="btn-sub" id="subBtn" onclick="toggleSubscription()">Subscribe</button>
+  </div>
   <div class="week-label" id="weekLabel"></div>
   <div class="card-grid" id="cards"></div>
   <div class="chart-grid">
@@ -316,6 +334,46 @@ function generateWeek() {
 }
 
 load();
+
+// === Email subscription ===
+var _subscribed = false;
+function loadSubscription() {
+  fetch('/api/weekly-report/subscription').then(function(r){return r.json();}).then(function(d){
+    if (d.error) return;
+    _subscribed = !!d.subscribed;
+    var box = document.getElementById('subBox');
+    box.style.display = 'flex';
+    var btn = document.getElementById('subBtn');
+    var desc = document.getElementById('subDesc');
+    if (_subscribed) {
+      btn.textContent = 'Unsubscribe';
+      btn.classList.add('unsub');
+      desc.innerHTML = 'You (<b>' + d.email + '</b>) are subscribed. Emailed every Monday 9:00 AM Sydney time.';
+    } else {
+      btn.textContent = 'Subscribe';
+      btn.classList.remove('unsub');
+      desc.innerHTML = 'Get this report emailed to <b>' + d.email + '</b> every Monday 9:00 AM Sydney time.';
+    }
+    var n = (d.recipients || []).length;
+    document.getElementById('subCount').textContent = n + ' subscriber' + (n === 1 ? '' : 's');
+  }).catch(function(){});
+}
+function toggleSubscription() {
+  var btn = document.getElementById('subBtn');
+  btn.disabled = true;
+  fetch('/api/weekly-report/' + (_subscribed ? 'unsubscribe' : 'subscribe'), {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(function(r){
+      if (r.status===401) { window.location.href='/auth/login'; throw new Error('unauth'); }
+      return r.json();
+    })
+    .then(function(d){
+      btn.disabled = false;
+      if (d.error) { alert('Error: ' + d.error); return; }
+      loadSubscription();
+    })
+    .catch(function(e){ btn.disabled = false; });
+}
+loadSubscription();
 </script>
 </body>
 </html>
