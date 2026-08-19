@@ -4456,7 +4456,7 @@ initOIDC().then(function() {
 // Snapshots key metrics for each Mon-Sun week into a 'Weekly Report' tab of the
 // KPI source spreadsheet. Auto-generated every Monday 9:00 AM Sydney time.
 var WEEKLY_TAB = 'Weekly Report';
-var WEEKLY_HEADERS = ['week_start', 'week_end', 'ads_spend', 'new_client_fte', 'existing_client_fte', 'backfill_fte', 'total_fte_hires', 'offboarded_fte', 'offboarded_hc', 'generated_at'];
+var WEEKLY_HEADERS = ['week_start', 'week_end', 'ads_spend', 'leads', 'new_client_fte', 'existing_client_fte', 'backfill_fte', 'total_fte_hires', 'offboarded_fte', 'offboarded_hc', 'generated_at'];
 var weeklyTabReady = false;
 var weeklyCache = { data: null, ts: 0 };
 var WEEKLY_CACHE_TTL = 5 * 60 * 1000;
@@ -4477,9 +4477,9 @@ async function ensureWeeklyTab() {
     );
     console.log('[Weekly Report] Created tab');
   }
-  var h = await sheetsGet(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A1:J1');
-  if (!h.values || !h.values[0] || h.values[0][0] !== WEEKLY_HEADERS[0]) {
-    await sheetsUpdate(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A1:J1', [WEEKLY_HEADERS]);
+  var h = await sheetsGet(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A1:K1');
+  if (!h.values || !h.values[0] || h.values[0][0] !== WEEKLY_HEADERS[0] || h.values[0].indexOf('leads') === -1) {
+    await sheetsUpdate(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A1:K1', [WEEKLY_HEADERS]);
   }
   weeklyTabReady = true;
 }
@@ -4554,6 +4554,28 @@ async function runWeeklyGenerate(weekStart) {
 
   await sleep(1000);
 
+  // --- Leads: contacts created during the week, booking status not
+  // "not booked"/"disqualified", and Message is known ---
+  var leadCount = null;
+  try {
+    var leadResults = await fetchAllPagesObject('contacts', {
+      filterGroups: [{
+        filters: [
+          { propertyName: 'createdate', operator: 'GTE', value: startMs },
+          { propertyName: 'createdate', operator: 'LTE', value: endMs },
+          { propertyName: 'booking_status_cp__c', operator: 'NOT_IN', values: ['not booked', 'disqualified'] },
+          { propertyName: 'message', operator: 'HAS_PROPERTY' }
+        ]
+      }],
+      properties: ['createdate']
+    });
+    leadCount = leadResults.length;
+  } catch (e) {
+    console.error('[Weekly Report] Lead fetch failed:', e.message);
+  }
+
+  await sleep(1000);
+
   // --- Offboardings (offboarding_date in week) ---
   var offboardedFTE = 0, offboardedHC = 0;
   var offResults = await fetchAllPagesWithRetry({
@@ -4576,6 +4598,7 @@ async function runWeeklyGenerate(weekStart) {
     weekStart,
     weekEnd,
     adsSpend === null ? '' : adsSpend,
+    leadCount === null ? '' : leadCount,
     Math.round(newClientFTE * 100) / 100,
     Math.round(existingClientFTE * 100) / 100,
     Math.round(backfillFTE * 100) / 100,
@@ -4594,16 +4617,16 @@ async function runWeeklyGenerate(weekStart) {
     if (rows[i][0] === weekStart) { rowIdx = i + 1; break; } // 1-indexed sheet row
   }
   if (rowIdx > 0) {
-    await sheetsUpdate(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A' + rowIdx + ':J' + rowIdx, [row]);
+    await sheetsUpdate(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A' + rowIdx + ':K' + rowIdx, [row]);
   } else {
-    await sheetsAppend(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A:J', [row]);
+    await sheetsAppend(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A:K', [row]);
   }
   weeklyCache = { data: null, ts: 0 };
-  console.log('[Weekly Report] Saved week ' + weekStart + ': ads=$' + row[2] + ', new=' + row[3] + ', existing=' + row[4] + ', backfill=' + row[5] + ', total=' + row[6] + ', offboardedFTE=' + row[7]);
+  console.log('[Weekly Report] Saved week ' + weekStart + ': ads=$' + row[2] + ', leads=' + row[3] + ', new=' + row[4] + ', existing=' + row[5] + ', backfill=' + row[6] + ', total=' + row[7] + ', offboardedFTE=' + row[8]);
   return {
-    week_start: weekStart, week_end: weekEnd, ads_spend: row[2],
-    new_client_fte: row[3], existing_client_fte: row[4], backfill_fte: row[5],
-    total_fte_hires: row[6], offboarded_fte: row[7], offboarded_hc: row[8],
+    week_start: weekStart, week_end: weekEnd, ads_spend: row[2], leads: row[3],
+    new_client_fte: row[4], existing_client_fte: row[5], backfill_fte: row[6],
+    total_fte_hires: row[7], offboarded_fte: row[8], offboarded_hc: row[9],
     ads_error: adsError
   };
 }
@@ -4621,19 +4644,20 @@ app.get('/api/weekly-report', async function(req, res) {
       return res.json({ weeks: weeklyCache.data, cached: true });
     }
     await ensureWeeklyTab();
-    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A:J', { valueRenderOption: 'UNFORMATTED_VALUE' });
+    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, WEEKLY_TAB + '!A:K', { valueRenderOption: 'UNFORMATTED_VALUE' });
     var rows = (data.values || []).slice(1);
     var weeks = rows.filter(function(r) { return r[0]; }).map(function(r) {
       return {
         week_start: String(r[0]), week_end: String(r[1] || ''),
         ads_spend: r[2] === '' || r[2] === undefined ? null : parseFloat(r[2]),
-        new_client_fte: parseFloat(r[3]) || 0,
-        existing_client_fte: parseFloat(r[4]) || 0,
-        backfill_fte: parseFloat(r[5]) || 0,
-        total_fte_hires: parseFloat(r[6]) || 0,
-        offboarded_fte: parseFloat(r[7]) || 0,
-        offboarded_hc: parseFloat(r[8]) || 0,
-        generated_at: String(r[9] || '')
+        leads: r[3] === '' || r[3] === undefined ? null : parseFloat(r[3]),
+        new_client_fte: parseFloat(r[4]) || 0,
+        existing_client_fte: parseFloat(r[5]) || 0,
+        backfill_fte: parseFloat(r[6]) || 0,
+        total_fte_hires: parseFloat(r[7]) || 0,
+        offboarded_fte: parseFloat(r[8]) || 0,
+        offboarded_hc: parseFloat(r[9]) || 0,
+        generated_at: String(r[10] || '')
       };
     }).sort(function(a, b) { return a.week_start.localeCompare(b.week_start); });
     weeklyCache = { data: weeks, ts: now };

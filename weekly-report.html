@@ -27,7 +27,7 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .loading .spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
 @keyframes spin{to{transform:rotate(360deg)}}
 .week-label{font-size:14px;font-weight:600;color:var(--text-muted);margin-bottom:16px}
-.card-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:28px}
+.card-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:28px}
 .card{background:var(--surface);border-radius:var(--radius);padding:20px 22px;box-shadow:var(--shadow);border:1px solid var(--border);position:relative;overflow:hidden}
 .card .accent{position:absolute;top:0;left:0;width:4px;height:100%}
 .card .label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px}
@@ -80,18 +80,22 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
   <div class="card-grid" id="cards"></div>
   <div class="chart-grid">
     <div class="chart-block"><h3>Weekly Google Ads Spend</h3><canvas id="chartAds"></canvas></div>
-    <div class="chart-block"><h3>FTE Hires by Type</h3><canvas id="chartHires"></canvas></div>
+    <div class="chart-block"><h3>Weekly Leads</h3><canvas id="chartLeads"></canvas></div>
   </div>
   <div class="chart-grid">
+    <div class="chart-block"><h3>FTE Hires by Type</h3><canvas id="chartHires"></canvas></div>
     <div class="chart-block"><h3>Offboardings (FTE)</h3><canvas id="chartOff"></canvas></div>
+  </div>
+  <div class="chart-grid">
     <div class="chart-block"><h3>Net FTE (Hires − Offboardings)</h3><canvas id="chartNet"></canvas></div>
+    <div class="chart-block"><h3>Cost Per Lead</h3><canvas id="chartCpl"></canvas></div>
   </div>
   <div class="tbl-block">
     <h3>Weekly History</h3>
     <div style="overflow-x:auto">
     <table class="wk-table">
       <thead><tr>
-        <th>Week</th><th>Ads Spend</th><th>New Client FTE</th><th>Existing Client FTE</th><th>Backfill FTE</th><th>Total FTE Hires</th><th>Offboarded FTE</th><th>Net FTE</th>
+        <th>Week</th><th>Ads Spend</th><th>Leads</th><th>Cost/Lead</th><th>New Client FTE</th><th>Existing Client FTE</th><th>Backfill FTE</th><th>Total FTE Hires</th><th>Offboarded FTE</th><th>Net FTE</th>
       </tr></thead>
       <tbody id="tblBody"></tbody>
     </table>
@@ -181,6 +185,7 @@ function render(weeks) {
 
   var cards = [
     { label:'Google Ads Spend', val:latest.ads_spend, prevVal:prev?prev.ads_spend:null, money:true, color:'var(--cyan)' },
+    { label:'Leads', val:latest.leads, prevVal:prev?prev.leads:null, color:'var(--purple)' },
     { label:'FTE Hires — New Clients', val:latest.new_client_fte, prevVal:prev?prev.new_client_fte:null, color:'var(--blue)' },
     { label:'FTE Hires — Existing Clients', val:latest.existing_client_fte, prevVal:prev?prev.existing_client_fte:null, color:'var(--green)' },
     { label:'FTE Hires — Backfill', val:latest.backfill_fte, prevVal:prev?prev.backfill_fte:null, color:'var(--orange)' },
@@ -230,6 +235,23 @@ function render(weeks) {
     options:hiresOpts
   }));
 
+  _charts.push(new Chart(document.getElementById('chartLeads').getContext('2d'), {
+    type:'bar',
+    data:{labels:labels, datasets:[{type:'bar', label:'Leads', data:slice.map(function(w){return w.leads;}), backgroundColor:hexAlpha('#7c3aed',0.65), borderColor:'#7c3aed', borderWidth:1, borderRadius:3,
+      datalabels:dl('#7c3aed', function(v){return v!==null?Number(Math.round(v)).toLocaleString():'';})}]},
+    options:baseOpts()
+  }));
+
+  var cplData = slice.map(function(w){
+    return (w.ads_spend && w.leads) ? Math.round((w.ads_spend / w.leads) * 100) / 100 : null;
+  });
+  _charts.push(new Chart(document.getElementById('chartCpl').getContext('2d'), {
+    type:'line',
+    data:{labels:labels, datasets:[{type:'line', label:'Cost Per Lead', data:cplData, borderColor:'#e11d48', backgroundColor:hexAlpha('#e11d48',0.08), borderDash:[5,3], fill:false, tension:0.3, borderWidth:2.5, pointRadius:3, pointHoverRadius:5,
+      datalabels:dl('#e11d48', function(v){return v!==null?'$'+Math.round(v):'';})}]},
+    options:baseOpts()
+  }));
+
   _charts.push(new Chart(document.getElementById('chartOff').getContext('2d'), {
     type:'bar',
     data:{labels:labels, datasets:[{type:'bar', label:'Offboarded FTE', data:slice.map(function(w){return w.offboarded_fte;}), backgroundColor:hexAlpha('#dc2626',0.65), borderColor:'#dc2626', borderWidth:1, borderRadius:3,
@@ -255,7 +277,8 @@ function render(weeks) {
   for (var r=0;r<rows.length;r++) {
     var w = rows[r];
     var net = Math.round((w.total_fte_hires - w.offboarded_fte)*100)/100;
-    tHtml += '<tr><td>'+fmtRange(w)+'</td><td>'+fmtM(w.ads_spend)+'</td><td>'+fmtN(w.new_client_fte)+'</td><td>'+fmtN(w.existing_client_fte)+'</td><td>'+fmtN(w.backfill_fte)+'</td><td>'+fmtN(w.total_fte_hires)+'</td><td>'+fmtN(w.offboarded_fte)+'</td><td style="color:'+(net>=0?'var(--green)':'var(--red)')+';font-weight:600">'+(net>0?'+':'')+fmtN(net)+'</td></tr>';
+    var cpl = (w.ads_spend && w.leads) ? Math.round(w.ads_spend / w.leads) : null;
+    tHtml += '<tr><td>'+fmtRange(w)+'</td><td>'+fmtM(w.ads_spend)+'</td><td>'+fmtN(w.leads)+'</td><td>'+fmtM(cpl)+'</td><td>'+fmtN(w.new_client_fte)+'</td><td>'+fmtN(w.existing_client_fte)+'</td><td>'+fmtN(w.backfill_fte)+'</td><td>'+fmtN(w.total_fte_hires)+'</td><td>'+fmtN(w.offboarded_fte)+'</td><td style="color:'+(net>=0?'var(--green)':'var(--red)')+';font-weight:600">'+(net>0?'+':'')+fmtN(net)+'</td></tr>';
   }
   document.getElementById('tblBody').innerHTML = tHtml;
 }
