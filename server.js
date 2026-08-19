@@ -4554,23 +4554,21 @@ async function runWeeklyGenerate(weekStart) {
 
   await sleep(1000);
 
-  // --- Leads: form-created contacts during the week, booking status not
-  // "not booked"/"disqualified", and Message is known. Restricted to FORM
-  // source because bulk automation events otherwise pollute the count
-  // (e.g. week of 2026-07-06 had 3,600+ automation-created contacts). ---
+  // --- Leads: contacts whose meeting was created during the week
+  // (Meeting_Creation_Date_CP__c), booking status not "not booked"/
+  // "disqualified", and Message is known. Mirrors the ads report exactly. ---
   var leadCount = null;
   try {
     var leadResults = await fetchAllPagesObject('contacts', {
       filterGroups: [{
         filters: [
-          { propertyName: 'createdate', operator: 'GTE', value: startMs },
-          { propertyName: 'createdate', operator: 'LTE', value: endMs },
+          { propertyName: 'meeting_creation_date_cp__c', operator: 'GTE', value: startMs },
+          { propertyName: 'meeting_creation_date_cp__c', operator: 'LTE', value: endMs },
           { propertyName: 'booking_status_cp__c', operator: 'NOT_IN', values: ['not booked', 'disqualified'] },
-          { propertyName: 'message', operator: 'HAS_PROPERTY' },
-          { propertyName: 'hs_object_source_label', operator: 'EQ', value: 'FORM' }
+          { propertyName: 'message', operator: 'HAS_PROPERTY' }
         ]
       }],
-      properties: ['createdate']
+      properties: ['meeting_creation_date_cp__c']
     });
     leadCount = leadResults.length;
   } catch (e) {
