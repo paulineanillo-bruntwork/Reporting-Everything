@@ -87,7 +87,10 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
     <div class="chart-block"><h3>FTE Hires by Type</h3><canvas id="chartHires"></canvas></div>
   </div>
   <div class="chart-grid">
+    <div class="chart-block"><h3>Total FTE Hires</h3><canvas id="chartTotalHires"></canvas></div>
     <div class="chart-block"><h3>Offboardings (FTE)</h3><canvas id="chartOff"></canvas></div>
+  </div>
+  <div class="chart-grid">
     <div class="chart-block"><h3>Net FTE (Hires − Offboardings)</h3><canvas id="chartNet"></canvas></div>
   </div>
   <div class="tbl-block">
@@ -248,6 +251,13 @@ function render(weeks) {
     type:'line',
     data:{labels:labels, datasets:[{type:'line', label:'Cost Per Lead', data:cplData, borderColor:'#e11d48', backgroundColor:hexAlpha('#e11d48',0.08), borderDash:[5,3], fill:false, tension:0.3, borderWidth:2.5, pointRadius:3, pointHoverRadius:5,
       datalabels:dl('#e11d48', function(v){return v!==null?'$'+Math.round(v):'';})}]},
+    options:baseOpts()
+  }));
+
+  _charts.push(new Chart(document.getElementById('chartTotalHires').getContext('2d'), {
+    type:'bar',
+    data:{labels:labels, datasets:[{type:'bar', label:'Total FTE Hires', data:slice.map(function(w){return w.total_fte_hires;}), backgroundColor:hexAlpha('#059669',0.65), borderColor:'#059669', borderWidth:1, borderRadius:3,
+      datalabels:dl('#059669', function(v){return v!==null?Number(v).toLocaleString():'';})}]},
     options:baseOpts()
   }));
 
