@@ -4697,6 +4697,95 @@ app.post('/api/debug/weekly-generate', async function(req, res) {
   }
 });
 
+// ===== KPI Monthly Targets =====
+// Manual monthly targets/budgets, stored in a 'Targets' tab of the KPI
+// spreadsheet. Edited on /kpi, displayed as budget markers on /report charts.
+var TARGETS_TAB = 'Targets';
+var TARGET_HEADERS = ['month', 'active_fte', 'net_fte', 'fte_hires', 'lost_ftes', 'ads_spend', 'mqls', 'cost_per_call', 'active_clients', 'churn_rate'];
+var targetsTabReady = false;
+var targetsCache = { data: null, ts: 0 };
+var TARGETS_CACHE_TTL = 5 * 60 * 1000;
+
+async function ensureTargetsTab() {
+  if (targetsTabReady) return;
+  var token = await getGoogleAccessToken();
+  var metaResp = await fetch(
+    'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(KPI_SOURCE_SHEET_ID) + '?fields=sheets.properties',
+    { headers: { 'Authorization': 'Bearer ' + token } }
+  );
+  var meta = await metaResp.json();
+  var existing = (meta.sheets || []).map(function(s) { return s.properties.title; });
+  if (existing.indexOf(TARGETS_TAB) === -1) {
+    await fetch(
+      'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(KPI_SOURCE_SHEET_ID) + ':batchUpdate',
+      { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: TARGETS_TAB } } }] }) }
+    );
+    await sheetsUpdate(KPI_SOURCE_SHEET_ID, TARGETS_TAB + '!A1:J1', [TARGET_HEADERS]);
+    console.log('[Targets] Created tab');
+  }
+  targetsTabReady = true;
+}
+
+app.get('/api/kpi-targets', async function(req, res) {
+  try {
+    var now = Date.now();
+    if (targetsCache.data && (now - targetsCache.ts) < TARGETS_CACHE_TTL) {
+      return res.json({ targets: targetsCache.data, cached: true });
+    }
+    await ensureTargetsTab();
+    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, TARGETS_TAB + '!A:J', { valueRenderOption: 'UNFORMATTED_VALUE' });
+    var rows = (data.values || []).slice(1);
+    var targets = rows.filter(function(r) { return r[0]; }).map(function(r) {
+      var t = { month: String(r[0]) };
+      for (var i = 1; i < TARGET_HEADERS.length; i++) {
+        var v = r[i];
+        t[TARGET_HEADERS[i]] = (v === '' || v === undefined || v === null) ? null : parseFloat(v);
+      }
+      return t;
+    }).sort(function(a, b) { return a.month.localeCompare(b.month); });
+    targetsCache = { data: targets, ts: now };
+    res.json({ targets: targets, cached: false });
+  } catch (e) {
+    console.error('[Targets] Read error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/kpi-targets', async function(req, res) {
+  try {
+    var targets = (req.body && req.body.targets) || [];
+    if (!Array.isArray(targets)) return res.status(400).json({ error: 'targets must be an array' });
+    for (var i = 0; i < targets.length; i++) {
+      if (!/^\d{4}-\d{2}$/.test(targets[i].month || '')) {
+        return res.status(400).json({ error: 'Each target needs a month in YYYY-MM format' });
+      }
+    }
+    targets.sort(function(a, b) { return a.month.localeCompare(b.month); });
+    await ensureTargetsTab();
+    // Read current row count so we can blank out removed rows
+    var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, TARGETS_TAB + '!A:A');
+    var existingCount = Math.max(0, (existing.values || []).length - 1);
+    var values = targets.map(function(t) {
+      var row = [t.month];
+      for (var j = 1; j < TARGET_HEADERS.length; j++) {
+        var v = t[TARGET_HEADERS[j]];
+        row.push(v === null || v === undefined || v === '' || isNaN(parseFloat(v)) ? '' : parseFloat(v));
+      }
+      return row;
+    });
+    while (values.length < existingCount) values.push(['', '', '', '', '', '', '', '', '', '']);
+    if (values.length > 0) {
+      await sheetsUpdate(KPI_SOURCE_SHEET_ID, TARGETS_TAB + '!A2:J' + (values.length + 1), values);
+    }
+    targetsCache = { data: null, ts: 0 };
+    console.log('[Targets] Saved ' + targets.length + ' target month(s)');
+    res.json({ success: true, count: targets.length });
+  } catch (e) {
+    console.error('[Targets] Save error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ===== Weekly Report Email =====
 // Recipients live in a 'Weekly Report Recipients' tab (column A) of the KPI
 // spreadsheet. SMTP config comes from env: SMTP_HOST, SMTP_PORT, SMTP_USER,

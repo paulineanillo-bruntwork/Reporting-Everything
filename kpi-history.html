@@ -142,6 +142,24 @@ tr.report-row:hover td:first-child{background:#e0ecff}
       </div>
     </div>
   </div>
+
+  <!-- Monthly Targets Section -->
+  <div style="margin-top:24px;background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden">
+    <div style="padding:16px 24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:1px solid var(--border);background:#f8fafc">
+      <div>
+        <div style="font-weight:700;font-size:14px;color:var(--text)">Monthly Targets</div>
+        <div style="font-size:11px;color:var(--text-muted)">Budget markers shown on the monthly report charts via the "Show Targets" toggle</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="get-btn" onclick="addTargetMonth()">+ Add Month</button>
+        <button class="get-btn" style="background:var(--blue);color:#fff" onclick="saveTargets()">Save Targets</button>
+        <span id="targetStatus" style="font-size:12px;color:var(--text-muted)"></span>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table id="targetsTable" style="width:100%"></table>
+    </div>
+  </div>
 </div>
 </div>
 <div id="toast" class="status-toast"></div>
@@ -509,6 +527,123 @@ function escAttr(s) {
   if (!s) return '';
   return s.replace(/&/g,'&amp;').replace(/'/g,'\\\'').replace(/"/g,'&quot;');
 }
+
+// ===== Monthly Targets Editor =====
+var TARGET_METRICS = [
+  { key:'active_fte', label:'Active Staff FTE (start of month)' },
+  { key:'net_fte', label:'Net FTE Gain/Loss' },
+  { key:'fte_hires', label:'FTEs Hired' },
+  { key:'lost_ftes', label:'Lost FTEs' },
+  { key:'ads_spend', label:'Google Ads Spend ($)' },
+  { key:'mqls', label:'Discovery Calls (MQLs) Booked' },
+  { key:'cost_per_call', label:'Cost Per Discovery Call ($)' },
+  { key:'active_clients', label:'Number of Active Clients' },
+  { key:'churn_rate', label:'Churn Rate (%)' }
+];
+var TGT_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+var _targets = []; // [{month:'YYYY-MM', active_fte:..., ...}]
+
+function tgtMonthLabel(m) {
+  var p = m.split('-');
+  return TGT_MONTHS[parseInt(p[1])-1] + ' ' + p[0];
+}
+function tgtNextMonth(m) {
+  var p = m.split('-'), yr = parseInt(p[0]), mo = parseInt(p[1]);
+  if (mo === 12) { yr++; mo = 1; } else mo++;
+  return yr + '-' + String(mo).padStart(2, '0');
+}
+function tgtCurrentMonth() {
+  var now = new Date(Date.now() + 8*60*60*1000);
+  return now.getUTCFullYear() + '-' + String(now.getUTCMonth()+1).padStart(2,'0');
+}
+
+function renderTargets() {
+  var h = '<thead><tr>';
+  h += '<th style="padding:8px 12px;font-weight:600;font-size:11px;color:var(--text-muted);border-bottom:2px solid var(--border);background:#f8fafc;text-align:left;white-space:nowrap">Month</th>';
+  for (var i = 0; i < TARGET_METRICS.length; i++) {
+    h += '<th style="padding:8px 12px;font-weight:600;font-size:11px;color:var(--text-muted);border-bottom:2px solid var(--border);background:#f8fafc;text-align:right;white-space:normal;min-width:90px">' + TARGET_METRICS[i].label + '</th>';
+  }
+  h += '<th style="border-bottom:2px solid var(--border);background:#f8fafc;width:36px"></th>';
+  h += '</tr></thead><tbody>';
+  if (_targets.length === 0) {
+    h += '<tr><td colspan="' + (TARGET_METRICS.length + 2) + '" style="padding:20px;text-align:center;color:var(--text-muted)">No targets yet — click "+ Add Month" to start.</td></tr>';
+  }
+  for (var r = 0; r < _targets.length; r++) {
+    var t = _targets[r];
+    h += '<tr data-month="' + t.month + '">';
+    h += '<td style="padding:6px 12px;font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)">' + tgtMonthLabel(t.month) + '</td>';
+    for (var c = 0; c < TARGET_METRICS.length; c++) {
+      var k = TARGET_METRICS[c].key;
+      var v = (t[k] === null || t[k] === undefined) ? '' : t[k];
+      h += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right">'
+        + '<input type="number" step="any" data-key="' + k + '" value="' + v + '" style="width:90px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:12px;text-align:right;font-family:inherit" placeholder="—">'
+        + '</td>';
+    }
+    h += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:center"><span style="cursor:pointer;color:var(--red);font-weight:700" title="Remove month" onclick="removeTargetMonth(\'' + t.month + '\')">&times;</span></td>';
+    h += '</tr>';
+  }
+  h += '</tbody>';
+  document.getElementById('targetsTable').innerHTML = h;
+}
+
+function collectTargets() {
+  var rows = document.querySelectorAll('#targetsTable tbody tr[data-month]');
+  var out = [];
+  rows.forEach(function(tr) {
+    var t = { month: tr.getAttribute('data-month') };
+    tr.querySelectorAll('input[data-key]').forEach(function(inp) {
+      var v = inp.value.trim();
+      t[inp.getAttribute('data-key')] = v === '' ? null : parseFloat(v);
+    });
+    out.push(t);
+  });
+  _targets = out;
+}
+
+function addTargetMonth() {
+  collectTargets();
+  var next;
+  if (_targets.length > 0) {
+    next = tgtNextMonth(_targets[_targets.length - 1].month);
+  } else {
+    next = tgtCurrentMonth();
+  }
+  var t = { month: next };
+  for (var i = 0; i < TARGET_METRICS.length; i++) t[TARGET_METRICS[i].key] = null;
+  _targets.push(t);
+  renderTargets();
+}
+
+function removeTargetMonth(month) {
+  collectTargets();
+  _targets = _targets.filter(function(t) { return t.month !== month; });
+  renderTargets();
+}
+
+function saveTargets() {
+  collectTargets();
+  var st = document.getElementById('targetStatus');
+  st.textContent = 'Saving...';
+  fetch('/api/kpi-targets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targets: _targets })
+  }).then(function(r) {
+    if (r.status === 401) { window.location.href = '/auth/login'; throw new Error('unauth'); }
+    return r.json();
+  }).then(function(d) {
+    if (d.error) { st.textContent = 'Error: ' + d.error; return; }
+    st.textContent = 'Saved!';
+    setTimeout(function() { st.textContent = ''; }, 3000);
+  }).catch(function(e) {
+    if (e.message !== 'unauth') st.textContent = 'Error: ' + e.message;
+  });
+}
+
+fetch('/api/kpi-targets').then(function(r) { return r.json(); }).then(function(d) {
+  _targets = (d.targets || []);
+  renderTargets();
+}).catch(function() { renderTargets(); });
 </script>
 </body>
 </html>
