@@ -4513,6 +4513,7 @@ async function runWeeklyGenerate(weekStart) {
 
   // --- Google Ads spend for the week ---
   var adsSpend = null;
+  var adsError = null;
   try {
     var adsCsv = await fetchAdsCsv(ADS_CSV_URL);
     var adsResult = processAdsData(parseAdsCsv(adsCsv));
@@ -4521,6 +4522,7 @@ async function runWeeklyGenerate(weekStart) {
     for (var ai = 0; ai < wkDays.length; ai++) adsSpend += wkDays[ai].cost;
     adsSpend = Math.round(adsSpend * 100) / 100;
   } catch (e) {
+    adsError = e.message;
     console.error('[Weekly Report] Ads fetch failed:', e.message);
   }
 
@@ -4601,7 +4603,8 @@ async function runWeeklyGenerate(weekStart) {
   return {
     week_start: weekStart, week_end: weekEnd, ads_spend: row[2],
     new_client_fte: row[3], existing_client_fte: row[4], backfill_fte: row[5],
-    total_fte_hires: row[6], offboarded_fte: row[7], offboarded_hc: row[8]
+    total_fte_hires: row[6], offboarded_fte: row[7], offboarded_hc: row[8],
+    ads_error: adsError
   };
 }
 
