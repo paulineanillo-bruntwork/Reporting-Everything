@@ -116,7 +116,7 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
     </div>
     <div style="overflow-x:auto">
       <table class="mtd-table">
-        <thead><tr><th>Metric</th><th>Month to Date</th><th>Month Target</th><th style="text-align:left;padding-left:24px">Progress</th></tr></thead>
+        <thead><tr><th>Metric</th><th id="mtdColHead">Month to Date</th><th>Month Target</th><th style="text-align:left;padding-left:24px">Progress</th></tr></thead>
         <tbody id="mtdBody"></tbody>
       </table>
     </div>
@@ -373,7 +373,9 @@ function loadMTD() {
     var mp = d.month.split('-');
     document.getElementById('mtdTitle').textContent = 'Month to Date vs Target — ' + MONTHS_FULL[parseInt(mp[1])-1] + ' ' + mp[0];
     var elapsed = Math.round((d.day / d.days_in_month) * 100);
-    document.getElementById('mtdPace').textContent = 'Day ' + d.day + ' of ' + d.days_in_month + ' (' + elapsed + '% of month elapsed)';
+    var asOf = SHORT[parseInt(mp[1])-1] + ' ' + d.day + ', ' + mp[0];
+    document.getElementById('mtdColHead').textContent = 'Month to Date (as of ' + asOf + ')';
+    document.getElementById('mtdPace').textContent = 'Data through ' + asOf + ' — Day ' + d.day + ' of ' + d.days_in_month + ' (' + elapsed + '% of month elapsed)';
 
     var cpl = (m.ads_spend && m.leads) ? m.ads_spend / m.leads : null;
     var net = Math.round((m.total_fte_hires - m.offboarded_fte) * 100) / 100;
