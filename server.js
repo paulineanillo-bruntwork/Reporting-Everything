@@ -1374,51 +1374,60 @@ async function getGoogleAccessToken() {
   return data.access_token;
 }
 
+// Retry helper for Sheets API 429 rate limits (quota is per-minute; back off and retry)
+var SHEETS_RETRY_DELAYS = [5000, 20000, 45000];
+async function sheetsFetchWithRetry(label, doFetch) {
+  for (var attempt = 0; ; attempt++) {
+    var resp = await doFetch();
+    if (resp.status === 429 && attempt < SHEETS_RETRY_DELAYS.length) {
+      console.warn('[Sheets] 429 rate limited on ' + label + ', retry in ' + (SHEETS_RETRY_DELAYS[attempt] / 1000) + 's (attempt ' + (attempt + 1) + ')');
+      await sleep(SHEETS_RETRY_DELAYS[attempt]);
+      continue;
+    }
+    if (!resp.ok) {
+      var txt = await resp.text();
+      throw new Error('Sheets ' + label + ' failed (' + resp.status + '): ' + txt);
+    }
+    return resp.json();
+  }
+}
+
 async function sheetsGet(spreadsheetId, range, opts) {
-  var token = await getGoogleAccessToken();
   var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId)
     + '/values/' + encodeURIComponent(range);
   if (opts && opts.valueRenderOption) {
     url += '?valueRenderOption=' + opts.valueRenderOption;
   }
-  var resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
-  if (!resp.ok) {
-    var txt = await resp.text();
-    throw new Error('Sheets GET failed (' + resp.status + '): ' + txt);
-  }
-  return resp.json();
+  return sheetsFetchWithRetry('GET', async function() {
+    var token = await getGoogleAccessToken();
+    return fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+  });
 }
 
 async function sheetsUpdate(spreadsheetId, range, values) {
-  var token = await getGoogleAccessToken();
   var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId)
     + '/values/' + encodeURIComponent(range) + '?valueInputOption=RAW';
-  var resp = await fetch(url, {
-    method: 'PUT',
-    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ range: range, majorDimension: 'ROWS', values: values })
+  return sheetsFetchWithRetry('PUT', async function() {
+    var token = await getGoogleAccessToken();
+    return fetch(url, {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ range: range, majorDimension: 'ROWS', values: values })
+    });
   });
-  if (!resp.ok) {
-    var txt = await resp.text();
-    throw new Error('Sheets PUT failed (' + resp.status + '): ' + txt);
-  }
-  return resp.json();
 }
 
 async function sheetsAppend(spreadsheetId, range, values) {
-  var token = await getGoogleAccessToken();
   var url = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(spreadsheetId)
     + '/values/' + encodeURIComponent(range) + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS';
-  var resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ range: range, majorDimension: 'ROWS', values: values })
+  return sheetsFetchWithRetry('APPEND', async function() {
+    var token = await getGoogleAccessToken();
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ range: range, majorDimension: 'ROWS', values: values })
+    });
   });
-  if (!resp.ok) {
-    var txt = await resp.text();
-    throw new Error('Sheets APPEND failed (' + resp.status + '): ' + txt);
-  }
-  return resp.json();
 }
 
 // Ensure required tabs exist in the report spreadsheet
@@ -5066,7 +5075,7 @@ app.post('/api/financials', async function(req, res) {
         return res.status(400).json({ error: 'Month ' + months[v].month + ' has too many line items to store' });
       }
     }
-    await saveFinMonths(months, dataset);
+    await saveFinEntries(months.map(function(m) { return { month: m.month, dataset: dataset, lines: m.lines }; }));
     res.json({ success: true, saved: months.length, dataset: dataset });
   } catch (e) {
     console.error('[Financials] Save error:', e.message);
@@ -5074,7 +5083,8 @@ app.post('/api/financials', async function(req, res) {
   }
 });
 
-async function saveFinMonths(months, dataset) {
+// entries: [{ month, dataset, lines }] — one sheet read for the whole batch
+async function saveFinEntries(entries) {
   await ensureFinTab();
   var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:B');
   var rows = existing.values || [];
@@ -5084,19 +5094,20 @@ async function saveFinMonths(months, dataset) {
   }
   var nextRow = rows.length + 1;
   var ts = new Date().toISOString();
-  for (var j = 0; j < months.length; j++) {
-    var m = months[j];
-    var key = m.month + '|' + dataset;
-    var rowVals = [[m.month, dataset, JSON.stringify(m.lines), ts]];
+  for (var j = 0; j < entries.length; j++) {
+    var m = entries[j];
+    var key = m.month + '|' + m.dataset;
+    var rowVals = [[m.month, m.dataset, JSON.stringify(m.lines), ts]];
     if (rowByKey[key]) {
       await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A' + rowByKey[key] + ':D' + rowByKey[key], rowVals);
     } else {
       await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A' + nextRow + ':D' + nextRow, rowVals);
+      rowByKey[key] = nextRow;
       nextRow++;
     }
   }
   finCache = { data: null, ts: 0 };
-  console.log('[Financials] Saved ' + months.length + ' month(s) of ' + dataset + ' P&L data');
+  console.log('[Financials] Saved ' + entries.length + ' P&L entr' + (entries.length === 1 ? 'y' : 'ies'));
 }
 
 // Parse a Xero-style "P&L vs Budget" PDF text export: one month, columns
@@ -5186,8 +5197,10 @@ app.post('/api/financials/parse-pdf', async function(req, res) {
     if (!pl) {
       return res.status(400).json({ error: 'Could not recognise this PDF as a P&L vs Budget report. Expected columns: Actual, Budget (Month Year), Variance %, ...' });
     }
-    await saveFinMonths([{ month: pl.month, lines: pl.actualLines }], 'actual');
-    await saveFinMonths([{ month: pl.month, lines: pl.budgetLines }], 'budget');
+    await saveFinEntries([
+      { month: pl.month, dataset: 'actual', lines: pl.actualLines },
+      { month: pl.month, dataset: 'budget', lines: pl.budgetLines }
+    ]);
     console.log('[Financials] PDF parsed and saved for ' + pl.month + ' (' + pl.actualLines.length + ' lines)');
     res.json({ success: true, month: pl.month, lines: pl.actualLines.length });
   } catch (e) {
