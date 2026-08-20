@@ -4882,6 +4882,120 @@ app.post('/api/kpi-targets', async function(req, res) {
   }
 });
 
+// ===== Financials (P&L uploads) =====
+// Parsed P&L data is stored per month in a 'Financials' tab: month | data_json | updated_at.
+// data_json is an ordered array of [lineName, value|null] pairs (null = section header).
+var FIN_TAB = 'Financials';
+var finTabReady = false;
+var finCache = { data: null, ts: 0 };
+var FIN_CACHE_TTL = 5 * 60 * 1000;
+
+async function ensureFinTab() {
+  if (finTabReady) return;
+  var token = await getGoogleAccessToken();
+  var metaResp = await fetch(
+    'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(KPI_SOURCE_SHEET_ID) + '?fields=sheets.properties',
+    { headers: { 'Authorization': 'Bearer ' + token } }
+  );
+  var meta = await metaResp.json();
+  var existing = (meta.sheets || []).map(function(s) { return s.properties.title; });
+  if (existing.indexOf(FIN_TAB) === -1) {
+    await fetch(
+      'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(KPI_SOURCE_SHEET_ID) + ':batchUpdate',
+      { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: FIN_TAB } } }] }) }
+    );
+    await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A1:C1', [['month', 'data_json', 'updated_at']]);
+    console.log('[Financials] Created tab');
+  }
+  finTabReady = true;
+}
+
+app.get('/financials', function(req, res) {
+  res.sendFile(path.join(__dirname, 'financials.html'));
+});
+
+app.get('/api/financials', async function(req, res) {
+  try {
+    var now = Date.now();
+    if (finCache.data && (now - finCache.ts) < FIN_CACHE_TTL) {
+      return res.json({ months: finCache.data, cached: true });
+    }
+    await ensureFinTab();
+    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:C');
+    var rows = (data.values || []).slice(1);
+    var months = [];
+    for (var i = 0; i < rows.length; i++) {
+      if (!rows[i][0] || !rows[i][1]) continue;
+      try {
+        months.push({ month: String(rows[i][0]), lines: JSON.parse(rows[i][1]), updated_at: String(rows[i][2] || '') });
+      } catch (pe) { /* skip corrupt row */ }
+    }
+    months.sort(function(a, b) { return a.month.localeCompare(b.month); });
+    finCache = { data: months, ts: now };
+    res.json({ months: months, cached: false });
+  } catch (e) {
+    console.error('[Financials] Read error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/financials', async function(req, res) {
+  try {
+    var months = (req.body && req.body.months) || [];
+    if (!Array.isArray(months) || months.length === 0) return res.status(400).json({ error: 'months array required' });
+    for (var v = 0; v < months.length; v++) {
+      if (!/^\d{4}-\d{2}$/.test(months[v].month || '') || !Array.isArray(months[v].lines)) {
+        return res.status(400).json({ error: 'Each entry needs month (YYYY-MM) and lines array' });
+      }
+      if (JSON.stringify(months[v].lines).length > 45000) {
+        return res.status(400).json({ error: 'Month ' + months[v].month + ' has too many line items to store' });
+      }
+    }
+    await ensureFinTab();
+    var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:A');
+    var rows = existing.values || [];
+    var rowByMonth = {};
+    for (var i = 1; i < rows.length; i++) {
+      if (rows[i][0]) rowByMonth[rows[i][0]] = i + 1; // 1-indexed sheet row
+    }
+    var nextRow = rows.length + 1;
+    var ts = new Date().toISOString();
+    for (var j = 0; j < months.length; j++) {
+      var m = months[j];
+      var rowVals = [[m.month, JSON.stringify(m.lines), ts]];
+      if (rowByMonth[m.month]) {
+        await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A' + rowByMonth[m.month] + ':C' + rowByMonth[m.month], rowVals);
+      } else {
+        await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A' + nextRow + ':C' + nextRow, rowVals);
+        nextRow++;
+      }
+    }
+    finCache = { data: null, ts: 0 };
+    console.log('[Financials] Saved ' + months.length + ' month(s) of P&L data');
+    res.json({ success: true, saved: months.length });
+  } catch (e) {
+    console.error('[Financials] Save error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/financials/clear', async function(req, res) {
+  try {
+    await ensureFinTab();
+    var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:A');
+    var count = Math.max(0, (existing.values || []).length - 1);
+    if (count > 0) {
+      var blanks = [];
+      for (var i = 0; i < count; i++) blanks.push(['', '', '']);
+      await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A2:C' + (count + 1), blanks);
+    }
+    finCache = { data: null, ts: 0 };
+    res.json({ success: true, cleared: count });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ===== Weekly Report Email =====
 // Recipients live in a 'Weekly Report Recipients' tab (column A) of the KPI
 // spreadsheet. SMTP config comes from env: SMTP_HOST, SMTP_PORT, SMTP_USER,
