@@ -412,7 +412,6 @@ function loadMTD() {
       }
       h += '<tr><td>'+r.label+'</td><td style="font-weight:700">'+valStr+'</td><td>'+tgtStr+'</td><td style="text-align:left;padding-left:24px">'+prog+'</td></tr>';
     }
-    h += '<tr><td colspan="4" style="border-bottom:none;text-align:left;font-size:11px;color:var(--text-muted);padding-top:8px">Offboardings (and therefore Net FTE) include offboardings already scheduled through end of month, matching the FTE dashboard. Internal BruntWork tickets are excluded.</td></tr>';
     document.getElementById('mtdBody').innerHTML = h;
     document.getElementById('mtdBlock').style.display = 'block';
   }).catch(function(){});

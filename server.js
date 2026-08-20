@@ -4986,7 +4986,6 @@ function buildMTDEmailSection(mtd) {
       + '<td style="' + tdr + '">' + prog + '</td></tr>';
   }
   html += '</table>';
-  html += '<p style="font-size:11px;color:#64748b;margin:-20px 0 28px">Offboardings (and therefore Net FTE) include offboardings already scheduled through end of month, matching the FTE dashboard. Internal BruntWork tickets are excluded.</p>';
   return html;
 }
 
