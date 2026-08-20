@@ -67,6 +67,20 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .toast.show{opacity:1}
 .toast.ok{background:var(--green)}
 .toast.err{background:var(--red)}
+.admin-block{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);margin-top:24px;overflow:hidden}
+.admin-head{padding:14px 20px;border-bottom:1px solid var(--border);background:#fef9ec;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.admin-head .t{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--orange)}
+.admin-head .d{font-size:11px;color:var(--text-muted)}
+.admin-body{padding:16px 20px}
+.email-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.email-chip{display:inline-flex;align-items:center;gap:6px;background:#f1f5f9;border:1px solid var(--border);border-radius:16px;padding:4px 6px 4px 12px;font-size:12px;font-weight:600}
+.email-chip.admin-chip{background:#fef3c7;border-color:#fcd34d}
+.email-chip .rm{width:18px;height:18px;border:none;border-radius:50%;background:transparent;color:var(--text-muted);font-size:14px;line-height:1;cursor:pointer;font-weight:700}
+.email-chip .rm:hover{background:var(--red-light);color:var(--red)}
+.admin-add{display:flex;gap:8px;flex-wrap:wrap}
+.admin-add input{flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit}
+.admin-add button{padding:8px 18px;border:none;border-radius:6px;background:var(--blue);color:#fff;font-size:13px;font-weight:600;cursor:pointer}
+.admin-add button:disabled{opacity:.5}
 @media(max-width:1000px){.card-grid{grid-template-columns:repeat(2,1fr)}.chart-grid{grid-template-columns:1fr}}
 @media(max-width:700px){.header,.main{padding-left:20px;padding-right:20px}.card-grid{grid-template-columns:1fr}}
 </style>
@@ -115,6 +129,23 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
     <div class="tbl-block">
       <h3 id="tblTitle">Profit &amp; Loss</h3>
       <div class="tbl-scroll"><table class="fin-table" id="finTable"></table></div>
+    </div>
+  </div>
+
+  <!-- Admin: access control (visible to admins only) -->
+  <div class="admin-block" id="adminBlock" style="display:none">
+    <div class="admin-head">
+      <div>
+        <div class="t">&#128274; Access Control — Admin</div>
+        <div class="d">Only the people below (plus admins) can view this page. Changes take effect within a minute.</div>
+      </div>
+    </div>
+    <div class="admin-body">
+      <div class="email-chips" id="accessChips"></div>
+      <div class="admin-add">
+        <input type="email" id="accessEmail" placeholder="name@bruntwork.co" onkeydown="if(event.key==='Enter')addAccess()">
+        <button id="accessAddBtn" onclick="addAccess()">Add Email</button>
+      </div>
     </div>
   </div>
 </div>
@@ -502,6 +533,62 @@ function load() {
   });
 }
 load();
+
+// ===== Admin access control =====
+var _accessEmails = [];
+function loadAccess() {
+  fetch('/api/financials/access').then(function(r){
+    if (r.status !== 200) return null;
+    return r.json();
+  }).then(function(d){
+    if (!d || d.error) return; // not an admin — leave the section hidden
+    _accessEmails = d.emails || [];
+    document.getElementById('adminBlock').style.display = 'block';
+    renderAccess(d.admins || []);
+  }).catch(function(){});
+}
+function renderAccess(admins) {
+  var h = '';
+  (admins || []).forEach(function(e){
+    h += '<span class="email-chip admin-chip" title="Admin — always has access">' + escH(e) + ' &#9733;</span>';
+  });
+  _accessEmails.forEach(function(e){
+    h += '<span class="email-chip">' + escH(e) + '<button class="rm" title="Remove access" onclick="removeAccess(\'' + escH(e).replace(/'/g,"\\'") + '\')">&times;</button></span>';
+  });
+  if (_accessEmails.length === 0) {
+    h += '<span style="font-size:12px;color:var(--text-muted)">No one else has access yet.</span>';
+  }
+  document.getElementById('accessChips').innerHTML = h;
+}
+function saveAccess() {
+  var btn = document.getElementById('accessAddBtn');
+  btn.disabled = true;
+  fetch('/api/financials/access', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ emails: _accessEmails })
+  }).then(function(r){ return r.json(); }).then(function(d){
+    btn.disabled = false;
+    if (d.error) { toast('Save failed: ' + d.error, false); loadAccess(); return; }
+    _accessEmails = d.emails || [];
+    renderAccess(['winston@bruntwork.co']);
+    toast('Access list updated', true);
+  }).catch(function(e){ btn.disabled = false; toast('Save failed: ' + e.message, false); });
+}
+function addAccess() {
+  var inp = document.getElementById('accessEmail');
+  var e = (inp.value || '').toLowerCase().trim();
+  if (!e || e.indexOf('@') < 1) { toast('Enter a valid email address', false); return; }
+  if (_accessEmails.indexOf(e) !== -1) { toast(e + ' already has access', false); return; }
+  _accessEmails.push(e);
+  inp.value = '';
+  saveAccess();
+}
+function removeAccess(e) {
+  if (!confirm('Remove access for ' + e + '?')) return;
+  _accessEmails = _accessEmails.filter(function(x){ return x !== e; });
+  saveAccess();
+}
+loadAccess();
 </script>
 </body>
 </html>

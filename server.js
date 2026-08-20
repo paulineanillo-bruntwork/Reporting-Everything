@@ -4910,12 +4910,116 @@ async function ensureFinTab() {
   finTabReady = true;
 }
 
-app.get('/financials', function(req, res) {
+// --- Financials access control ---
+// Only emails in the 'Financials Access' tab (or the admins below) may view
+// the /financials page and its APIs. Admins manage the list from the page.
+var FIN_ACCESS_TAB = 'Financials Access';
+var FIN_ADMIN_EMAILS = ['winston@bruntwork.co'];
+var finAccessTabReady = false;
+var finAccessCache = { data: null, ts: 0 };
+var FIN_ACCESS_TTL = 60 * 1000;
+
+async function ensureFinAccessTab() {
+  if (finAccessTabReady) return;
+  var token = await getGoogleAccessToken();
+  var metaResp = await fetch(
+    'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(KPI_SOURCE_SHEET_ID) + '?fields=sheets.properties',
+    { headers: { 'Authorization': 'Bearer ' + token } }
+  );
+  var meta = await metaResp.json();
+  var existing = (meta.sheets || []).map(function(s) { return s.properties.title; });
+  if (existing.indexOf(FIN_ACCESS_TAB) === -1) {
+    await fetch(
+      'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(KPI_SOURCE_SHEET_ID) + ':batchUpdate',
+      { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: FIN_ACCESS_TAB } } }] }) }
+    );
+    await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_ACCESS_TAB + '!A1', [['email']]);
+    console.log('[Financials] Created access tab');
+  }
+  finAccessTabReady = true;
+}
+
+async function getFinAccessList() {
+  var now = Date.now();
+  if (finAccessCache.data && (now - finAccessCache.ts) < FIN_ACCESS_TTL) return finAccessCache.data;
+  await ensureFinAccessTab();
+  var data = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_ACCESS_TAB + '!A:A');
+  var emails = (data.values || []).slice(1)
+    .map(function(r) { return (r[0] || '').toLowerCase().trim(); })
+    .filter(function(e) { return e && e.indexOf('@') > 0; });
+  finAccessCache = { data: emails, ts: now };
+  return emails;
+}
+
+function finSessionEmail(req) {
+  return ((req.session && req.session.user && req.session.user.email) || '').toLowerCase().trim();
+}
+function isFinAdmin(email) { return FIN_ADMIN_EMAILS.indexOf(email) !== -1; }
+
+async function finAllowed(req) {
+  var email = finSessionEmail(req);
+  if (!email) return false;
+  if (isFinAdmin(email)) return true;
+  try {
+    var list = await getFinAccessList();
+    return list.indexOf(email) !== -1;
+  } catch (e) {
+    console.error('[Financials] Access list read failed (denying):', e.message);
+    return false; // fail closed for non-admins
+  }
+}
+
+async function requireFinAccess(req, res) {
+  if (await finAllowed(req)) return true;
+  res.status(403).json({ error: 'You do not have access to Financials. Ask Winston to add your email.' });
+  return false;
+}
+
+app.get('/financials', async function(req, res) {
+  if (!(await finAllowed(req))) {
+    return res.status(403).send('<!DOCTYPE html><html><body style="font-family:Inter,-apple-system,sans-serif;background:#f4f6fb;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:40px 48px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.06)"><div style="font-size:40px;margin-bottom:12px">&#128274;</div><h2 style="margin:0 0 8px;color:#1e293b">Restricted Page</h2><p style="color:#64748b;font-size:14px;margin:0 0 20px">The Financials page is limited to specific people.<br>Ask Winston to add your email to the access list.</p><a href="/" style="color:#2563eb;font-size:13px">&larr; Back to dashboard</a></div></body></html>');
+  }
   res.sendFile(path.join(__dirname, 'financials.html'));
+});
+
+// Admin-only: manage the access list
+app.get('/api/financials/access', async function(req, res) {
+  try {
+    var email = finSessionEmail(req);
+    if (!isFinAdmin(email)) return res.status(403).json({ error: 'Admin only' });
+    res.json({ emails: await getFinAccessList(), admins: FIN_ADMIN_EMAILS });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/financials/access', async function(req, res) {
+  try {
+    var email = finSessionEmail(req);
+    if (!isFinAdmin(email)) return res.status(403).json({ error: 'Admin only' });
+    var emails = (req.body && req.body.emails) || [];
+    if (!Array.isArray(emails)) return res.status(400).json({ error: 'emails must be an array' });
+    emails = emails.map(function(e) { return String(e).toLowerCase().trim(); })
+      .filter(function(e, i, a) { return e && e.indexOf('@') > 0 && a.indexOf(e) === i; });
+    await ensureFinAccessTab();
+    var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_ACCESS_TAB + '!A:A');
+    var existingCount = Math.max(0, (existing.values || []).length - 1);
+    var values = emails.map(function(e) { return [e]; });
+    while (values.length < existingCount) values.push(['']);
+    if (values.length > 0) {
+      await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_ACCESS_TAB + '!A2:A' + (values.length + 1), values);
+    }
+    finAccessCache = { data: null, ts: 0 };
+    console.log('[Financials] Access list updated by ' + email + ': ' + emails.length + ' email(s)');
+    res.json({ success: true, emails: emails });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get('/api/financials', async function(req, res) {
   try {
+    if (!(await requireFinAccess(req, res))) return;
     var now = Date.now();
     if (finCache.data && (now - finCache.ts) < FIN_CACHE_TTL) {
       return res.json({ months: finCache.data, cached: true });
@@ -4941,6 +5045,7 @@ app.get('/api/financials', async function(req, res) {
 
 app.post('/api/financials', async function(req, res) {
   try {
+    if (!(await requireFinAccess(req, res))) return;
     var months = (req.body && req.body.months) || [];
     if (!Array.isArray(months) || months.length === 0) return res.status(400).json({ error: 'months array required' });
     for (var v = 0; v < months.length; v++) {
@@ -4981,6 +5086,7 @@ app.post('/api/financials', async function(req, res) {
 
 app.post('/api/financials/clear', async function(req, res) {
   try {
+    if (!(await requireFinAccess(req, res))) return;
     await ensureFinTab();
     var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:A');
     var count = Math.max(0, (existing.values || []).length - 1);
