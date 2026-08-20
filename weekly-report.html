@@ -386,7 +386,7 @@ function loadMTD() {
       { label:'Leads (MQLs) Booked', val:m.leads, tgt:t.mqls },
       { label:'Cost Per Lead', val:cpl, tgt:t.cost_per_call, money:true, invert:true, noBar:true, aboveBelow:true },
       { label:'Total FTE Hires', val:m.total_fte_hires, tgt:t.fte_hires },
-      { label:'Offboardings (FTE)', val:m.offboarded_fte, tgt:t.lost_ftes, invert:true },
+      { label:'Offboardings (FTE, incl. scheduled)', val:m.offboarded_fte, tgt:t.lost_ftes, invert:true },
       { label:'Net FTE Gain/Loss', val:net, tgt:t.net_fte }
     ];
     var h = '';
@@ -412,6 +412,7 @@ function loadMTD() {
       }
       h += '<tr><td>'+r.label+'</td><td style="font-weight:700">'+valStr+'</td><td>'+tgtStr+'</td><td style="text-align:left;padding-left:24px">'+prog+'</td></tr>';
     }
+    h += '<tr><td colspan="4" style="border-bottom:none;text-align:left;font-size:11px;color:var(--text-muted);padding-top:8px">Offboardings (and therefore Net FTE) include offboardings already scheduled through end of month, matching the FTE dashboard. Internal BruntWork tickets are excluded.</td></tr>';
     document.getElementById('mtdBody').innerHTML = h;
     document.getElementById('mtdBlock').style.display = 'block';
   }).catch(function(){});

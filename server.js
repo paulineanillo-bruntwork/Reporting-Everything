@@ -286,8 +286,12 @@ async function loadTicketData() {
   // 0.5 FTE per unknown via the getFTEWeight() fallback.
   var createdRawCount = createdResults.length;
   var offboardRawCount = offboardResults.length;
+  // Exclude internal BruntWork staff tickets (subject contains "BruntWork")
+  function isInternalBW(r) {
+    return ((r.properties.subject || '').toLowerCase().indexOf('bruntwork') !== -1);
+  }
   var raw = createdResults
-    .filter(function(r) { return !!r.properties.assignment_type; })
+    .filter(function(r) { return !!r.properties.assignment_type && !isInternalBW(r); })
     .map(function(r) {
       return {
         d: r.properties.createdate,
@@ -298,7 +302,7 @@ async function loadTicketData() {
       };
     });
   var offboard = offboardResults
-    .filter(function(r) { return !!r.properties.assignment_type; })
+    .filter(function(r) { return !!r.properties.assignment_type && !isInternalBW(r); })
     .map(function(r) {
       return {
         o: r.properties.offboarding_date,
@@ -2842,8 +2846,12 @@ app.post('/api/kpi-history/generate', async function(req, res) {
             { propertyName: 'offboarding_date', operator: 'LTE', value: offEndMs }
           ]
         }],
-        properties: ['offboarding_date', 'assignment_type', 'onboarding_date', 'days_between_onboarding_offboarding', 'type_of_recruitment'],
+        properties: ['offboarding_date', 'assignment_type', 'onboarding_date', 'days_between_onboarding_offboarding', 'type_of_recruitment', 'subject'],
         sorts: [{ propertyName: 'offboarding_date', direction: 'ASCENDING' }]
+      });
+      // Exclude internal BruntWork staff tickets, matching the hires convention
+      offResults = offResults.filter(function(t) {
+        return ((t.properties.subject || '').toLowerCase().indexOf('bruntwork') === -1);
       });
       console.log('[KPI Generate] Offboardings found: ' + offResults.length);
       var backfillRequested = 0;
@@ -4504,9 +4512,13 @@ function lastCompletedWeekStart() {
 
 // Compute the weekly-report metric set for an arbitrary date range (inclusive,
 // UTC day boundaries). Used by the weekly snapshots and the month-to-date view.
-async function computeRangeMetrics(rangeStart, rangeEnd) {
+// offRangeEnd (optional) extends ONLY the offboardings window — the MTD view
+// uses it to count scheduled offboardings through end of month, matching the
+// FTE dashboard's current-month card.
+async function computeRangeMetrics(rangeStart, rangeEnd, offRangeEnd) {
   var startMs = String(new Date(rangeStart + 'T00:00:00Z').getTime());
   var endMs = String(new Date(rangeEnd + 'T23:59:59Z').getTime());
+  var offEndMs = String(new Date((offRangeEnd || rangeEnd) + 'T23:59:59Z').getTime());
 
   // --- Google Ads spend ---
   var adsSpend = null;
@@ -4581,11 +4593,14 @@ async function computeRangeMetrics(rangeStart, rangeEnd) {
       filters: [
         { propertyName: 'hs_pipeline', operator: 'IN', values: PIPELINES },
         { propertyName: 'offboarding_date', operator: 'GTE', value: startMs },
-        { propertyName: 'offboarding_date', operator: 'LTE', value: endMs }
+        { propertyName: 'offboarding_date', operator: 'LTE', value: offEndMs }
       ]
     }],
-    properties: ['offboarding_date', 'assignment_type'],
+    properties: ['offboarding_date', 'assignment_type', 'subject'],
     sorts: [{ propertyName: 'offboarding_date', direction: 'ASCENDING' }]
+  });
+  offResults = offResults.filter(function(t) {
+    return ((t.properties.subject || '').toLowerCase().indexOf('bruntwork') === -1);
   });
   for (var oi = 0; oi < offResults.length; oi++) {
     offboardedFTE += fteWeight(offResults[oi].properties.assignment_type || 'Unknown');
@@ -4659,17 +4674,21 @@ async function getMTDData() {
   var monthKey = p.y + '-' + String(p.m).padStart(2, '0');
   var start = monthKey + '-01';
   var end = monthKey + '-' + String(p.d).padStart(2, '0');
+  var daysInMonthEarly = new Date(Date.UTC(p.y, p.m, 0)).getUTCDate();
+  var monthEnd = monthKey + '-' + String(daysInMonthEarly).padStart(2, '0');
 
   // Only the expensive HubSpot/ads metrics are cached. The target is looked
   // up fresh every request so edits on /kpi show immediately (readTargetsList
   // has its own cache which is invalidated on save).
+  // Offboardings deliberately span the FULL month (incl. already-scheduled
+  // future offboardings) to match the FTE dashboard's current-month card.
   var metrics;
   var fromCache = false;
   if (mtdCache.data && mtdCache.data.end === end && (now - mtdCache.ts) < MTD_CACHE_TTL) {
     metrics = mtdCache.data.metrics;
     fromCache = true;
   } else {
-    metrics = await computeRangeMetrics(start, end);
+    metrics = await computeRangeMetrics(start, end, monthEnd);
     mtdCache = { data: { end: end, metrics: metrics }, ts: Date.now() };
   }
 
@@ -4927,7 +4946,7 @@ function buildMTDEmailSection(mtd) {
     { label: 'Leads (MQLs) Booked', val: m.leads, tgt: t.mqls },
     { label: 'Cost Per Lead', val: cpl, tgt: t.cost_per_call, money: true, aboveBelow: true },
     { label: 'Total FTE Hires', val: m.total_fte_hires, tgt: t.fte_hires },
-    { label: 'Offboardings (FTE)', val: m.offboarded_fte, tgt: t.lost_ftes },
+    { label: 'Offboardings (FTE, incl. scheduled)', val: m.offboarded_fte, tgt: t.lost_ftes },
     { label: 'Net FTE Gain/Loss', val: net, tgt: t.net_fte }
   ];
 
@@ -4962,6 +4981,7 @@ function buildMTDEmailSection(mtd) {
       + '<td style="' + tdr + '">' + prog + '</td></tr>';
   }
   html += '</table>';
+  html += '<p style="font-size:11px;color:#64748b;margin:-20px 0 28px">Offboardings (and therefore Net FTE) include offboardings already scheduled through end of month, matching the FTE dashboard. Internal BruntWork tickets are excluded.</p>';
   return html;
 }
 
