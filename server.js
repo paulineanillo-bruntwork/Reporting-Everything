@@ -2337,8 +2337,8 @@ app.get('/api/kpi-history', async function(req, res) {
 // FTE weighting by assignment type
 function fteWeight(type) {
   if (type === 'Full-Time') return 1;
-  if (type === 'Part-Time') return 0.5;
-  return 0.25; // PT-Under-20, Project-Based, Output-Based
+  if (type === 'Part-Time-Under-20-Hours') return 0.25;
+  return 0.5; // Part-Time, Project-Based, Output-Based, Trial — matches index.html getFTEWeight()
 }
 
 // Parse month labels like "March 2026" or "Mar-25" into { year, month, start, end }
