@@ -108,11 +108,12 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
     <label style="cursor:pointer"><input type="radio" name="dsType" value="budget"> Budget</label>
   </div>
   <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
-    <b>Drop a P&amp;L Excel file here</b> or click to browse (.xlsx, .xls, .csv)<br>
-    <span style="font-size:11px">Expects line items in the first column and month columns across the top (e.g. Xero / QuickBooks P&amp;L export). Use the toggle above to upload Actuals or Budget.</span>
+    <b>Drop a P&amp;L file here</b> or click to browse (.xlsx, .xls, .csv, .pdf)<br>
+    <span style="font-size:11px">Excel/CSV: line items in the first column, month columns across the top — saved as Actuals or Budget per the toggle above.<br>
+    PDF: a "P&amp;L vs Budget" report (e.g. Xero export) — the Actual and Budget columns are both extracted and saved automatically.</span>
     <div class="upload-status" id="uploadStatus"></div>
   </div>
-  <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+  <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.pdf">
 
   <div id="loading" class="loading"><div class="spinner"></div><div>Loading financial data...</div></div>
   <div id="emptyState" class="empty-state" style="display:none">No financial data yet — drop in a P&amp;L spreadsheet above to get started.</div>
@@ -297,6 +298,7 @@ function handleFile(file) {
   var st = document.getElementById('uploadStatus');
   st.textContent = 'Parsing ' + file.name + '...';
   st.style.color = 'var(--text-muted)';
+  if (/\.pdf$/i.test(file.name)) { handlePdf(file, st); return; }
   var reader = new FileReader();
   reader.onload = function(ev) {
     try {
@@ -328,6 +330,29 @@ function handleFile(file) {
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+function handlePdf(file, st) {
+  if (file.size > 12 * 1024 * 1024) { st.textContent = 'PDF too large (max 12MB)'; st.style.color = 'var(--red)'; return; }
+  st.textContent = 'Uploading ' + file.name + ' for parsing (Actual + Budget will both be saved)...';
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    var b64 = String(ev.target.result).split(',')[1] || '';
+    fetch('/api/financials/parse-pdf', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pdf_base64: b64, filename: file.name })
+    }).then(function(r){
+      if (r.status === 401) { window.location.href = '/auth/login'; throw new Error('unauth'); }
+      return r.json();
+    }).then(function(d){
+      if (d.error) { st.textContent = 'PDF parse failed: ' + d.error; st.style.color = 'var(--red)'; return; }
+      st.textContent = 'Saved ' + d.month + ' — ' + d.lines + ' line items (actual + budget) from ' + file.name;
+      st.style.color = 'var(--green)';
+      toast('P&L actual + budget saved for ' + d.month, true);
+      load();
+    }).catch(function(e){ if (e.message !== 'unauth') { st.textContent = 'Upload failed: ' + e.message; st.style.color = 'var(--red)'; } });
+  };
+  reader.readAsDataURL(file);
 }
 
 function clearAll() {

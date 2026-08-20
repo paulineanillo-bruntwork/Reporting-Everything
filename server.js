@@ -31,7 +31,7 @@ app.set('trust proxy', 1);
 
 // Parse form data and JSON
 app.use(express.urlencoded({ extended: false }));
-app.use(express.json());
+app.use(express.json({ limit: '15mb' })); // large enough for base64 PDF uploads to /api/financials/parse-pdf
 
 // Session middleware
 app.use(session({
@@ -5066,31 +5066,132 @@ app.post('/api/financials', async function(req, res) {
         return res.status(400).json({ error: 'Month ' + months[v].month + ' has too many line items to store' });
       }
     }
-    await ensureFinTab();
-    var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:B');
-    var rows = existing.values || [];
-    var rowByKey = {};
-    for (var i = 1; i < rows.length; i++) {
-      if (rows[i][0]) rowByKey[rows[i][0] + '|' + String(rows[i][1] || 'actual')] = i + 1;
-    }
-    var nextRow = rows.length + 1;
-    var ts = new Date().toISOString();
-    for (var j = 0; j < months.length; j++) {
-      var m = months[j];
-      var key = m.month + '|' + dataset;
-      var rowVals = [[m.month, dataset, JSON.stringify(m.lines), ts]];
-      if (rowByKey[key]) {
-        await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A' + rowByKey[key] + ':D' + rowByKey[key], rowVals);
-      } else {
-        await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A' + nextRow + ':D' + nextRow, rowVals);
-        nextRow++;
-      }
-    }
-    finCache = { data: null, ts: 0 };
-    console.log('[Financials] Saved ' + months.length + ' month(s) of ' + dataset + ' P&L data');
+    await saveFinMonths(months, dataset);
     res.json({ success: true, saved: months.length, dataset: dataset });
   } catch (e) {
     console.error('[Financials] Save error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+async function saveFinMonths(months, dataset) {
+  await ensureFinTab();
+  var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:B');
+  var rows = existing.values || [];
+  var rowByKey = {};
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][0]) rowByKey[rows[i][0] + '|' + String(rows[i][1] || 'actual')] = i + 1;
+  }
+  var nextRow = rows.length + 1;
+  var ts = new Date().toISOString();
+  for (var j = 0; j < months.length; j++) {
+    var m = months[j];
+    var key = m.month + '|' + dataset;
+    var rowVals = [[m.month, dataset, JSON.stringify(m.lines), ts]];
+    if (rowByKey[key]) {
+      await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A' + rowByKey[key] + ':D' + rowByKey[key], rowVals);
+    } else {
+      await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A' + nextRow + ':D' + nextRow, rowVals);
+      nextRow++;
+    }
+  }
+  finCache = { data: null, ts: 0 };
+  console.log('[Financials] Saved ' + months.length + ' month(s) of ' + dataset + ' P&L data');
+}
+
+// Parse a Xero-style "P&L vs Budget" PDF text export: one month, columns
+// [Actual, Budget, Variance %, Common Size %, YTD]. Returns
+// { month, actualLines, budgetLines } or null if the layout isn't recognised.
+var FIN_PDF_MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+function parsePLPdfText(text) {
+  var lines = text.split('\n').map(function(l) { return l.replace(/�/g, '').trim(); }).filter(Boolean);
+  // Month: prefer "Budget (Jul 2021)"; fall back to a "July 2021" title line
+  var month = null;
+  for (var i = 0; i < lines.length; i++) {
+    var bm = lines[i].match(/Budget\s*\(([A-Za-z]{3,9})[\s\-](\d{4})\)/i);
+    if (bm) { month = toMonthKey(bm[1], bm[2]); if (month) break; }
+  }
+  if (!month) {
+    for (var t = 0; t < Math.min(lines.length, 10); t++) {
+      var tm = lines[t].match(/^([A-Za-z]{3,9})\s+(\d{4})$/);
+      if (tm) { month = toMonthKey(tm[1], tm[2]); if (month) break; }
+    }
+  }
+  if (!month) return null;
+
+  function toMonthKey(name, yr) {
+    var mi = FIN_PDF_MONTHS[name.toLowerCase().slice(0, 3)];
+    return mi ? yr + '-' + String(mi).padStart(2, '0') : null;
+  }
+  function parseMoney(tok) {
+    var neg = tok.indexOf('-') !== -1;
+    var n = parseFloat(tok.replace(/[-$,()\s]/g, ''));
+    if (isNaN(n)) return null;
+    return neg ? -n : n;
+  }
+
+  // Row format (pdf-parse strips column spacing):
+  //   Name[-]$ACTUAL[-]$BUDGET{Variance% or -}{CommonSize%}[-]$YTD
+  // e.g. "Wages and Salaries$4,054$53,786-92.46%0.9%$4,054"
+  //      "Transaction Fee$2,553$0-0.6%$2,553"  (variance column is "-")
+  // Strict thousands grouping disambiguates amounts from the variance % that
+  // follows with no separator (e.g. "$41,70224.10%" must split as 41,702 + 24.10%)
+  var rowRe = /^(.*?)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(-|-?\d{1,3}(?:,\d{3})*\.\d{2}%)(-?\d{1,3}(?:,\d{3})*\.\d%)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)$/;
+  function num(sign, digits) {
+    var n = parseFloat(digits.replace(/,/g, ''));
+    if (isNaN(n)) return null;
+    return sign === '-' ? -n : n;
+  }
+  var actualLines = [], budgetLines = [];
+  var started = false;
+  for (var r = 0; r < lines.length; r++) {
+    var line = lines[r];
+    if (/^PROFIT\s*&\s*LOSS/i.test(line) && /budget/i.test(line)) { started = true; continue; }
+    if (!started) continue;
+    if (/prepared by|page \d|^profit\s*&\s*loss$/i.test(line)) continue;
+    var m2 = line.match(rowRe);
+    if (m2) {
+      var name = m2[1].trim();
+      if (!name) continue;
+      actualLines.push([name, num(m2[2], m2[3])]);
+      budgetLines.push([name, num(m2[4], m2[5])]);
+    } else if (line.indexOf('$') === -1) {
+      // Section header
+      actualLines.push([line, null]);
+      budgetLines.push([line, null]);
+    } else {
+      // Unrecognised numeric row - keep the actual (first $ amount) only
+      var loose = line.match(/^(.*?)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)/);
+      if (loose && loose[1].trim()) {
+        actualLines.push([loose[1].trim(), num(loose[2], loose[3])]);
+        budgetLines.push([loose[1].trim(), null]);
+      }
+    }
+  }
+  if (actualLines.length < 3) return null;
+  return { month: month, actualLines: actualLines, budgetLines: budgetLines };
+}
+
+// Upload a P&L-vs-Budget PDF (base64). Parses and saves BOTH datasets for the month.
+app.post('/api/financials/parse-pdf', async function(req, res) {
+  try {
+    if (!(await requireFinAccess(req, res))) return;
+    var b64 = (req.body && req.body.pdf_base64) || '';
+    if (!b64) return res.status(400).json({ error: 'pdf_base64 required' });
+    var buf = Buffer.from(b64, 'base64');
+    if (buf.length > 12 * 1024 * 1024) return res.status(400).json({ error: 'PDF too large (max 12MB)' });
+    var pdfParse = require('pdf-parse');
+    var parsed = await pdfParse(buf);
+    var pl = parsePLPdfText(parsed.text || '');
+    if (!pl) {
+      return res.status(400).json({ error: 'Could not recognise this PDF as a P&L vs Budget report. Expected columns: Actual, Budget (Month Year), Variance %, ...' });
+    }
+    await saveFinMonths([{ month: pl.month, lines: pl.actualLines }], 'actual');
+    await saveFinMonths([{ month: pl.month, lines: pl.budgetLines }], 'budget');
+    console.log('[Financials] PDF parsed and saved for ' + pl.month + ' (' + pl.actualLines.length + ' lines)');
+    res.json({ success: true, month: pl.month, lines: pl.actualLines.length });
+  } catch (e) {
+    console.error('[Financials] PDF parse error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
