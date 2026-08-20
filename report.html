@@ -360,19 +360,23 @@ var TARGETS = {}; // 'YYYY-MM' -> target object
 var _targetCharts = []; // { chart, data }
 var _targetsOn = false;
 
-function targetArrForSlice(slice, key) {
+function targetArrForSlice(slice, key, shift) {
+  shift = shift || 0;
   return slice.map(function(m) {
     var pm = parseMonth(m[0]);
     if (!pm) return null;
-    var k = pm.year + '-' + String(pm.month + 1).padStart(2, '0');
+    var mo = pm.month + shift, yr = pm.year;
+    while (mo < 0) { mo += 12; yr--; }
+    while (mo > 11) { mo -= 12; yr++; }
+    var k = yr + '-' + String(mo + 1).padStart(2, '0');
     var t = TARGETS[k];
     if (!t || t[key] === null || t[key] === undefined) return null;
     return pn(t[key]);
   });
 }
 
-function registerTargetChart(chart, slice, key) {
-  var arr = targetArrForSlice(slice, key);
+function registerTargetChart(chart, slice, key, shift) {
+  var arr = targetArrForSlice(slice, key, shift);
   if (arr.some(function(v) { return v !== null; })) {
     _targetCharts.push({ chart: chart, data: arr });
   }
@@ -563,10 +567,19 @@ Promise.all([
   var startFTE = Math.max(0, endFTE-13);
   var fteSlice = allMonths.slice(startFTE, endFTE);
   var fteLabels = fteSlice.map(function(m){return shortLabel(m[0]);});
+  // End-of-month framing: start of month M = end of month M-1, so label each
+  // point as the previous month.
+  var fteEndLabels = fteSlice.map(function(m){
+    var pm = parseMonth(m[0]);
+    if (!pm) return shortLabel(m[0]);
+    var mo = pm.month - 1, yr = pm.year;
+    if (mo < 0) { mo = 11; yr--; }
+    return SHORT[mo] + ' ' + String(yr).slice(-2);
+  });
 
   // === Highlight trend charts ===
   var hlCharts = [
-    { label:'Active Staff FTE - as at start of month', col:C.activeFTE, color:'#2563eb', type:'bar', slice:fteSlice, labels:fteLabels, targetKey:'active_fte' },
+    { label:'Active Staff FTE - as at end of month', col:C.activeFTE, color:'#2563eb', type:'bar', slice:fteSlice, labels:fteEndLabels, targetKey:'active_fte', targetShift:-1 },
     { label:'Net FTE Gain/Loss', col:null, color:'#7c3aed', type:'bar', slice:curSlice, labels:curLabels, targetKey:'net_fte', compute:function(m){ var h=pn(m[C.totalHires]),l=pn(m[C.churnedFTE]); return (h!==null&&l!==null)?Math.round((h-l)*100)/100:null; } },
     { label:'FTEs Hired', col:C.totalHires, color:'#059669', type:'bar', slice:curSlice, labels:curLabels, targetKey:'fte_hires', stacked:true,
       stackCols:[
@@ -657,7 +670,7 @@ Promise.all([
         plugins:[stackTotalPlugin],
         options:stackOpts
       });
-      if (hc.targetKey) registerTargetChart(stChart, hc.slice, hc.targetKey);
+      if (hc.targetKey) registerTargetChart(stChart, hc.slice, hc.targetKey, hc.targetShift);
     } else {
       var hData = hc.compute ? hc.slice.map(hc.compute) : hc.slice.map(function(m){return pn(m[hc.col]);});
       var hds = makeDS(hc);
@@ -674,7 +687,7 @@ Promise.all([
         data:{labels:hc.labels, datasets:[hds]},
         options:chartOpts()
       });
-      if (hc.targetKey) registerTargetChart(hlChart, hc.slice, hc.targetKey);
+      if (hc.targetKey) registerTargetChart(hlChart, hc.slice, hc.targetKey, hc.targetShift);
     }
   }
 
