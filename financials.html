@@ -146,7 +146,6 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
       </div>
       <button class="btn-clear" onclick="clearAll()">Clear All Data</button>
     </div>
-    <div class="card-grid" id="cards"></div>
     <div class="chart-grid">
       <div class="chart-block"><h3 id="chart1Title">P&amp;L Trends — Actual vs Budget</h3><div class="line-picker" id="linePicker"></div><canvas id="chartMain"></canvas></div>
       <div class="chart-block"><h3 id="marginTitle">Operating Profit Margin</h3><canvas id="chartMargin"></canvas></div>
@@ -586,7 +585,6 @@ function render() {
   var fAct = filterRange(_act), fBud = filterRange(_bud);
   var shared = sharedPeriods(fAct, fBud);
   if (shared.periods.length === 0) {
-    document.getElementById('cards').innerHTML = '';
     document.getElementById('finTable').innerHTML = '<tbody><tr><td style="padding:24px;text-align:center;color:var(--text-muted)">No data in the selected date range.</td></tr></tbody>';
     return;
   }
@@ -601,40 +599,6 @@ function render() {
   var aOpRaw = metricRow(mxA, PAT.op, true), bOpRaw = metricRow(mxB, PAT.op, true);
   var opLabel = aOpRaw ? 'Operating Profit' : 'Net Profit';
   var aOp = aOpRaw || aNet, bOp = bOpRaw || bNet;
-
-  // Latest/previous period with any ACTUAL data (budget can extend into the future)
-  var metricRows = [aRev, aGp, aExp, aNet];
-  var last = -1, prev = -1;
-  for (var li = shared.periods.length - 1; li >= 0; li--) {
-    if (metricRows.some(function(r){ return r && r[li] !== null; })) { last = li; break; }
-  }
-  for (var pi = last - 1; pi >= 0; pi--) {
-    if (metricRows.some(function(r){ return r && r[pi] !== null; })) { prev = pi; break; }
-  }
-
-  function cardFor(aRow, bRow, label, color, invert) {
-    if (!aRow || last === -1) return '';
-    var v = aRow[last], pv = prev >= 0 ? aRow[prev] : null;
-    var bv = bRow ? bRow[last] : null;
-    var badge = '';
-    if (v !== null && bv !== null && bv !== 0) {
-      var vpct = ((v - bv) / Math.abs(bv)) * 100;
-      var vcls = invert ? (vpct > 0 ? 'neg' : 'pos') : (vpct >= 0 ? 'pos' : 'neg');
-      badge = '<span class="change ' + vcls + '" title="vs budget">' + (vpct >= 0 ? '+' : '') + vpct.toFixed(1) + '% vs budget</span>';
-    } else if (v !== null && pv !== null && pv !== 0) {
-      var pct = ((v - pv) / Math.abs(pv)) * 100;
-      var cls = invert ? (pct > 0 ? 'neg' : 'pos') : (pct >= 0 ? 'pos' : 'neg');
-      badge = '<span class="change ' + cls + '">' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</span>';
-    }
-    var subStr = bv !== null ? '<span class="prev-val">Budget: ' + fmtMoney(bv) + '</span>'
-      : (pv !== null ? '<span class="prev-val">Prev: ' + fmtMoney(pv) + '</span>' : '');
-    return '<div class="card"><div class="accent" style="background:' + color + '"></div><div class="label">' + label + ' — ' + shared.labels[last] + '</div><div class="value' + (v !== null && v < 0 ? ' neg' : '') + '">' + (v === null ? '—' : fmtMoney(v)) + '</div><div class="meta">' + badge + subStr + '</div></div>';
-  }
-  document.getElementById('cards').innerHTML =
-    cardFor(aRev, bRev, 'Revenue', 'var(--blue)') +
-    cardFor(aGp, bGp, 'Gross Profit', 'var(--cyan)') +
-    cardFor(aExp, bExp, 'Total Expenses', 'var(--orange)', true) +
-    cardFor(aNet, bNet, 'Net Profit', 'var(--green)');
 
   // Main chart: user-selectable line series (chips + add dropdown)
   var baseMx = mxA || mxB;
