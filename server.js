@@ -5116,12 +5116,12 @@ async function saveFinEntries(entries) {
 var FIN_PDF_MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
 function parsePLPdfText(text) {
   var lines = text.split('\n').map(function(l) { return l.replace(/�/g, '').trim(); }).filter(Boolean);
-  // Month: prefer "Budget (Jul 2021)"; fall back to a "July 2021" title line
+  // Month: prefer "Budget (Jul 2021)" — searched in line-joined text since some
+  // layouts wrap the header ("Budget (Mar" / "2025)"). Fall back to a title line.
   var month = null;
-  for (var i = 0; i < lines.length; i++) {
-    var bm = lines[i].match(/Budget\s*\(([A-Za-z]{3,9})[\s\-](\d{4})\)/i);
-    if (bm) { month = toMonthKey(bm[1], bm[2]); if (month) break; }
-  }
+  var joined = lines.join(' ');
+  var bm = joined.match(/Budget\s*\(\s*([A-Za-z]{3,9})[\s\-]+(\d{4})\s*\)/i);
+  if (bm) month = toMonthKey(bm[1], bm[2]);
   if (!month) {
     for (var t = 0; t < Math.min(lines.length, 10); t++) {
       var tm = lines[t].match(/^([A-Za-z]{3,9})\s+(\d{4})$/);
@@ -5150,6 +5150,9 @@ function parsePLPdfText(text) {
   // Format B — "Monthly Board Report": Name [-]$ACTUAL [-]$BUDGET {Var% | -} [-]$LASTMONTH {Var% | -}
   //   e.g. "Entertainment$14,462$8,50070.14%$8421,617.63%"
   var rowReB = /^(.*?)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(-|-?\d{1,3}(?:,\d{3})*\.\d{2}%)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(-|-?\d{1,3}(?:,\d{3})*\.\d{2}%)$/;
+  // Format C — "Consolidated P&L" with YTD: Name [-]$ACTUAL [-]$BUDGET {Var% | -} [-]$YTD [-]$YTDBUDGET {Var% | -}
+  //   e.g. "Outsourced Staff Revenue$7,815,769$6,270,90724.64%$58,264,110$49,824,23016.94%"
+  var rowReC = /^(.*?)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(-|-?\d{1,3}(?:,\d{3})*\.\d{2}%)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(-|-?\d{1,3}(?:,\d{3})*\.\d{2}%)$/;
   function num(sign, digits) {
     var n = parseFloat(digits.replace(/,/g, ''));
     if (isNaN(n)) return null;
@@ -5162,11 +5165,16 @@ function parsePLPdfText(text) {
     // Column header row — combined ("PROFIT & LOSS Jul 2021 Budget (...) Variance ..."),
     // standalone ("Jul 2024Budget (Jul 2024)Variance %..."), or the board-report
     // variant ("Jul 2024Budget (Jul 2024)This month vs budget")
-    if (/Budget\s*\(/i.test(line) && (/variance/i.test(line) || /vs\s*budget/i.test(line))) { started = true; continue; }
+    if ((/Budget\s*\(/i.test(line) && (/variance/i.test(line) || /vs\s*budget/i.test(line)))
+      || (/^PROFIT\s*&\s*LOSS/i.test(line) && /budget/i.test(line))
+      || /[A-Za-z]{3,9}\s*\d{4}\s*Budget\s*\(/i.test(line)) { started = true; continue; }
     if (!started) continue;
+    // Stop at the next report section (some exports append a balance sheet etc.)
+    if (/^BALANCE SHEET|^CASH ?FLOW|^Profit & Loss - vs Budget$/i.test(line)) break;
     if (/prepared by|page \d|^profit\s*&\s*loss$/i.test(line)) continue;
-    if (/^\(%\)$|^month\s*\(%\)$/i.test(line)) continue; // wrapped header fragments
-    var m2 = line.match(rowRe) || line.match(rowReB);
+    // Wrapped header fragments (year continuation, column captions split across lines)
+    if (/^(\d{4}\)?|FY\s?\d{4}\)?|\(%\)|month\s*\(%\)|this month vs|budget\s*\(%\)|budget\s*\(ytd\)|year to date( fy)?( \d{4})?|ytd vs ytd( budget)?( \(%\))?|variance %.*|common size.*)$/i.test(line)) continue;
+    var m2 = line.match(rowRe) || line.match(rowReB) || line.match(rowReC);
     if (m2) {
       var name = m2[1].trim();
       if (!name) continue;
