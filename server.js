@@ -4653,42 +4653,46 @@ async function runWeeklyGenerate(weekStart) {
 var mtdCache = { data: null, ts: 0 };
 var MTD_CACHE_TTL = 15 * 60 * 1000;
 
+async function getMTDData() {
+  var now = Date.now();
+  var p = sydneyDateParts();
+  var monthKey = p.y + '-' + String(p.m).padStart(2, '0');
+  var start = monthKey + '-01';
+  var end = monthKey + '-' + String(p.d).padStart(2, '0');
+
+  // Only the expensive HubSpot/ads metrics are cached. The target is looked
+  // up fresh every request so edits on /kpi show immediately (readTargetsList
+  // has its own cache which is invalidated on save).
+  var metrics;
+  var fromCache = false;
+  if (mtdCache.data && mtdCache.data.end === end && (now - mtdCache.ts) < MTD_CACHE_TTL) {
+    metrics = mtdCache.data.metrics;
+    fromCache = true;
+  } else {
+    metrics = await computeRangeMetrics(start, end);
+    mtdCache = { data: { end: end, metrics: metrics }, ts: Date.now() };
+  }
+
+  var target = null;
+  try {
+    var targets = await readTargetsList();
+    for (var i = 0; i < targets.length; i++) {
+      if (targets[i].month === monthKey) { target = targets[i]; break; }
+    }
+  } catch (te) {
+    console.error('[MTD] Targets read failed:', te.message);
+  }
+  var daysInMonth = new Date(Date.UTC(p.y, p.m, 0)).getUTCDate();
+  return {
+    month: monthKey, day: p.d, days_in_month: daysInMonth,
+    range: { start: start, end: end },
+    metrics: metrics, target: target, cached: fromCache
+  };
+}
+
 app.get('/api/weekly-report/mtd', async function(req, res) {
   try {
-    var now = Date.now();
-    var p = sydneyDateParts();
-    var monthKey = p.y + '-' + String(p.m).padStart(2, '0');
-    var start = monthKey + '-01';
-    var end = monthKey + '-' + String(p.d).padStart(2, '0');
-
-    // Only the expensive HubSpot/ads metrics are cached. The target is looked
-    // up fresh every request so edits on /kpi show immediately (readTargetsList
-    // has its own cache which is invalidated on save).
-    var metrics;
-    var fromCache = false;
-    if (mtdCache.data && mtdCache.data.end === end && (now - mtdCache.ts) < MTD_CACHE_TTL) {
-      metrics = mtdCache.data.metrics;
-      fromCache = true;
-    } else {
-      metrics = await computeRangeMetrics(start, end);
-      mtdCache = { data: { end: end, metrics: metrics }, ts: now };
-    }
-
-    var target = null;
-    try {
-      var targets = await readTargetsList();
-      for (var i = 0; i < targets.length; i++) {
-        if (targets[i].month === monthKey) { target = targets[i]; break; }
-      }
-    } catch (te) {
-      console.error('[MTD] Targets read failed:', te.message);
-    }
-    var daysInMonth = new Date(Date.UTC(p.y, p.m, 0)).getUTCDate();
-    res.json({
-      month: monthKey, day: p.d, days_in_month: daysInMonth,
-      range: { start: start, end: end },
-      metrics: metrics, target: target, cached: fromCache
-    });
+    res.json(await getMTDData());
   } catch (e) {
     console.error('[MTD] Error:', e.message);
     res.status(500).json({ error: e.message });
@@ -4904,7 +4908,64 @@ function wkChange(cur, prev, invert) {
   return '<span style="color:' + color + ';font-weight:600">' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</span>';
 }
 
-function buildWeeklyEmailHtml(weeks) {
+function buildMTDEmailSection(mtd) {
+  if (!mtd || !mtd.metrics) return '';
+  var m = mtd.metrics;
+  var t = mtd.target || {};
+  var MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var M_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var mp = mtd.month.split('-');
+  var monthName = MONTHS_FULL[parseInt(mp[1]) - 1] + ' ' + mp[0];
+  var asOf = M_SHORT[parseInt(mp[1]) - 1] + ' ' + mtd.day + ', ' + mp[0];
+  var elapsed = Math.round((mtd.day / mtd.days_in_month) * 100);
+
+  var cpl = (m.ads_spend && m.leads) ? m.ads_spend / m.leads : null;
+  var net = Math.round((m.total_fte_hires - m.offboarded_fte) * 100) / 100;
+
+  var rows = [
+    { label: 'Google Ads Spend', val: m.ads_spend, tgt: t.ads_spend, money: true, progWord: 'budget' },
+    { label: 'Leads (MQLs) Booked', val: m.leads, tgt: t.mqls },
+    { label: 'Cost Per Lead', val: cpl, tgt: t.cost_per_call, money: true, aboveBelow: true },
+    { label: 'Total FTE Hires', val: m.total_fte_hires, tgt: t.fte_hires },
+    { label: 'Offboardings (FTE)', val: m.offboarded_fte, tgt: t.lost_ftes },
+    { label: 'Net FTE Gain/Loss', val: net, tgt: t.net_fte }
+  ];
+
+  var td = 'padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:14px;color:#1e293b';
+  var tdr = td + ';text-align:right';
+  var th = 'padding:8px 12px;border-bottom:2px solid #cbd5e1;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#64748b;text-align:right;background:#f8fafc';
+  var thl = th + ';text-align:left';
+
+  var html = '<h3 style="font-size:15px;margin:0 0 2px">Month to Date vs Target — ' + monthName + '</h3>';
+  html += '<p style="font-size:12px;color:#64748b;margin:0 0 10px">Data through ' + asOf + ' — Day ' + mtd.day + ' of ' + mtd.days_in_month + ' (' + elapsed + '% of month elapsed)</p>';
+  html += '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;margin-bottom:28px">';
+  html += '<tr><th style="' + thl + '">Metric</th><th style="' + th + '">Month to Date</th><th style="' + th + '">Month Target</th><th style="' + th + '">Progress</th></tr>';
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var valStr = r.money ? wkFmtM(r.val) : wkFmtN(r.val);
+    var tgtStr = (r.tgt === null || r.tgt === undefined) ? '—' : (r.money ? wkFmtM(r.tgt) : wkFmtN(r.tgt));
+    var prog = '<span style="color:#64748b;font-size:12px">no target set</span>';
+    if (r.tgt !== null && r.tgt !== undefined && r.tgt !== 0 && r.val !== null && r.val !== undefined) {
+      if (r.aboveBelow) {
+        var diff = ((r.val - r.tgt) / Math.abs(r.tgt)) * 100;
+        var abColor = diff > 0 ? '#dc2626' : '#059669';
+        var abLabel = Math.abs(diff) < 0.5 ? 'on target' : Math.abs(diff).toFixed(0) + '% ' + (diff > 0 ? 'above' : 'below') + ' target';
+        prog = '<span style="color:' + abColor + ';font-weight:700">' + abLabel + '</span>';
+      } else {
+        var pct = (r.val / r.tgt) * 100;
+        prog = '<span style="color:#1e293b;font-weight:700">' + pct.toFixed(0) + '% of ' + (r.progWord || 'target') + '</span>';
+      }
+    }
+    html += '<tr><td style="' + td + '">' + r.label + '</td>'
+      + '<td style="' + tdr + ';font-weight:700">' + valStr + '</td>'
+      + '<td style="' + tdr + '">' + tgtStr + '</td>'
+      + '<td style="' + tdr + '">' + prog + '</td></tr>';
+  }
+  html += '</table>';
+  return html;
+}
+
+function buildWeeklyEmailHtml(weeks, mtd) {
   var latest = weeks[weeks.length - 1];
   var prev = weeks.length > 1 ? weeks[weeks.length - 2] : null;
   var cpl = (latest.ads_spend && latest.leads) ? latest.ads_spend / latest.leads : null;
@@ -4929,6 +4990,8 @@ function buildWeeklyEmailHtml(weeks) {
   html += '<h2 style="font-size:20px;margin:0 0 4px">Weekly KPI Report</h2>';
   html += '<p style="font-size:14px;color:#64748b;margin:0 0 16px">Week of ' + wkEmailFmtRange(latest) + '</p>';
   html += '<p style="margin:0 0 24px"><a href="' + appUrl + '/weekly-report" style="display:inline-block;background:#2563eb;color:#ffffff;font-size:14px;font-weight:bold;text-decoration:none;padding:12px 24px;border-radius:6px">View Full Interactive Report &rarr;</a></p>';
+  html += buildMTDEmailSection(mtd);
+  html += '<h3 style="font-size:15px;margin:0 0 10px">Week of ' + wkEmailFmtRange(latest) + '</h3>';
 
   html += '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;margin-bottom:28px">';
   html += '<tr><th style="' + thl + '">Metric</th><th style="' + th + '">This Week</th><th style="' + th + '">Last Week</th><th style="' + th + '">Change</th></tr>';
@@ -4982,7 +5045,13 @@ async function sendWeeklyEmail(overrideTo) {
   var weeks = await readWeeklyWeeks();
   if (weeks.length === 0) throw new Error('No weekly data to send');
   var latest = weeks[weeks.length - 1];
-  var html = buildWeeklyEmailHtml(weeks);
+  var mtd = null;
+  try {
+    mtd = await getMTDData();
+  } catch (mtdErr) {
+    console.error('[Weekly Email] MTD fetch failed, sending without it:', mtdErr.message);
+  }
+  var html = buildWeeklyEmailHtml(weeks, mtd);
 
   var nodemailer = require('nodemailer');
   var transport = nodemailer.createTransport({
