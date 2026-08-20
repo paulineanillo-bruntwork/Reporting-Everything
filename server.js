@@ -4550,7 +4550,10 @@ async function computeRangeMetrics(rangeStart, rangeEnd, offRangeEnd) {
     sorts: [{ propertyName: 'createdate', direction: 'ASCENDING' }]
   });
   hireResults = hireResults.filter(function(t) {
-    return ((t.properties.subject || '').toLowerCase().indexOf('bruntwork') === -1);
+    // Match the dashboard: drop internal BruntWork tickets and tickets with
+    // no contract type (orphaned/test tickets)
+    return ((t.properties.subject || '').toLowerCase().indexOf('bruntwork') === -1)
+      && !!t.properties.assignment_type;
   });
   for (var hi = 0; hi < hireResults.length; hi++) {
     var hp = hireResults[hi].properties;
@@ -4601,7 +4604,8 @@ async function computeRangeMetrics(rangeStart, rangeEnd, offRangeEnd) {
     sorts: [{ propertyName: 'offboarding_date', direction: 'ASCENDING' }]
   });
   offResults = offResults.filter(function(t) {
-    return ((t.properties.subject || '').toLowerCase().indexOf('bruntwork') === -1);
+    return ((t.properties.subject || '').toLowerCase().indexOf('bruntwork') === -1)
+      && !!t.properties.assignment_type;
   });
   for (var oi = 0; oi < offResults.length; oi++) {
     offboardedFTE += fteWeight(offResults[oi].properties.assignment_type || 'Unknown');
