@@ -4656,14 +4656,24 @@ var MTD_CACHE_TTL = 15 * 60 * 1000;
 app.get('/api/weekly-report/mtd', async function(req, res) {
   try {
     var now = Date.now();
-    if (mtdCache.data && (now - mtdCache.ts) < MTD_CACHE_TTL) {
-      return res.json(Object.assign({}, mtdCache.data, { cached: true }));
-    }
     var p = sydneyDateParts();
     var monthKey = p.y + '-' + String(p.m).padStart(2, '0');
     var start = monthKey + '-01';
     var end = monthKey + '-' + String(p.d).padStart(2, '0');
-    var metrics = await computeRangeMetrics(start, end);
+
+    // Only the expensive HubSpot/ads metrics are cached. The target is looked
+    // up fresh every request so edits on /kpi show immediately (readTargetsList
+    // has its own cache which is invalidated on save).
+    var metrics;
+    var fromCache = false;
+    if (mtdCache.data && mtdCache.data.end === end && (now - mtdCache.ts) < MTD_CACHE_TTL) {
+      metrics = mtdCache.data.metrics;
+      fromCache = true;
+    } else {
+      metrics = await computeRangeMetrics(start, end);
+      mtdCache = { data: { end: end, metrics: metrics }, ts: now };
+    }
+
     var target = null;
     try {
       var targets = await readTargetsList();
@@ -4674,13 +4684,11 @@ app.get('/api/weekly-report/mtd', async function(req, res) {
       console.error('[MTD] Targets read failed:', te.message);
     }
     var daysInMonth = new Date(Date.UTC(p.y, p.m, 0)).getUTCDate();
-    var result = {
+    res.json({
       month: monthKey, day: p.d, days_in_month: daysInMonth,
       range: { start: start, end: end },
-      metrics: metrics, target: target
-    };
-    mtdCache = { data: result, ts: now };
-    res.json(result);
+      metrics: metrics, target: target, cached: fromCache
+    });
   } catch (e) {
     console.error('[MTD] Error:', e.message);
     res.status(500).json({ error: e.message });
