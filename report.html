@@ -59,6 +59,10 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .change-pos{color:var(--green);font-weight:600}
 .change-neg{color:var(--red);font-weight:600}
 .change-zero{color:var(--text-muted)}
+.tgt-col{display:none;color:#334155;background:#f8fafc}
+body.targets-on .tgt-col{display:table-cell}
+.tgt-badge{display:none;font-size:11px;color:#334155;background:#f1f5f9;border:1px dashed #94a3b8;border-radius:4px;padding:2px 8px;font-weight:600}
+body.targets-on .tgt-badge{display:inline-block}
 
 /* Show Trend toggle */
 .trend-toggle{padding:8px 16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;font-size:12px;font-weight:600;color:var(--blue);background:#fafbfc}
@@ -386,6 +390,7 @@ function makeTargetDataset(data) {
 
 function toggleTargets() {
   _targetsOn = !_targetsOn;
+  document.body.classList.toggle('targets-on', _targetsOn);
   var btn = document.getElementById('targetToggle');
   btn.textContent = _targetsOn ? 'Hide Targets' : 'Show Targets';
   btn.style.background = _targetsOn ? '#eff6ff' : '';
@@ -507,10 +512,10 @@ Promise.all([
   var prevNetFTE = (prevHiredFTE!==null && prevLostFTE!==null) ? Math.round((prevHiredFTE - prevLostFTE)*100)/100 : null;
 
   var highlights = [
-    { label:'Total Active FTE Headcount (Outsource)', value:activeFTE, prev:prevActiveFTE, format:'num', color:'var(--blue)' },
-    { label:'FTEs Hired', value:hiredFTE, prev:prevHiredFTE, format:'num', color:'var(--green)' },
-    { label:'Lost FTEs', value:lostFTE, prev:prevLostFTE, format:'num', color:'var(--red)', invert:true },
-    { label:'Net FTE Gain/Loss', value:netFTE, prev:prevNetFTE, format:'num', color:'var(--purple)' }
+    { label:'Total Active FTE Headcount (Outsource)', value:activeFTE, prev:prevActiveFTE, format:'num', color:'var(--blue)', targetKey:'active_fte' },
+    { label:'FTEs Hired', value:hiredFTE, prev:prevHiredFTE, format:'num', color:'var(--green)', targetKey:'fte_hires' },
+    { label:'Lost FTEs', value:lostFTE, prev:prevLostFTE, format:'num', color:'var(--red)', invert:true, targetKey:'lost_ftes' },
+    { label:'Net FTE Gain/Loss', value:netFTE, prev:prevNetFTE, format:'num', color:'var(--purple)', targetKey:'net_fte' }
   ];
 
   var hHtml = '';
@@ -531,7 +536,11 @@ Promise.all([
       changeBadge = '<span class="change '+cls+'">'+(pctC>=0?'+':'')+pctC.toFixed(1)+'%</span>';
     }
     var prevStr = h.prev!==null ? '<span class="prev-val">Prev: '+fmt(Math.round(h.prev))+'</span>' : '';
-    hHtml += '<div class="highlight-panel"><div class="accent" style="background:'+h.color+'"></div><div class="label">'+h.label+'</div><div class="value">'+valStr+'</div><div class="meta">'+changeBadge+prevStr+'</div></div>';
+    var tgtStr = '';
+    if (h.targetKey && TARGETS[currentMonth] && TARGETS[currentMonth][h.targetKey]!==null && TARGETS[currentMonth][h.targetKey]!==undefined) {
+      tgtStr = '<span class="tgt-badge">Target: '+fmt(Math.round(pn(TARGETS[currentMonth][h.targetKey])))+'</span>';
+    }
+    hHtml += '<div class="highlight-panel"><div class="accent" style="background:'+h.color+'"></div><div class="label">'+h.label+'</div><div class="value">'+valStr+'</div><div class="meta">'+changeBadge+prevStr+tgtStr+'</div></div>';
   }
   document.getElementById('highlightPanels').innerHTML = hHtml;
 
@@ -672,10 +681,10 @@ Promise.all([
   // === Acquisition sub-blocks ===
   var acqSections = [
     { title:'Marketing', rows:[
-      { label:'Google Ads Spend', col:C.adsSpend, format:'money' },
-      { label:'Discovery Calls (MQLs) Booked', col:C.mqls, format:'num' },
-      { label:'Cost Per Discovery Call', col:C.costPerCall, format:'money' },
-      { label:'Number of Active Clients', col:C.existingClients, format:'num' }
+      { label:'Google Ads Spend', col:C.adsSpend, format:'money', targetKey:'ads_spend' },
+      { label:'Discovery Calls (MQLs) Booked', col:C.mqls, format:'num', targetKey:'mqls' },
+      { label:'Cost Per Discovery Call', col:C.costPerCall, format:'money', targetKey:'cost_per_call' },
+      { label:'Number of Active Clients', col:C.existingClients, format:'num', targetKey:'active_clients' }
     ], charts:[
       { label:'Google Ads Spend', col:C.adsSpend, color:'#0891b2', type:'bar', money:true, targetKey:'ads_spend' },
       { label:'Discovery Calls (MQLs) Booked', col:C.mqls, color:'#7c3aed', type:'bar', targetKey:'mqls' },
@@ -714,8 +723,8 @@ Promise.all([
   // === Churn & Backfill sub-blocks ===
   var churnSections = [
     { title:'Churn', rows:[
-      { label:'Lost FTE', col:C.churnedFTE, format:'num', invert:true },
-      { label:'Churn Rate', col:C.churnRate, format:'pctR', invert:true }
+      { label:'Lost FTE', col:C.churnedFTE, format:'num', invert:true, targetKey:'lost_ftes' },
+      { label:'Churn Rate', col:C.churnRate, format:'pctR', invert:true, targetKey:'churn_rate' }
     ], charts:[
       { label:'Lost FTE', col:C.churnedFTE, color:'#dc2626', type:'bar' },
       { label:'Churn Rate', col:C.churnRate, color:'#e11d48', type:'line', pct:true, targetKey:'churn_rate' }
@@ -768,12 +777,19 @@ function renderSubBlocks(containerId, sections, cur, prev, slice, labels) {
     var bid = 'block_' + (++_blockId);
     html += '<div class="sub-block">';
     html += '<div class="sub-block-header">'+sec.title+(sec.link ? ' <a href="'+sec.link+'" target="_blank" style="display:inline-block;padding:6px 16px;background:var(--blue);color:#fff;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;letter-spacing:.3px;margin-left:12px;vertical-align:middle">Full Report &rarr;</a>' : '')+'</div>';
-    html += '<table class="kpi-table"><thead><tr><th style="width:40%">Metric</th><th class="ar">'+monthLabel(currentMonth)+'</th><th class="ar">'+monthLabel(prevMonthKey(currentMonth))+'</th><th class="ar">Change</th></tr></thead><tbody>';
+    var hasTgt = sec.rows.some(function(r){ return !!r.targetKey; });
+    var tgtHead = hasTgt ? '<th class="ar tgt-col">Target</th>' : '';
+    html += '<table class="kpi-table"><thead><tr><th style="width:40%">Metric</th><th class="ar">'+monthLabel(currentMonth)+'</th>'+tgtHead+'<th class="ar">'+monthLabel(prevMonthKey(currentMonth))+'</th><th class="ar">Change</th></tr></thead><tbody>';
     for (var i=0;i<sec.rows.length;i++) {
       var r = sec.rows[i];
       var cv = cur ? pn(cur[r.col]) : null;
       var pv = prev ? pn(prev[r.col]) : null;
-      html += '<tr><td>'+r.label+'</td><td class="ar" style="font-weight:600">'+formatVal(cv,r.format)+'</td><td class="ar">'+formatVal(pv,r.format)+'</td>'+changeHtml(cv,pv,r.invert)+'</tr>';
+      var tgtCell = '';
+      if (hasTgt) {
+        var tv = (r.targetKey && TARGETS[currentMonth]) ? TARGETS[currentMonth][r.targetKey] : null;
+        tgtCell = '<td class="ar tgt-col">'+(tv!==null&&tv!==undefined?formatVal(pn(tv),r.format):'—')+'</td>';
+      }
+      html += '<tr><td>'+r.label+'</td><td class="ar" style="font-weight:600">'+formatVal(cv,r.format)+'</td>'+tgtCell+'<td class="ar">'+formatVal(pv,r.format)+'</td>'+changeHtml(cv,pv,r.invert)+'</tr>';
     }
     html += '</tbody></table>';
     if (sec.charts && sec.charts.length > 0) {
