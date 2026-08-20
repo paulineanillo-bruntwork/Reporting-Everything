@@ -61,6 +61,19 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .btn-sub.unsub{background:#f1f5f9;color:var(--text-muted);border:1px solid var(--border)}
 .btn-sub:disabled{opacity:.5;cursor:default}
 .sub-count{font-size:11px;color:var(--text-muted)}
+.mtd-block{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);margin-bottom:28px;overflow:hidden}
+.mtd-head{padding:14px 20px;border-bottom:1px solid var(--border);background:#f8fafc;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.mtd-head .t{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted)}
+.mtd-head .pace{font-size:12px;color:var(--text-muted)}
+.mtd-table{width:100%;border-collapse:collapse;font-size:13px}
+.mtd-table th{text-align:right;padding:10px 16px;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);border-bottom:2px solid var(--border);background:#fff}
+.mtd-table th:first-child{text-align:left}
+.mtd-table td{padding:10px 16px;border-bottom:1px solid var(--border);text-align:right;font-variant-numeric:tabular-nums}
+.mtd-table td:first-child{text-align:left;font-weight:600}
+.mtd-table tr:last-child td{border-bottom:none}
+.mtd-bar{display:inline-block;width:110px;height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;vertical-align:middle;margin-right:8px}
+.mtd-bar>span{display:block;height:100%;border-radius:4px}
+.mtd-pct{font-size:12px;font-weight:700}
 @media(max-width:1100px){.card-grid{grid-template-columns:repeat(2,1fr)}.chart-grid{grid-template-columns:1fr}}
 @media(max-width:700px){.header,.main{padding-left:20px;padding-right:20px}.card-grid{grid-template-columns:1fr}}
 </style>
@@ -96,6 +109,18 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
   </div>
   <div class="week-label" id="weekLabel"></div>
   <div class="card-grid" id="cards"></div>
+  <div class="mtd-block" id="mtdBlock" style="display:none">
+    <div class="mtd-head">
+      <span class="t" id="mtdTitle">Month to Date vs Target</span>
+      <span class="pace" id="mtdPace"></span>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="mtd-table">
+        <thead><tr><th>Metric</th><th>Month to Date</th><th>Month Target</th><th style="text-align:left;padding-left:24px">Progress</th></tr></thead>
+        <tbody id="mtdBody"></tbody>
+      </table>
+    </div>
+  </div>
   <div class="chart-grid">
     <div class="chart-block"><h3>Weekly Google Ads Spend</h3><canvas id="chartAds"></canvas></div>
     <div class="chart-block"><h3>Weekly Leads</h3><canvas id="chartLeads"></canvas></div>
@@ -334,6 +359,56 @@ function generateWeek() {
 }
 
 load();
+
+// === Month to Date vs Target ===
+function loadMTD() {
+  fetch('/api/weekly-report/mtd').then(function(r){
+    if (r.status===401) return null;
+    return r.json();
+  }).then(function(d){
+    if (!d || d.error || !d.metrics) return;
+    var m = d.metrics;
+    var t = d.target || {};
+    var MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var mp = d.month.split('-');
+    document.getElementById('mtdTitle').textContent = 'Month to Date vs Target — ' + MONTHS_FULL[parseInt(mp[1])-1] + ' ' + mp[0];
+    var elapsed = Math.round((d.day / d.days_in_month) * 100);
+    document.getElementById('mtdPace').textContent = 'Day ' + d.day + ' of ' + d.days_in_month + ' (' + elapsed + '% of month elapsed)';
+
+    var cpl = (m.ads_spend && m.leads) ? m.ads_spend / m.leads : null;
+    var net = Math.round((m.total_fte_hires - m.offboarded_fte) * 100) / 100;
+
+    // invert=true means lower-than-target is good (spend caps, churn, cost)
+    var rows = [
+      { label:'Google Ads Spend', val:m.ads_spend, tgt:t.ads_spend, money:true, invert:true },
+      { label:'Leads (MQLs) Booked', val:m.leads, tgt:t.mqls },
+      { label:'Cost Per Lead', val:cpl, tgt:t.cost_per_call, money:true, invert:true, noBar:true },
+      { label:'Total FTE Hires', val:m.total_fte_hires, tgt:t.fte_hires },
+      { label:'Offboardings (FTE)', val:m.offboarded_fte, tgt:t.lost_ftes, invert:true },
+      { label:'Net FTE Gain/Loss', val:net, tgt:t.net_fte }
+    ];
+    var h = '';
+    for (var i=0;i<rows.length;i++) {
+      var r = rows[i];
+      var valStr = r.money ? fmtM(r.val) : fmtN(r.val);
+      var tgtStr = (r.tgt===null||r.tgt===undefined) ? '—' : (r.money ? fmtM(r.tgt) : fmtN(r.tgt));
+      var prog = '';
+      if (r.tgt!==null && r.tgt!==undefined && r.tgt!==0 && r.val!==null && r.val!==undefined) {
+        var pct = (r.val / r.tgt) * 100;
+        var onTrack = r.invert ? pct <= elapsed + 10 : pct >= elapsed - 10;
+        var color = onTrack ? '#059669' : '#dc2626';
+        var barHtml = r.noBar ? '' : '<span class="mtd-bar"><span style="width:'+Math.min(100,Math.max(0,pct)).toFixed(0)+'%;background:'+color+'"></span></span>';
+        prog = barHtml + '<span class="mtd-pct" style="color:'+color+'">'+pct.toFixed(0)+'% of target</span>';
+      } else {
+        prog = '<span style="color:var(--text-muted);font-size:12px">no target set</span>';
+      }
+      h += '<tr><td>'+r.label+'</td><td style="font-weight:700">'+valStr+'</td><td>'+tgtStr+'</td><td style="text-align:left;padding-left:24px">'+prog+'</td></tr>';
+    }
+    document.getElementById('mtdBody').innerHTML = h;
+    document.getElementById('mtdBlock').style.display = 'block';
+  }).catch(function(){});
+}
+loadMTD();
 
 // === Email subscription ===
 var _subscribed = false;

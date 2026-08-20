@@ -4502,22 +4502,19 @@ function lastCompletedWeekStart() {
   return new Date(thisMonday - 7 * 86400000).toISOString().slice(0, 10);
 }
 
-async function runWeeklyGenerate(weekStart) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart || '')) throw new Error('weekStart must be YYYY-MM-DD');
-  var wsDate = new Date(weekStart + 'T00:00:00Z');
-  if (wsDate.getUTCDay() !== 1) throw new Error('weekStart must be a Monday');
-  var weekEnd = new Date(wsDate.getTime() + 6 * 86400000).toISOString().slice(0, 10);
-  var startMs = String(wsDate.getTime());
-  var endMs = String(new Date(weekEnd + 'T23:59:59Z').getTime());
-  console.log('[Weekly Report] Generating for week ' + weekStart + ' to ' + weekEnd);
+// Compute the weekly-report metric set for an arbitrary date range (inclusive,
+// UTC day boundaries). Used by the weekly snapshots and the month-to-date view.
+async function computeRangeMetrics(rangeStart, rangeEnd) {
+  var startMs = String(new Date(rangeStart + 'T00:00:00Z').getTime());
+  var endMs = String(new Date(rangeEnd + 'T23:59:59Z').getTime());
 
-  // --- Google Ads spend for the week ---
+  // --- Google Ads spend ---
   var adsSpend = null;
   var adsError = null;
   try {
     var adsCsv = await fetchAdsCsv(ADS_CSV_URL);
     var adsResult = processAdsData(parseAdsCsv(adsCsv));
-    var wkDays = adsResult.timeseries.filter(function(d) { return d.day >= weekStart && d.day <= weekEnd; });
+    var wkDays = adsResult.timeseries.filter(function(d) { return d.day >= rangeStart && d.day <= rangeEnd; });
     adsSpend = 0;
     for (var ai = 0; ai < wkDays.length; ai++) adsSpend += wkDays[ai].cost;
     adsSpend = Math.round(adsSpend * 100) / 100;
@@ -4526,7 +4523,7 @@ async function runWeeklyGenerate(weekStart) {
     console.error('[Weekly Report] Ads fetch failed:', e.message);
   }
 
-  // --- FTE hires (createdate in week), categorized by job_source ---
+  // --- FTE hires (createdate in range), categorized by job_source ---
   var newClientFTE = 0, existingClientFTE = 0, backfillFTE = 0, totalFTE = 0;
   var hireResults = await fetchAllPagesWithRetry({
     filterGroups: [{
@@ -4554,7 +4551,7 @@ async function runWeeklyGenerate(weekStart) {
 
   await sleep(1000);
 
-  // --- Leads: contacts whose meeting was created during the week
+  // --- Leads: contacts whose meeting was created in range
   // (Meeting_Creation_Date_CP__c), booking status not "not booked"/
   // "disqualified", and Message is known. Mirrors the ads report exactly. ---
   var leadCount = null;
@@ -4577,7 +4574,7 @@ async function runWeeklyGenerate(weekStart) {
 
   await sleep(1000);
 
-  // --- Offboardings (offboarding_date in week) ---
+  // --- Offboardings (offboarding_date in range) ---
   var offboardedFTE = 0, offboardedHC = 0;
   var offResults = await fetchAllPagesWithRetry({
     filterGroups: [{
@@ -4595,17 +4592,37 @@ async function runWeeklyGenerate(weekStart) {
     offboardedHC++;
   }
 
+  return {
+    ads_spend: adsSpend, ads_error: adsError, leads: leadCount,
+    new_client_fte: Math.round(newClientFTE * 100) / 100,
+    existing_client_fte: Math.round(existingClientFTE * 100) / 100,
+    backfill_fte: Math.round(backfillFTE * 100) / 100,
+    total_fte_hires: Math.round(totalFTE * 100) / 100,
+    offboarded_fte: Math.round(offboardedFTE * 100) / 100,
+    offboarded_hc: offboardedHC
+  };
+}
+
+async function runWeeklyGenerate(weekStart) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart || '')) throw new Error('weekStart must be YYYY-MM-DD');
+  var wsDate = new Date(weekStart + 'T00:00:00Z');
+  if (wsDate.getUTCDay() !== 1) throw new Error('weekStart must be a Monday');
+  var weekEnd = new Date(wsDate.getTime() + 6 * 86400000).toISOString().slice(0, 10);
+  console.log('[Weekly Report] Generating for week ' + weekStart + ' to ' + weekEnd);
+
+  var m = await computeRangeMetrics(weekStart, weekEnd);
+
   var row = [
     weekStart,
     weekEnd,
-    adsSpend === null ? '' : adsSpend,
-    leadCount === null ? '' : leadCount,
-    Math.round(newClientFTE * 100) / 100,
-    Math.round(existingClientFTE * 100) / 100,
-    Math.round(backfillFTE * 100) / 100,
-    Math.round(totalFTE * 100) / 100,
-    Math.round(offboardedFTE * 100) / 100,
-    offboardedHC,
+    m.ads_spend === null ? '' : m.ads_spend,
+    m.leads === null ? '' : m.leads,
+    m.new_client_fte,
+    m.existing_client_fte,
+    m.backfill_fte,
+    m.total_fte_hires,
+    m.offboarded_fte,
+    m.offboarded_hc,
     new Date().toISOString()
   ];
 
@@ -4628,9 +4645,47 @@ async function runWeeklyGenerate(weekStart) {
     week_start: weekStart, week_end: weekEnd, ads_spend: row[2], leads: row[3],
     new_client_fte: row[4], existing_client_fte: row[5], backfill_fte: row[6],
     total_fte_hires: row[7], offboarded_fte: row[8], offboarded_hc: row[9],
-    ads_error: adsError
+    ads_error: m.ads_error
   };
 }
+
+// Month-to-date metrics vs the month's target (Sydney calendar month)
+var mtdCache = { data: null, ts: 0 };
+var MTD_CACHE_TTL = 15 * 60 * 1000;
+
+app.get('/api/weekly-report/mtd', async function(req, res) {
+  try {
+    var now = Date.now();
+    if (mtdCache.data && (now - mtdCache.ts) < MTD_CACHE_TTL) {
+      return res.json(Object.assign({}, mtdCache.data, { cached: true }));
+    }
+    var p = sydneyDateParts();
+    var monthKey = p.y + '-' + String(p.m).padStart(2, '0');
+    var start = monthKey + '-01';
+    var end = monthKey + '-' + String(p.d).padStart(2, '0');
+    var metrics = await computeRangeMetrics(start, end);
+    var target = null;
+    try {
+      var targets = await readTargetsList();
+      for (var i = 0; i < targets.length; i++) {
+        if (targets[i].month === monthKey) { target = targets[i]; break; }
+      }
+    } catch (te) {
+      console.error('[MTD] Targets read failed:', te.message);
+    }
+    var daysInMonth = new Date(Date.UTC(p.y, p.m, 0)).getUTCDate();
+    var result = {
+      month: monthKey, day: p.d, days_in_month: daysInMonth,
+      range: { start: start, end: end },
+      metrics: metrics, target: target
+    };
+    mtdCache = { data: result, ts: now };
+    res.json(result);
+  } catch (e) {
+    console.error('[MTD] Error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // Serve the weekly report page
 app.get('/weekly-report', function(req, res) {
@@ -4726,25 +4781,30 @@ async function ensureTargetsTab() {
   targetsTabReady = true;
 }
 
+async function readTargetsList() {
+  var now = Date.now();
+  if (targetsCache.data && (now - targetsCache.ts) < TARGETS_CACHE_TTL) {
+    return targetsCache.data;
+  }
+  await ensureTargetsTab();
+  var data = await sheetsGet(KPI_SOURCE_SHEET_ID, TARGETS_TAB + '!A:J', { valueRenderOption: 'UNFORMATTED_VALUE' });
+  var rows = (data.values || []).slice(1);
+  var targets = rows.filter(function(r) { return r[0]; }).map(function(r) {
+    var t = { month: String(r[0]) };
+    for (var i = 1; i < TARGET_HEADERS.length; i++) {
+      var v = r[i];
+      t[TARGET_HEADERS[i]] = (v === '' || v === undefined || v === null) ? null : parseFloat(v);
+    }
+    return t;
+  }).sort(function(a, b) { return a.month.localeCompare(b.month); });
+  targetsCache = { data: targets, ts: now };
+  return targets;
+}
+
 app.get('/api/kpi-targets', async function(req, res) {
   try {
-    var now = Date.now();
-    if (targetsCache.data && (now - targetsCache.ts) < TARGETS_CACHE_TTL) {
-      return res.json({ targets: targetsCache.data, cached: true });
-    }
-    await ensureTargetsTab();
-    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, TARGETS_TAB + '!A:J', { valueRenderOption: 'UNFORMATTED_VALUE' });
-    var rows = (data.values || []).slice(1);
-    var targets = rows.filter(function(r) { return r[0]; }).map(function(r) {
-      var t = { month: String(r[0]) };
-      for (var i = 1; i < TARGET_HEADERS.length; i++) {
-        var v = r[i];
-        t[TARGET_HEADERS[i]] = (v === '' || v === undefined || v === null) ? null : parseFloat(v);
-      }
-      return t;
-    }).sort(function(a, b) { return a.month.localeCompare(b.month); });
-    targetsCache = { data: targets, ts: now };
-    res.json({ targets: targets, cached: false });
+    var targets = await readTargetsList();
+    res.json({ targets: targets });
   } catch (e) {
     console.error('[Targets] Read error:', e.message);
     res.status(500).json({ error: e.message });
