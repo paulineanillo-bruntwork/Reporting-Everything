@@ -5157,7 +5157,9 @@ function parsePLPdfText(text) {
   var started = false;
   for (var r = 0; r < lines.length; r++) {
     var line = lines[r];
-    if (/^PROFIT\s*&\s*LOSS/i.test(line) && /budget/i.test(line)) { started = true; continue; }
+    // Column header row — either combined ("PROFIT & LOSS Jul 2021 Budget (...) ...")
+    // or on its own line ("Jul 2024Budget (Jul 2024)Variance %Common Size %YTD")
+    if (/Budget\s*\(/i.test(line) && /variance/i.test(line)) { started = true; continue; }
     if (!started) continue;
     if (/prepared by|page \d|^profit\s*&\s*loss$/i.test(line)) continue;
     var m2 = line.match(rowRe);
