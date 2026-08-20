@@ -5160,6 +5160,7 @@ function parsePLPdfText(text) {
   }
   var actualLines = [], budgetLines = [];
   var started = false;
+  var valueRows = 0;
   for (var r = 0; r < lines.length; r++) {
     var line = lines[r];
     // Column header row — combined ("PROFIT & LOSS Jul 2021 Budget (...) Variance ..."),
@@ -5171,15 +5172,23 @@ function parsePLPdfText(text) {
     if (!started) continue;
     // Stop at the next report section (some exports append a balance sheet etc.)
     if (/^BALANCE SHEET|^CASH ?FLOW|^Profit & Loss - vs Budget$/i.test(line)) break;
-    if (/prepared by|page \d|^profit\s*&\s*loss$/i.test(line)) continue;
+    // YTD-comparison / per-entity tables appended after the monthly P&L: once
+    // real rows exist, their header fragments mark the end of the month table
+    // (before any rows they are just wrapped column captions of the main header).
+    if (line.indexOf('$') === -1 && /^\d{4}\/\d{4}|^\(ytd\)$|budget\s*\(ytd\)|^bruntwork\s/i.test(line)) {
+      if (valueRows >= 3) break;
+      continue;
+    }
+    if (/prepared by|page \d|^profit\s*&\s*loss$|profit & loss month on month comparison/i.test(line)) continue;
     // Wrapped header fragments (year continuation, column captions split across lines)
-    if (/^(\d{4}\)?|FY\s?\d{4}\)?|\(%\)|month\s*\(%\)|this month vs|budget\s*\(%\)|budget\s*\(ytd\)|year to date( fy)?( \d{4})?|ytd vs ytd( budget)?( \(%\))?|variance %.*|common size.*)$/i.test(line)) continue;
+    if (/^(\d{4}\)?|FY\s?\d{4}\)?|\(%\)|month\s*\(%\)|this month vs|budget\s*\(%\)|year to date( fy)?( \d{4})?|ytd vs ytd( budget)?( \(%\))?|variance %.*|common size.*)$/i.test(line)) continue;
     var m2 = line.match(rowRe) || line.match(rowReB) || line.match(rowReC);
     if (m2) {
       var name = m2[1].trim();
       if (!name) continue;
       actualLines.push([name, num(m2[2], m2[3])]);
       budgetLines.push([name, num(m2[4], m2[5])]);
+      valueRows++;
     } else if (line.indexOf('$') === -1) {
       // Section header
       actualLines.push([line, null]);
