@@ -4516,9 +4516,10 @@ function lastCompletedWeekStart() {
 // uses it to count scheduled offboardings through end of month, matching the
 // FTE dashboard's current-month card.
 async function computeRangeMetrics(rangeStart, rangeEnd, offRangeEnd) {
-  var startMs = String(new Date(rangeStart + 'T00:00:00Z').getTime());
-  var endMs = String(new Date(rangeEnd + 'T23:59:59Z').getTime());
-  var offEndMs = String(new Date((offRangeEnd || rangeEnd) + 'T23:59:59Z').getTime());
+  // Day boundaries in GMT+8, matching the FTE dashboard's month/week bucketing
+  var startMs = String(new Date(rangeStart + 'T00:00:00+08:00').getTime());
+  var endMs = String(new Date(rangeEnd + 'T23:59:59+08:00').getTime());
+  var offEndMs = String(new Date((offRangeEnd || rangeEnd) + 'T23:59:59+08:00').getTime());
 
   // --- Google Ads spend ---
   var adsSpend = null;
