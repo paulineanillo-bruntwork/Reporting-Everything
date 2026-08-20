@@ -641,7 +641,7 @@ function render() {
         dsets.push({ type:'bar', label:nm, data:a, backgroundColor:hexAlpha(color,.65), borderColor:color, borderWidth:1, borderRadius:3 });
       } else {
         dsets.push({ type:'line', label:nm, data:a, borderColor:color, backgroundColor:'transparent', borderWidth:2.5, tension:.3, pointRadius:3,
-          datalabels: manySeries ? { display:false } : { display:true, anchor:'end', align:'top', color:color, font:{size:9,weight:'bold'}, formatter:function(v){ return v!==null ? '$'+Math.round(v/1000)+'k' : ''; } } });
+          datalabels: manySeries ? { display:false } : { display:true, anchor:'end', align:'top', color:color, font:{size:9,weight:'bold'}, formatter:function(v){ if(v===null) return ''; var s=v<0?'-':''; var a=Math.abs(v); return a>=1e6 ? s+'$'+(a/1e6).toFixed(2)+'m' : s+'$'+Math.round(a/1000)+'k'; } } });
       }
     }
     if (b && b.some(function(v){ return v !== null; })) {
