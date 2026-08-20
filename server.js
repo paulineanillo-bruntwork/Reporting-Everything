@@ -5289,6 +5289,7 @@ app.post('/api/financials/clear', async function(req, res) {
     if (!(await requireFinAccess(req, res))) return;
     await ensureFinTab();
     var only = (req.body && req.body.dataset) || null; // optional: 'actual' | 'budget'
+    var onlyMonths = (req.body && Array.isArray(req.body.months) && req.body.months.length) ? req.body.months : null; // optional: ['YYYY-MM', ...]
     var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:D');
     var rows = (existing.values || []).slice(1);
     var kept = [];
@@ -5296,7 +5297,8 @@ app.post('/api/financials/clear', async function(req, res) {
     for (var i = 0; i < rows.length; i++) {
       if (!rows[i][0]) continue;
       var ds = String(rows[i][1] || 'actual');
-      if (only && ds !== only) kept.push([rows[i][0], ds, rows[i][2] || '', rows[i][3] || '']);
+      var matches = (!only || ds === only) && (!onlyMonths || onlyMonths.indexOf(String(rows[i][0])) !== -1);
+      if (!matches) kept.push([rows[i][0], ds, rows[i][2] || '', rows[i][3] || '']);
       else cleared++;
     }
     var values = kept;
