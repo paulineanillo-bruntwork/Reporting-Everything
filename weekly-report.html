@@ -404,10 +404,8 @@ function loadMTD() {
           prog = '<span class="mtd-pct" style="color:'+abColor+'">'+abLabel+'</span>';
         } else {
           var pct = (r.val / r.tgt) * 100;
-          var onTrack = r.invert ? pct <= elapsed + 10 : pct >= elapsed - 10;
-          var color = onTrack ? '#059669' : '#dc2626';
-          var barHtml = r.noBar ? '' : '<span class="mtd-bar"><span style="width:'+Math.min(100,Math.max(0,pct)).toFixed(0)+'%;background:'+color+'"></span></span>';
-          prog = barHtml + '<span class="mtd-pct" style="color:'+color+'">'+pct.toFixed(0)+'% of target</span>';
+          var barHtml = r.noBar ? '' : '<span class="mtd-bar"><span style="width:'+Math.min(100,Math.max(0,pct)).toFixed(0)+'%;background:#64748b"></span></span>';
+          prog = barHtml + '<span class="mtd-pct" style="color:var(--text)">'+pct.toFixed(0)+'% of target</span>';
         }
       } else {
         prog = '<span style="color:var(--text-muted);font-size:12px">no target set</span>';
