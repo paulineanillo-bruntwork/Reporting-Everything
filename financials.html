@@ -47,7 +47,7 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .card .change.pos{color:var(--green);background:var(--green-light)}
 .card .change.neg{color:var(--red);background:var(--red-light)}
 .card .prev-val{font-size:11px;color:var(--text-muted)}
-.chart-grid{display:grid;grid-template-columns:3fr 2fr;gap:20px;margin-bottom:24px}
+.chart-grid{display:grid;grid-template-columns:1fr;gap:20px;margin-bottom:24px}
 .chart-block{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);padding:20px}
 .chart-block h3{font-size:13px;font-weight:700;margin-bottom:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
 .line-picker{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
@@ -58,7 +58,7 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .line-picker select{padding:5px 8px;border:1px dashed var(--border);border-radius:16px;font-size:12px;font-weight:600;color:var(--blue);background:#fff;cursor:pointer;max-width:220px;font-family:inherit}
 .line-reset{padding:5px 12px;border:none;border-radius:16px;background:#f1f5f9;color:var(--text-muted);font-size:11px;font-weight:600;cursor:pointer}
 .line-reset:hover{color:var(--text)}
-.chart-block canvas{width:100%!important;height:260px!important}
+.chart-block canvas{width:100%!important;height:440px!important}
 .tbl-block{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden}
 .tbl-block h3{font-size:13px;font-weight:700;padding:16px 20px 12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
 .tbl-scroll{overflow-x:auto;max-height:70vh;overflow-y:auto}
@@ -148,7 +148,6 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
     </div>
     <div class="chart-grid">
       <div class="chart-block"><h3 id="chart1Title">P&amp;L Trends — Actual vs Budget</h3><div class="line-picker" id="linePicker"></div><canvas id="chartMain"></canvas></div>
-      <div class="chart-block"><h3 id="marginTitle">Operating Profit Margin</h3><canvas id="chartMargin"></canvas></div>
     </div>
     <div class="tbl-block">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;padding-right:20px">
@@ -199,6 +198,7 @@ try {
 } catch (e) {}
 var _charts = [];
 var _selLines = null; // chart series selection: ['Name|occ', ...], persisted
+var _showBudget = (function(){ try { return localStorage.getItem('fin_show_budget') !== '0'; } catch (e) { return true; } })();
 var LINE_PALETTE = ['#2563eb','#d97706','#059669','#7c3aed','#e11d48','#0891b2','#65a30d','#db2777','#475569','#b45309'];
 
 function persistSelLines() {
@@ -230,12 +230,18 @@ function renderLinePicker(availList) {
     if (_selLines.indexOf(a.key) === -1) h += '<option value="' + escH(a.key) + '">' + escH(a.name) + '</option>';
   });
   h += '</select><button class="line-reset" id="lineReset">Reset</button>';
+  h += '<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#475569;margin-left:10px;cursor:pointer"><input type="checkbox" id="budgetToggle"' + (_showBudget ? ' checked' : '') + '> Show budget line</label>';
   el.innerHTML = h;
   el.querySelectorAll('.line-chip button').forEach(function(btn) {
     btn.addEventListener('click', function() { removeChartLine(btn.parentElement.getAttribute('data-key')); });
   });
   document.getElementById('lineAdd').addEventListener('change', function() { addChartLine(this.value); });
   document.getElementById('lineReset').addEventListener('click', resetChartLines);
+  document.getElementById('budgetToggle').addEventListener('change', function() {
+    _showBudget = this.checked;
+    try { localStorage.setItem('fin_show_budget', _showBudget ? '1' : '0'); } catch (e) {}
+    render();
+  });
 }
 
 function toast(msg, ok) {
@@ -644,7 +650,7 @@ function render() {
           datalabels: manySeries ? { display:false } : { display:true, anchor:'end', align:'top', color:color, font:{size:9,weight:'bold'}, formatter:function(v){ if(v===null) return ''; var s=v<0?'-':''; var a=Math.abs(v); return a>=1e6 ? s+'$'+(a/1e6).toFixed(2)+'m' : s+'$'+Math.round(a/1000)+'k'; } } });
       }
     }
-    if (b && b.some(function(v){ return v !== null; })) {
+    if (_showBudget && b && b.some(function(v){ return v !== null; })) {
       dsets.push({ type:'line', label:'Budget ' + nm, data:b, borderColor:color, backgroundColor:'transparent', borderWidth:1.5, borderDash:[6,4], tension:0, pointRadius:0, pointHoverRadius:4 });
     }
   });
@@ -658,27 +664,6 @@ function render() {
     scales:{ x:{grid:{display:false},ticks:{font:{size:10}}}, y:{ticks:{font:{size:10},callback:function(v){ return '$'+(Math.abs(v)>=1e6?(v/1e6)+'M':(v/1e3)+'k'); }}} }
   };
   _charts.push(new Chart(document.getElementById('chartMain').getContext('2d'), { type:'bar', data:{labels:shared.labels, datasets:dsets}, options:opts }));
-
-  // Margin chart (actual + dashed budget margin)
-  function marginOf(revRow, netRow) {
-    return shared.labels.map(function(_, i) {
-      if (!revRow || !netRow) return null;
-      var r = revRow[i], n = netRow[i];
-      return (r && n !== null) ? Math.round((n / r) * 1000) / 10 : null;
-    });
-  }
-  var mOpts = JSON.parse(JSON.stringify(opts));
-  mOpts.plugins.legend = { display: !!mxB, position:'bottom', labels:{boxWidth:10,font:{size:10},padding:12} };
-  mOpts.scales.y = { ticks:{ font:{size:10}, callback:function(v){ return v + '%'; } } };
-  document.getElementById('marginTitle').textContent = opLabel + ' Margin';
-  var mDsets = [{ type:'line', label:opLabel + ' Margin %', data:marginOf(aRev, aOp), borderColor:'#7c3aed', backgroundColor:hexAlpha('#7c3aed',.08), fill:true, tension:.3, borderWidth:2.5, pointRadius:3,
-    datalabels:{ display:true, anchor:'end', align:'top', color:'#7c3aed', font:{size:9,weight:'bold'}, formatter:function(v){ return v!==null ? v.toFixed(1)+'%' : ''; } } }];
-  if (mxB) mDsets.push({ type:'line', label:'Budget Margin %', data:marginOf(bRev, bOp), borderColor:'#7c3aed', backgroundColor:'transparent', borderDash:[6,4], tension:0, borderWidth:2, pointRadius:0, pointHoverRadius:4 });
-  var mChart = new Chart(document.getElementById('chartMargin').getContext('2d'), {
-    type:'line', data:{ labels:shared.labels, datasets:mDsets }, options:mOpts
-  });
-  mChart.options.plugins.tooltip.callbacks.label = function(ctx){ return ctx.dataset.label + ': ' + (ctx.parsed.y===null?'—':ctx.parsed.y.toFixed(1)+'%'); };
-  _charts.push(mChart);
 
   // Table — Actuals / Budget / Variance are multi-select; each period column
   // splits into one sub-column per selected mode.
