@@ -102,9 +102,14 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
   </div>
 </div>
 <div class="main">
+  <div style="display:flex;justify-content:center;gap:18px;align-items:center;margin-bottom:10px;font-size:13px;font-weight:600">
+    <span style="color:var(--text-muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px">Upload as:</span>
+    <label style="cursor:pointer"><input type="radio" name="dsType" value="actual" checked> Actuals</label>
+    <label style="cursor:pointer"><input type="radio" name="dsType" value="budget"> Budget</label>
+  </div>
   <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
     <b>Drop a P&amp;L Excel file here</b> or click to browse (.xlsx, .xls, .csv)<br>
-    <span style="font-size:11px">Expects line items in the first column and month columns across the top (e.g. Xero / QuickBooks P&amp;L export)</span>
+    <span style="font-size:11px">Expects line items in the first column and month columns across the top (e.g. Xero / QuickBooks P&amp;L export). Use the toggle above to upload Actuals or Budget.</span>
     <div class="upload-status" id="uploadStatus"></div>
   </div>
   <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
@@ -127,7 +132,14 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
       <div class="chart-block"><h3>Net Profit Margin</h3><canvas id="chartMargin"></canvas></div>
     </div>
     <div class="tbl-block">
-      <h3 id="tblTitle">Profit &amp; Loss</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;padding-right:20px">
+        <h3 id="tblTitle">Profit &amp; Loss</h3>
+        <div class="view-tabs" id="tblModeTabs" style="display:none">
+          <button id="tmode-actual" class="active" onclick="setTblMode('actual')">Actuals</button>
+          <button id="tmode-budget" onclick="setTblMode('budget')">Budget</button>
+          <button id="tmode-variance" onclick="setTblMode('variance')">Variance</button>
+        </div>
+      </div>
       <div class="tbl-scroll"><table class="fin-table" id="finTable"></table></div>
     </div>
   </div>
@@ -158,8 +170,10 @@ Chart.defaults.font.size = 11;
 
 var MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 var MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-var _data = [];   // [{month:'YYYY-MM', lines:[[name, val|null],...]}]
+var _act = [];   // actuals: [{month:'YYYY-MM', lines:[[name, val|null],...]}]
+var _bud = [];   // budget: same shape
 var _view = 'monthly';
+var _tblMode = 'actual';
 var _charts = [];
 
 function toast(msg, ok) {
@@ -293,18 +307,19 @@ function handleFile(file) {
         st.style.color = 'var(--red)';
         return;
       }
-      st.textContent = 'Found ' + parsed.months.length + ' month(s), ' + parsed.lineCount + ' line items (sheet "' + parsed.sheet + '"). Saving...';
+      var ds = (document.querySelector('input[name="dsType"]:checked') || {}).value === 'budget' ? 'budget' : 'actual';
+      st.textContent = 'Found ' + parsed.months.length + ' month(s), ' + parsed.lineCount + ' line items (sheet "' + parsed.sheet + '"). Saving as ' + ds + '...';
       fetch('/api/financials', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ months: parsed.months })
+        body: JSON.stringify({ months: parsed.months, dataset: ds })
       }).then(function(r){
         if (r.status === 401) { window.location.href = '/auth/login'; throw new Error('unauth'); }
         return r.json();
       }).then(function(d){
         if (d.error) { st.textContent = 'Save failed: ' + d.error; st.style.color = 'var(--red)'; return; }
-        st.textContent = 'Saved ' + d.saved + ' month(s) from ' + file.name;
+        st.textContent = 'Saved ' + d.saved + ' month(s) of ' + d.dataset + ' data from ' + file.name;
         st.style.color = 'var(--green)';
-        toast('P&L data saved', true);
+        toast('P&L ' + d.dataset + ' data saved', true);
         load();
       }).catch(function(e){ if (e.message !== 'unauth') { st.textContent = 'Save failed: ' + e.message; st.style.color = 'var(--red)'; } });
     } catch (err) {
@@ -341,32 +356,40 @@ function annualKey(mk) {
 }
 
 // Build unified line order (from the latest month, then any extras) and a
-// per-period value matrix. Duplicate line names are aligned by occurrence.
-function buildMatrix() {
-  if (_data.length === 0) return null;
-  var latest = _data[_data.length - 1];
+// per-period value matrix over a SHARED period list so actuals and budget
+// columns align. Duplicate line names are aligned by occurrence.
+function periodOfFn() {
+  return _view === 'monthly' ? function(mk){ return mk; } : (_view === 'quarterly' ? quarterKey : annualKey);
+}
+function sharedPeriods() {
+  var periodOf = periodOfFn();
+  var months = {};
+  _act.forEach(function(m){ months[m.month] = 1; });
+  _bud.forEach(function(m){ months[m.month] = 1; });
+  var periods = [], pIndex = {};
+  Object.keys(months).sort().forEach(function(mk) {
+    var pk = periodOf(mk);
+    if (!(pk in pIndex)) { pIndex[pk] = periods.length; periods.push(pk); }
+  });
+  var labels = periods.map(function(pk){ return _view === 'monthly' ? monthLabel(pk) : pk; });
+  return { periods: periods, pIndex: pIndex, labels: labels };
+}
+function buildMatrix(data, shared) {
+  if (data.length === 0) return null;
+  var periodOf = periodOfFn();
+  var latest = data[data.length - 1];
   var order = latest.lines.map(function(l, i){ return { name: l[0], occ: occIndex(latest.lines, i) }; });
-  // append lines seen in other months but not in latest
-  for (var d = _data.length - 2; d >= 0; d--) {
-    _data[d].lines.forEach(function(l, i) {
-      var occ = occIndex(_data[d].lines, i);
+  for (var d = data.length - 2; d >= 0; d--) {
+    data[d].lines.forEach(function(l, i) {
+      var occ = occIndex(data[d].lines, i);
       if (!order.some(function(o){ return o.name === l[0] && o.occ === occ; })) {
         order.push({ name: l[0], occ: occ });
       }
     });
   }
-  // period keys
-  var periodOf = _view === 'monthly' ? function(mk){ return mk; } : (_view === 'quarterly' ? quarterKey : annualKey);
-  var periods = [];
-  var pIndex = {};
-  _data.forEach(function(m) {
-    var pk = periodOf(m.month);
-    if (!(pk in pIndex)) { pIndex[pk] = periods.length; periods.push(pk); }
-  });
-  // matrix: rows = order, cols = periods (sum of month values, null-safe)
-  var matrix = order.map(function(){ return periods.map(function(){ return null; }); });
-  _data.forEach(function(m) {
-    var col = pIndex[periodOf(m.month)];
+  var matrix = order.map(function(){ return shared.periods.map(function(){ return null; }); });
+  data.forEach(function(m) {
+    var col = shared.pIndex[periodOf(m.month)];
     var occSeen = {};
     m.lines.forEach(function(l) {
       var key = l[0];
@@ -380,13 +403,18 @@ function buildMatrix() {
       matrix[ri][col] = (matrix[ri][col] === null ? 0 : matrix[ri][col]) + l[1];
     });
   });
-  var labels = periods.map(function(pk){ return _view === 'monthly' ? monthLabel(pk) : pk; });
-  return { order: order, periods: periods, labels: labels, matrix: matrix };
+  return { order: order, periods: shared.periods, labels: shared.labels, matrix: matrix };
 }
 function occIndex(lines, i) {
   var n = 0;
   for (var j = 0; j < i; j++) if (lines[j][0] === lines[i][0]) n++;
   return n;
+}
+// Metric row values across periods for a dataset matrix, by detection patterns
+function metricRow(mx, patterns, fromBottom) {
+  if (!mx) return null;
+  var idx = findLineIdx(mx, patterns, fromBottom);
+  return idx === -1 ? null : mx.matrix[idx];
 }
 
 // ===== Metric detection =====
@@ -406,6 +434,12 @@ function findLineIdx(mx, patterns, fromBottom) {
 }
 
 // ===== Rendering =====
+var PAT = {
+  rev: [/^total\s+(income|revenue|sales)/i, /^(revenue|income|sales|trading income)$/i, /total.*(income|revenue)/i],
+  gp: [/gross\s*profit/i],
+  exp: [/^total\s+(operating\s+)?expenses?/i, /total.*expens/i, /^(operating\s+)?expenses?$/i],
+  net: [/net\s*(profit|income|earnings)/i, /profit\s*(\/|\(|for|after)/i]
+};
 function setView(v) {
   _view = v;
   ['monthly','quarterly','annual'].forEach(function(t){
@@ -413,49 +447,72 @@ function setView(v) {
   });
   render();
 }
+function setTblMode(m) {
+  _tblMode = m;
+  ['actual','budget','variance'].forEach(function(t){
+    document.getElementById('tmode-' + t).classList.toggle('active', t === m);
+  });
+  render();
+}
 
 function render() {
   _charts.forEach(function(c){ c.destroy(); });
   _charts = [];
-  var mx = buildMatrix();
-  if (!mx) return;
+  var shared = sharedPeriods();
+  if (shared.periods.length === 0) return;
+  var mxA = buildMatrix(_act, shared);
+  var mxB = buildMatrix(_bud, shared);
+  document.getElementById('tblModeTabs').style.display = mxB ? 'flex' : 'none';
+  if (!mxB) _tblMode = 'actual';
+  var mx = mxA || mxB; // whichever exists, for the table when only budget uploaded
 
-  var revI = findLineIdx(mx, [/^total\s+(income|revenue|sales)/i, /^(revenue|income|sales|trading income)$/i, /total.*(income|revenue)/i]);
-  var gpI = findLineIdx(mx, [/gross\s*profit/i]);
-  var expI = findLineIdx(mx, [/^total\s+(operating\s+)?expenses?/i, /total.*expens/i, /^(operating\s+)?expenses?$/i]);
-  var netI = findLineIdx(mx, [/net\s*(profit|income|earnings)/i, /profit\s*(\/|\(|for|after)/i], true);
+  var aRev = metricRow(mxA, PAT.rev), aGp = metricRow(mxA, PAT.gp), aExp = metricRow(mxA, PAT.exp), aNet = metricRow(mxA, PAT.net, true);
+  var bRev = metricRow(mxB, PAT.rev), bGp = metricRow(mxB, PAT.gp), bExp = metricRow(mxB, PAT.exp), bNet = metricRow(mxB, PAT.net, true);
 
-  var last = mx.periods.length - 1, prev = mx.periods.length - 2;
-  function cardFor(idx, label, color, invert) {
-    if (idx === -1) return '';
-    var v = mx.matrix[idx][last], pv = prev >= 0 ? mx.matrix[idx][prev] : null;
+  // Latest/previous period with any ACTUAL data (budget can extend into the future)
+  var metricRows = [aRev, aGp, aExp, aNet];
+  var last = -1, prev = -1;
+  for (var li = shared.periods.length - 1; li >= 0; li--) {
+    if (metricRows.some(function(r){ return r && r[li] !== null; })) { last = li; break; }
+  }
+  for (var pi = last - 1; pi >= 0; pi--) {
+    if (metricRows.some(function(r){ return r && r[pi] !== null; })) { prev = pi; break; }
+  }
+
+  function cardFor(aRow, bRow, label, color, invert) {
+    if (!aRow || last === -1) return '';
+    var v = aRow[last], pv = prev >= 0 ? aRow[prev] : null;
+    var bv = bRow ? bRow[last] : null;
     var badge = '';
-    if (v !== null && pv !== null && pv !== 0) {
+    if (v !== null && bv !== null && bv !== 0) {
+      var vpct = ((v - bv) / Math.abs(bv)) * 100;
+      var vcls = invert ? (vpct > 0 ? 'neg' : 'pos') : (vpct >= 0 ? 'pos' : 'neg');
+      badge = '<span class="change ' + vcls + '" title="vs budget">' + (vpct >= 0 ? '+' : '') + vpct.toFixed(1) + '% vs budget</span>';
+    } else if (v !== null && pv !== null && pv !== 0) {
       var pct = ((v - pv) / Math.abs(pv)) * 100;
       var cls = invert ? (pct > 0 ? 'neg' : 'pos') : (pct >= 0 ? 'pos' : 'neg');
       badge = '<span class="change ' + cls + '">' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</span>';
     }
-    var prevStr = pv !== null ? '<span class="prev-val">Prev: ' + fmtMoney(pv) + '</span>' : '';
-    return '<div class="card"><div class="accent" style="background:' + color + '"></div><div class="label">' + label + ' — ' + mx.labels[last] + '</div><div class="value' + (v !== null && v < 0 ? ' neg' : '') + '">' + (v === null ? '—' : fmtMoney(v)) + '</div><div class="meta">' + badge + prevStr + '</div></div>';
+    var subStr = bv !== null ? '<span class="prev-val">Budget: ' + fmtMoney(bv) + '</span>'
+      : (pv !== null ? '<span class="prev-val">Prev: ' + fmtMoney(pv) + '</span>' : '');
+    return '<div class="card"><div class="accent" style="background:' + color + '"></div><div class="label">' + label + ' — ' + shared.labels[last] + '</div><div class="value' + (v !== null && v < 0 ? ' neg' : '') + '">' + (v === null ? '—' : fmtMoney(v)) + '</div><div class="meta">' + badge + subStr + '</div></div>';
   }
   document.getElementById('cards').innerHTML =
-    cardFor(revI, 'Revenue', 'var(--blue)') +
-    cardFor(gpI, 'Gross Profit', 'var(--cyan)') +
-    cardFor(expI, 'Total Expenses', 'var(--orange)', true) +
-    cardFor(netI, 'Net Profit', 'var(--green)');
+    cardFor(aRev, bRev, 'Revenue', 'var(--blue)') +
+    cardFor(aGp, bGp, 'Gross Profit', 'var(--cyan)') +
+    cardFor(aExp, bExp, 'Total Expenses', 'var(--orange)', true) +
+    cardFor(aNet, bNet, 'Net Profit', 'var(--green)');
 
-  // Main chart
+  // Main chart: actual bars + net line, budget as dashed overlays
   var dsets = [];
-  function bar(idx, label, color) {
-    if (idx === -1) return;
-    dsets.push({ type:'bar', label: label, data: mx.matrix[idx], backgroundColor: hexAlpha(color, .65), borderColor: color, borderWidth: 1, borderRadius: 3 });
-  }
-  bar(revI, 'Revenue', '#2563eb');
-  bar(expI, 'Expenses', '#d97706');
-  if (netI !== -1) {
-    dsets.push({ type:'line', label:'Net Profit', data: mx.matrix[netI], borderColor:'#059669', backgroundColor:'transparent', borderWidth:2.5, tension:.3, pointRadius:3,
+  if (aRev) dsets.push({ type:'bar', label:'Revenue', data:aRev, backgroundColor:hexAlpha('#2563eb',.65), borderColor:'#2563eb', borderWidth:1, borderRadius:3 });
+  if (aExp) dsets.push({ type:'bar', label:'Expenses', data:aExp, backgroundColor:hexAlpha('#d97706',.65), borderColor:'#d97706', borderWidth:1, borderRadius:3 });
+  if (aNet) {
+    dsets.push({ type:'line', label:'Net Profit', data:aNet, borderColor:'#059669', backgroundColor:'transparent', borderWidth:2.5, tension:.3, pointRadius:3,
       datalabels:{ display:true, anchor:'end', align:'top', color:'#059669', font:{size:9,weight:'bold'}, formatter:function(v){ return v!==null ? '$'+Math.round(v/1000)+'k' : ''; } } });
   }
+  if (bRev) dsets.push({ type:'line', label:'Budget Revenue', data:bRev, borderColor:'#2563eb', backgroundColor:'transparent', borderWidth:2, borderDash:[6,4], tension:0, pointRadius:0, pointHoverRadius:4 });
+  if (bNet) dsets.push({ type:'line', label:'Budget Net Profit', data:bNet, borderColor:'#059669', backgroundColor:'transparent', borderWidth:2, borderDash:[6,4], tension:0, pointRadius:0, pointHoverRadius:4 });
   var opts = {
     responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
     layout:{padding:{top:18}},
@@ -465,35 +522,50 @@ function render() {
           labelColor:function(ctx){ var c = ctx.dataset.borderColor || '#64748b'; if (typeof c !== 'string') c = '#64748b'; return { borderColor:c, backgroundColor:c, borderWidth:0, borderRadius:2 }; } } } },
     scales:{ x:{grid:{display:false},ticks:{font:{size:10}}}, y:{ticks:{font:{size:10},callback:function(v){ return '$'+(Math.abs(v)>=1e6?(v/1e6)+'M':(v/1e3)+'k'); }}} }
   };
-  _charts.push(new Chart(document.getElementById('chartMain').getContext('2d'), { type:'bar', data:{labels:mx.labels, datasets:dsets}, options:opts }));
+  _charts.push(new Chart(document.getElementById('chartMain').getContext('2d'), { type:'bar', data:{labels:shared.labels, datasets:dsets}, options:opts }));
 
-  // Margin chart
-  var marginData = mx.labels.map(function(_, i) {
-    if (revI === -1 || netI === -1) return null;
-    var r = mx.matrix[revI][i], n = mx.matrix[netI][i];
-    return (r && n !== null) ? Math.round((n / r) * 1000) / 10 : null;
-  });
+  // Margin chart (actual + dashed budget margin)
+  function marginOf(revRow, netRow) {
+    return shared.labels.map(function(_, i) {
+      if (!revRow || !netRow) return null;
+      var r = revRow[i], n = netRow[i];
+      return (r && n !== null) ? Math.round((n / r) * 1000) / 10 : null;
+    });
+  }
   var mOpts = JSON.parse(JSON.stringify(opts));
-  mOpts.plugins.legend = { display:false };
+  mOpts.plugins.legend = { display: !!mxB, position:'bottom', labels:{boxWidth:10,font:{size:10},padding:12} };
   mOpts.scales.y = { ticks:{ font:{size:10}, callback:function(v){ return v + '%'; } } };
+  var mDsets = [{ type:'line', label:'Net Margin %', data:marginOf(aRev, aNet), borderColor:'#7c3aed', backgroundColor:hexAlpha('#7c3aed',.08), fill:true, tension:.3, borderWidth:2.5, pointRadius:3,
+    datalabels:{ display:true, anchor:'end', align:'top', color:'#7c3aed', font:{size:9,weight:'bold'}, formatter:function(v){ return v!==null ? v.toFixed(1)+'%' : ''; } } }];
+  if (mxB) mDsets.push({ type:'line', label:'Budget Margin %', data:marginOf(bRev, bNet), borderColor:'#7c3aed', backgroundColor:'transparent', borderDash:[6,4], tension:0, borderWidth:2, pointRadius:0, pointHoverRadius:4 });
   var mChart = new Chart(document.getElementById('chartMargin').getContext('2d'), {
-    type:'line',
-    data:{ labels:mx.labels, datasets:[{ type:'line', label:'Net Margin %', data:marginData, borderColor:'#7c3aed', backgroundColor:hexAlpha('#7c3aed',.08), borderDash:[5,3], fill:true, tension:.3, borderWidth:2.5, pointRadius:3,
-      datalabels:{ display:true, anchor:'end', align:'top', color:'#7c3aed', font:{size:9,weight:'bold'}, formatter:function(v){ return v!==null ? v.toFixed(1)+'%' : ''; } } }] },
-    options:mOpts
+    type:'line', data:{ labels:shared.labels, datasets:mDsets }, options:mOpts
   });
-  mChart.options.plugins.tooltip.callbacks.label = function(ctx){ return 'Net Margin: ' + (ctx.parsed.y===null?'—':ctx.parsed.y.toFixed(1)+'%'); };
+  mChart.options.plugins.tooltip.callbacks.label = function(ctx){ return ctx.dataset.label + ': ' + (ctx.parsed.y===null?'—':ctx.parsed.y.toFixed(1)+'%'); };
   _charts.push(mChart);
 
-  // Table
+  // Table — Actuals / Budget / Variance (actual − budget)
   var viewNames = { monthly:'Monthly', quarterly:'Quarterly (FY)', annual:'Annual (FY, Jul–Jun)' };
-  document.getElementById('tblTitle').textContent = 'Profit & Loss — ' + viewNames[_view];
+  var modeNames = { actual:'Actuals', budget:'Budget', variance:'Variance (Actual − Budget)' };
+  document.getElementById('tblTitle').textContent = 'Profit & Loss — ' + viewNames[_view] + (mxB ? ' — ' + modeNames[_tblMode] : '');
+  var tmx = _tblMode === 'budget' ? mxB : (mxA || mxB);
+  if (!tmx) { document.getElementById('finTable').innerHTML = ''; return; }
+  // Budget lookup for variance: name+occ -> row values
+  var budLookup = {};
+  if (mxB) mxB.order.forEach(function(o, ri){ budLookup[o.name + '|' + o.occ] = mxB.matrix[ri]; });
   var h = '<thead><tr><th>Line Item</th>';
-  mx.labels.forEach(function(l){ h += '<th>' + l + '</th>'; });
+  shared.labels.forEach(function(l){ h += '<th>' + l + '</th>'; });
   h += '</tr></thead><tbody>';
-  mx.order.forEach(function(o, ri) {
-    var vals = mx.matrix[ri];
-    var isSection = vals.every(function(v){ return v === null; });
+  tmx.order.forEach(function(o, ri) {
+    var vals = tmx.matrix[ri];
+    if (_tblMode === 'variance') {
+      var bRow = budLookup[o.name + '|' + o.occ] || null;
+      vals = vals.map(function(v, ci) {
+        var bv = bRow ? bRow[ci] : null;
+        return (v !== null && bv !== null) ? v - bv : null;
+      });
+    }
+    var isSection = tmx.matrix[ri].every(function(v){ return v === null; });
     var isTotal = /^total|gross profit|net (profit|income)/i.test(o.name);
     h += '<tr class="' + (isSection ? 'sec' : (isTotal ? 'tot' : '')) + '"><td>' + escH(o.name) + '</td>';
     vals.forEach(function(v) {
@@ -516,8 +588,9 @@ function load() {
   }).then(function(d){
     document.getElementById('loading').style.display = 'none';
     if (d.error) { toast(d.error, false); return; }
-    _data = d.months || [];
-    if (_data.length === 0) {
+    _act = d.actuals || [];
+    _bud = d.budgets || [];
+    if (_act.length === 0 && _bud.length === 0) {
       document.getElementById('emptyState').style.display = 'block';
       document.getElementById('content').style.display = 'none';
       return;

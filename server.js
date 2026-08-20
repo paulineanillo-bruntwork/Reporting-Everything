@@ -4883,7 +4883,8 @@ app.post('/api/kpi-targets', async function(req, res) {
 });
 
 // ===== Financials (P&L uploads) =====
-// Parsed P&L data is stored per month in a 'Financials' tab: month | data_json | updated_at.
+// Parsed P&L data is stored per month+dataset in a 'Financials' tab:
+// month | dataset (actual|budget) | data_json | updated_at.
 // data_json is an ordered array of [lineName, value|null] pairs (null = section header).
 var FIN_TAB = 'Financials';
 var finTabReady = false;
@@ -4904,8 +4905,11 @@ async function ensureFinTab() {
       'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(KPI_SOURCE_SHEET_ID) + ':batchUpdate',
       { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: FIN_TAB } } }] }) }
     );
-    await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A1:C1', [['month', 'data_json', 'updated_at']]);
-    console.log('[Financials] Created tab');
+  }
+  var h = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A1:D1');
+  if (!h.values || !h.values[0] || h.values[0][1] !== 'dataset') {
+    await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A1:D1', [['month', 'dataset', 'data_json', 'updated_at']]);
+    console.log('[Financials] Tab headers set (month/dataset/data_json/updated_at)');
   }
   finTabReady = true;
 }
@@ -5022,21 +5026,26 @@ app.get('/api/financials', async function(req, res) {
     if (!(await requireFinAccess(req, res))) return;
     var now = Date.now();
     if (finCache.data && (now - finCache.ts) < FIN_CACHE_TTL) {
-      return res.json({ months: finCache.data, cached: true });
+      return res.json(Object.assign({}, finCache.data, { cached: true }));
     }
     await ensureFinTab();
-    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:C');
+    var data = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:D');
     var rows = (data.values || []).slice(1);
-    var months = [];
+    var actuals = [], budgets = [];
     for (var i = 0; i < rows.length; i++) {
-      if (!rows[i][0] || !rows[i][1]) continue;
+      if (!rows[i][0] || !rows[i][2]) continue;
       try {
-        months.push({ month: String(rows[i][0]), lines: JSON.parse(rows[i][1]), updated_at: String(rows[i][2] || '') });
+        var entry = { month: String(rows[i][0]), lines: JSON.parse(rows[i][2]), updated_at: String(rows[i][3] || '') };
+        if (String(rows[i][1] || 'actual') === 'budget') budgets.push(entry);
+        else actuals.push(entry);
       } catch (pe) { /* skip corrupt row */ }
     }
-    months.sort(function(a, b) { return a.month.localeCompare(b.month); });
-    finCache = { data: months, ts: now };
-    res.json({ months: months, cached: false });
+    var bySort = function(a, b) { return a.month.localeCompare(b.month); };
+    actuals.sort(bySort);
+    budgets.sort(bySort);
+    var result = { actuals: actuals, budgets: budgets };
+    finCache = { data: result, ts: now };
+    res.json(Object.assign({}, result, { cached: false }));
   } catch (e) {
     console.error('[Financials] Read error:', e.message);
     res.status(500).json({ error: e.message });
@@ -5047,6 +5056,7 @@ app.post('/api/financials', async function(req, res) {
   try {
     if (!(await requireFinAccess(req, res))) return;
     var months = (req.body && req.body.months) || [];
+    var dataset = (req.body && req.body.dataset) === 'budget' ? 'budget' : 'actual';
     if (!Array.isArray(months) || months.length === 0) return res.status(400).json({ error: 'months array required' });
     for (var v = 0; v < months.length; v++) {
       if (!/^\d{4}-\d{2}$/.test(months[v].month || '') || !Array.isArray(months[v].lines)) {
@@ -5057,27 +5067,28 @@ app.post('/api/financials', async function(req, res) {
       }
     }
     await ensureFinTab();
-    var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:A');
+    var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:B');
     var rows = existing.values || [];
-    var rowByMonth = {};
+    var rowByKey = {};
     for (var i = 1; i < rows.length; i++) {
-      if (rows[i][0]) rowByMonth[rows[i][0]] = i + 1; // 1-indexed sheet row
+      if (rows[i][0]) rowByKey[rows[i][0] + '|' + String(rows[i][1] || 'actual')] = i + 1;
     }
     var nextRow = rows.length + 1;
     var ts = new Date().toISOString();
     for (var j = 0; j < months.length; j++) {
       var m = months[j];
-      var rowVals = [[m.month, JSON.stringify(m.lines), ts]];
-      if (rowByMonth[m.month]) {
-        await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A' + rowByMonth[m.month] + ':C' + rowByMonth[m.month], rowVals);
+      var key = m.month + '|' + dataset;
+      var rowVals = [[m.month, dataset, JSON.stringify(m.lines), ts]];
+      if (rowByKey[key]) {
+        await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A' + rowByKey[key] + ':D' + rowByKey[key], rowVals);
       } else {
-        await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A' + nextRow + ':C' + nextRow, rowVals);
+        await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A' + nextRow + ':D' + nextRow, rowVals);
         nextRow++;
       }
     }
     finCache = { data: null, ts: 0 };
-    console.log('[Financials] Saved ' + months.length + ' month(s) of P&L data');
-    res.json({ success: true, saved: months.length });
+    console.log('[Financials] Saved ' + months.length + ' month(s) of ' + dataset + ' P&L data');
+    res.json({ success: true, saved: months.length, dataset: dataset });
   } catch (e) {
     console.error('[Financials] Save error:', e.message);
     res.status(500).json({ error: e.message });
@@ -5088,15 +5099,24 @@ app.post('/api/financials/clear', async function(req, res) {
   try {
     if (!(await requireFinAccess(req, res))) return;
     await ensureFinTab();
-    var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:A');
-    var count = Math.max(0, (existing.values || []).length - 1);
-    if (count > 0) {
-      var blanks = [];
-      for (var i = 0; i < count; i++) blanks.push(['', '', '']);
-      await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A2:C' + (count + 1), blanks);
+    var only = (req.body && req.body.dataset) || null; // optional: 'actual' | 'budget'
+    var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:D');
+    var rows = (existing.values || []).slice(1);
+    var kept = [];
+    var cleared = 0;
+    for (var i = 0; i < rows.length; i++) {
+      if (!rows[i][0]) continue;
+      var ds = String(rows[i][1] || 'actual');
+      if (only && ds !== only) kept.push([rows[i][0], ds, rows[i][2] || '', rows[i][3] || '']);
+      else cleared++;
+    }
+    var values = kept;
+    while (values.length < rows.length) values.push(['', '', '', '']);
+    if (values.length > 0) {
+      await sheetsUpdate(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A2:D' + (values.length + 1), values);
     }
     finCache = { data: null, ts: 0 };
-    res.json({ success: true, cleared: count });
+    res.json({ success: true, cleared: cleared });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
