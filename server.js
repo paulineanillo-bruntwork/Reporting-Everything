@@ -5083,8 +5083,60 @@ app.post('/api/financials', async function(req, res) {
   }
 });
 
+// ===== Financials line-name canonicalization =====
+// P&L exports changed labels over time; map drifted names to one canonical
+// form so lines align across months. Applied on every save.
+var FIN_LINE_ALIASES = {
+  'bank charges': 'Bank Fees',
+  'wages and salaries': 'Salaries & Wages',
+  'rent': 'Office Rental',
+  'total forex gain/loss': 'Gain/Loss in Forex',
+  'forex gain/loss': 'Gain/Loss in Forex',
+  'total travelling expenses': 'Travel',
+  'travelling expenses': 'Travel',
+  'interest expenses': 'Interest Expense',
+  'administrative staff - sss/phic/hdmf contr...': 'Administrative Staff - SSS/PHIC/HDMF Contribution',
+  'outsource staff - sss/phic/hdmf contribut...': 'Outsource Staff - SSS/PHIC/HDMF Contribution',
+  'sss/philhealth/pagibig contribution ...': 'Administrative Staff - SSS/PHIC/HDMF Contribution',
+  'client recharged - pass through': 'Client Recharge',
+  'total cognitive': 'Cognitive',
+  'depreciation and amortisation': 'Depreciation'
+};
+
+function canonicalizeFinLines(lines) {
+  // 1) Normalize whitespace, drop header artifacts, apply aliases
+  var renamed = [];
+  for (var i = 0; i < lines.length; i++) {
+    var name = String(lines[i][0]).replace(/\s+/g, ' ').trim();
+    if (!name) continue;
+    if (/^[A-Za-z]{3,9}\s*\d{4}this month vs/i.test(name) || /^profit & loss month/i.test(name)) continue;
+    var alias = FIN_LINE_ALIASES[name.toLowerCase()];
+    if (alias) name = alias;
+    var v = lines[i][1];
+    renamed.push([name, (v === undefined || v === null || isNaN(parseFloat(v))) ? null : parseFloat(v)]);
+  }
+  // 2) Summary-level reports: promote Revenue/Cost of Sales/Expenses value
+  // rows to the Total* names used by detailed months
+  var haveName = {};
+  renamed.forEach(function(l) { haveName[l[0]] = true; });
+  [['Revenue', 'Total Revenue'], ['Cost of Sales', 'Total Cost of Sales'], ['Expenses', 'Total Expenses']].forEach(function(p) {
+    if (!haveName[p[1]]) {
+      renamed.forEach(function(l) { if (l[0] === p[0] && l[1] !== null) l[0] = p[1]; });
+    }
+  });
+  // 3) Drop redundant same-name section headers when a value row exists
+  // (e.g. "Interest Income" group header above the "Interest Income" line) —
+  // keeps name+occurrence alignment consistent across months
+  var hasValue = {};
+  renamed.forEach(function(l) { if (l[1] !== null) hasValue[l[0]] = true; });
+  return renamed.filter(function(l) { return !(l[1] === null && hasValue[l[0]]); });
+}
+
 // entries: [{ month, dataset, lines }] — one sheet read for the whole batch
 async function saveFinEntries(entries) {
+  entries = entries.map(function(e) {
+    return { month: e.month, dataset: e.dataset, lines: canonicalizeFinLines(e.lines) };
+  });
   await ensureFinTab();
   var existing = await sheetsGet(KPI_SOURCE_SHEET_ID, FIN_TAB + '!A:B');
   var rows = existing.values || [];
