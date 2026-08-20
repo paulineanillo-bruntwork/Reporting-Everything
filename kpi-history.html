@@ -151,6 +151,7 @@ tr.report-row:hover td:first-child{background:#e0ecff}
         <div style="font-size:11px;color:var(--text-muted)">Budget markers shown on the monthly report charts via the "Show Targets" toggle</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
+        <input type="month" id="tgtMonthPick" style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;font-family:inherit" title="Pick any month (past or future), or leave empty to add the next month">
         <button class="get-btn" onclick="addTargetMonth()">+ Add Month</button>
         <button class="get-btn" style="background:var(--blue);color:#fff" onclick="saveTargets()">Save Targets</button>
         <span id="targetStatus" style="font-size:12px;color:var(--text-muted)"></span>
@@ -602,15 +603,26 @@ function collectTargets() {
 
 function addTargetMonth() {
   collectTargets();
-  var next;
-  if (_targets.length > 0) {
-    next = tgtNextMonth(_targets[_targets.length - 1].month);
+  var pick = document.getElementById('tgtMonthPick');
+  var month;
+  if (pick && pick.value) {
+    month = pick.value; // YYYY-MM from the month picker — any past or future month
+  } else if (_targets.length > 0) {
+    month = tgtNextMonth(_targets[_targets.length - 1].month);
   } else {
-    next = tgtCurrentMonth();
+    month = tgtCurrentMonth();
   }
-  var t = { month: next };
+  if (_targets.some(function(t) { return t.month === month; })) {
+    var st = document.getElementById('targetStatus');
+    st.textContent = tgtMonthLabel(month) + ' already exists';
+    setTimeout(function() { st.textContent = ''; }, 2500);
+    return;
+  }
+  var t = { month: month };
   for (var i = 0; i < TARGET_METRICS.length; i++) t[TARGET_METRICS[i].key] = null;
   _targets.push(t);
+  _targets.sort(function(a, b) { return a.month.localeCompare(b.month); });
+  if (pick) pick.value = '';
   renderTargets();
 }
 
