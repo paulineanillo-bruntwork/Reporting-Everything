@@ -5141,13 +5141,15 @@ function parsePLPdfText(text) {
     return neg ? -n : n;
   }
 
-  // Row format (pdf-parse strips column spacing):
-  //   Name[-]$ACTUAL[-]$BUDGET{Variance% or -}{CommonSize%}[-]$YTD
-  // e.g. "Wages and Salaries$4,054$53,786-92.46%0.9%$4,054"
-  //      "Transaction Fee$2,553$0-0.6%$2,553"  (variance column is "-")
-  // Strict thousands grouping disambiguates amounts from the variance % that
-  // follows with no separator (e.g. "$41,70224.10%" must split as 41,702 + 24.10%)
+  // Row formats (pdf-parse strips column spacing). Strict thousands grouping
+  // disambiguates amounts from the % that follows with no separator
+  // (e.g. "$41,70224.10%" must split as 41,702 + 24.10%).
+  // Format A — "P&L vs Budget" export: Name [-]$ACTUAL [-]$BUDGET {Var% | -} {CommonSize%} [-]$YTD
+  //   e.g. "Wages and Salaries$4,054$53,786-92.46%0.9%$4,054"
   var rowRe = /^(.*?)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(-|-?\d{1,3}(?:,\d{3})*\.\d{2}%)(-?\d{1,3}(?:,\d{3})*\.\d%)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)$/;
+  // Format B — "Monthly Board Report": Name [-]$ACTUAL [-]$BUDGET {Var% | -} [-]$LASTMONTH {Var% | -}
+  //   e.g. "Entertainment$14,462$8,50070.14%$8421,617.63%"
+  var rowReB = /^(.*?)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(-|-?\d{1,3}(?:,\d{3})*\.\d{2}%)(-?)\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(-|-?\d{1,3}(?:,\d{3})*\.\d{2}%)$/;
   function num(sign, digits) {
     var n = parseFloat(digits.replace(/,/g, ''));
     if (isNaN(n)) return null;
@@ -5157,12 +5159,14 @@ function parsePLPdfText(text) {
   var started = false;
   for (var r = 0; r < lines.length; r++) {
     var line = lines[r];
-    // Column header row — either combined ("PROFIT & LOSS Jul 2021 Budget (...) ...")
-    // or on its own line ("Jul 2024Budget (Jul 2024)Variance %Common Size %YTD")
-    if (/Budget\s*\(/i.test(line) && /variance/i.test(line)) { started = true; continue; }
+    // Column header row — combined ("PROFIT & LOSS Jul 2021 Budget (...) Variance ..."),
+    // standalone ("Jul 2024Budget (Jul 2024)Variance %..."), or the board-report
+    // variant ("Jul 2024Budget (Jul 2024)This month vs budget")
+    if (/Budget\s*\(/i.test(line) && (/variance/i.test(line) || /vs\s*budget/i.test(line))) { started = true; continue; }
     if (!started) continue;
     if (/prepared by|page \d|^profit\s*&\s*loss$/i.test(line)) continue;
-    var m2 = line.match(rowRe);
+    if (/^\(%\)$|^month\s*\(%\)$/i.test(line)) continue; // wrapped header fragments
+    var m2 = line.match(rowRe) || line.match(rowReB);
     if (m2) {
       var name = m2[1].trim();
       if (!name) continue;
