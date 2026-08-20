@@ -193,7 +193,11 @@ var MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct',
 var _act = [];   // actuals: [{month:'YYYY-MM', lines:[[name, val|null],...]}]
 var _bud = [];   // budget: same shape
 var _view = 'monthly';
-var _tblMode = 'actual';
+var _tblModes = ['actual']; // multi-select: any of actual/budget/variance
+try {
+  var _tm = JSON.parse(localStorage.getItem('fin_tbl_modes') || 'null');
+  if (Array.isArray(_tm) && _tm.length) _tblModes = _tm;
+} catch (e) {}
 var _charts = [];
 var _selLines = null; // chart series selection: ['Name|occ', ...], persisted
 var LINE_PALETTE = ['#2563eb','#d97706','#059669','#7c3aed','#e11d48','#0891b2','#65a30d','#db2777','#475569','#b45309'];
@@ -562,11 +566,18 @@ function setView(v) {
   render();
 }
 function setTblMode(m) {
-  _tblMode = m;
-  ['actual','budget','variance'].forEach(function(t){
-    document.getElementById('tmode-' + t).classList.toggle('active', t === m);
-  });
+  var i = _tblModes.indexOf(m);
+  if (i === -1) _tblModes.push(m);
+  else if (_tblModes.length > 1) _tblModes.splice(i, 1); // keep at least one active
+  var order = ['actual','budget','variance'];
+  _tblModes.sort(function(a,b){ return order.indexOf(a) - order.indexOf(b); });
+  try { localStorage.setItem('fin_tbl_modes', JSON.stringify(_tblModes)); } catch (e) {}
   render();
+}
+function syncTblModePills(modes) {
+  ['actual','budget','variance'].forEach(function(t){
+    document.getElementById('tmode-' + t).classList.toggle('active', modes.indexOf(t) !== -1);
+  });
 }
 
 function render() {
@@ -582,7 +593,6 @@ function render() {
   var mxA = buildMatrix(fAct, shared);
   var mxB = buildMatrix(fBud, shared);
   document.getElementById('tblModeTabs').style.display = mxB ? 'flex' : 'none';
-  if (!mxB) _tblMode = 'actual';
   var mx = mxA || mxB; // whichever exists, for the table when only budget uploaded
 
   var aRev = metricRow(mxA, PAT.rev), aGp = metricRow(mxA, PAT.gp), aExp = metricRow(mxA, PAT.exp), aNet = metricRow(mxA, PAT.net, true);
@@ -706,32 +716,53 @@ function render() {
   mChart.options.plugins.tooltip.callbacks.label = function(ctx){ return ctx.dataset.label + ': ' + (ctx.parsed.y===null?'—':ctx.parsed.y.toFixed(1)+'%'); };
   _charts.push(mChart);
 
-  // Table — Actuals / Budget / Variance (actual − budget)
+  // Table — Actuals / Budget / Variance are multi-select; each period column
+  // splits into one sub-column per selected mode.
   var viewNames = { monthly:'Monthly', quarterly:'Quarterly (FY)', annual:'Annual (FY, Jul–Jun)' };
-  var modeNames = { actual:'Actuals', budget:'Budget', variance:'Variance (Actual − Budget)' };
-  document.getElementById('tblTitle').textContent = 'Profit & Loss — ' + viewNames[_view] + (mxB ? ' — ' + modeNames[_tblMode] : '');
-  var tmx = _tblMode === 'budget' ? mxB : (mxA || mxB);
-  if (!tmx) { document.getElementById('finTable').innerHTML = ''; return; }
-  // Budget lookup for variance: name+occ -> row values
-  var budLookup = {};
-  if (mxB) mxB.order.forEach(function(o, ri){ budLookup[o.name + '|' + o.occ] = mxB.matrix[ri]; });
-  var h = '<thead><tr><th>Line Item</th>';
-  shared.labels.forEach(function(l){ h += '<th>' + l + '</th>'; });
-  h += '</tr></thead><tbody>';
-  tmx.order.forEach(function(o, ri) {
-    var vals = tmx.matrix[ri];
-    if (_tblMode === 'variance') {
-      var bRow = budLookup[o.name + '|' + o.occ] || null;
-      vals = vals.map(function(v, ci) {
-        var bv = bRow ? bRow[ci] : null;
-        return (v !== null && bv !== null) ? v - bv : null;
+  var modeNames = { actual:'Actuals', budget:'Budget', variance:'Variance' };
+  var subNames = { actual:'Actual', budget:'Budget', variance:'Var' };
+  var modes = _tblModes.filter(function(m) {
+    if (m === 'actual') return !!mxA;
+    if (m === 'budget') return !!mxB;
+    return !!mxA && !!mxB; // variance needs both
+  });
+  if (!modes.length) modes = [mxA ? 'actual' : 'budget'];
+  syncTblModePills(modes);
+  document.getElementById('tblTitle').textContent = 'Profit & Loss — ' + viewNames[_view]
+    + (mxB ? ' — ' + modes.map(function(m){ return modeNames[m]; }).join(' + ') : '');
+
+  var baseTbl = mxA || mxB;
+  function cellVal(key, mode, ci) {
+    var a = actRow[key] ? actRow[key][ci] : null;
+    var b = budRow[key] ? budRow[key][ci] : null;
+    if (mode === 'actual') return a;
+    if (mode === 'budget') return b;
+    return (a !== null && b !== null) ? a - b : null;
+  }
+  var h = '<thead><tr><th' + (modes.length > 1 ? ' rowspan="2"' : '') + '>Line Item</th>';
+  shared.labels.forEach(function(l){ h += '<th' + (modes.length > 1 ? ' colspan="' + modes.length + '" style="border-left:1px solid var(--border)"' : '') + '>' + l + '</th>'; });
+  h += '</tr>';
+  if (modes.length > 1) {
+    h += '<tr>';
+    shared.labels.forEach(function() {
+      modes.forEach(function(m, mi) {
+        h += '<th style="font-size:9px;padding:4px 10px;top:35px;' + (mi === 0 ? 'border-left:1px solid var(--border);' : '') + '">' + subNames[m] + '</th>';
       });
-    }
-    var isSection = tmx.matrix[ri].every(function(v){ return v === null; });
+    });
+    h += '</tr>';
+  }
+  h += '</thead><tbody>';
+  baseTbl.order.forEach(function(o, ri) {
+    var key = o.name + '|' + o.occ;
+    var isSection = baseTbl.matrix[ri].every(function(v){ return v === null; })
+      && (!budRow[key] || budRow[key].every(function(v){ return v === null; }));
     var isTotal = /^total|gross profit|net (profit|income)/i.test(o.name);
     h += '<tr class="' + (isSection ? 'sec' : (isTotal ? 'tot' : '')) + '"><td>' + escH(o.name) + '</td>';
-    vals.forEach(function(v) {
-      h += '<td' + (v !== null && v < 0 ? ' class="neg"' : '') + '>' + (v === null ? '' : fmtMoney(v)) + '</td>';
+    shared.labels.forEach(function(_, ci) {
+      modes.forEach(function(m, mi) {
+        var v = isSection ? null : cellVal(key, m, ci);
+        h += '<td' + (v !== null && v < 0 ? ' class="neg"' : '') + (mi === 0 && modes.length > 1 ? ' style="border-left:1px solid var(--border)"' : '') + '>' + (v === null ? '' : fmtMoney(v)) + '</td>';
+      });
     });
     h += '</tr>';
   });
