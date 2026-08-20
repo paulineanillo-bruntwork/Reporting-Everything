@@ -113,7 +113,7 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
     PDF: a "P&amp;L vs Budget" report (e.g. Xero export) — the Actual and Budget columns are both extracted and saved automatically.</span>
     <div class="upload-status" id="uploadStatus"></div>
   </div>
-  <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.pdf">
+  <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.pdf" multiple>
 
   <div id="loading" class="loading"><div class="spinner"></div><div>Loading financial data...</div></div>
   <div id="emptyState" class="empty-state" style="display:none">No financial data yet — drop in a P&amp;L spreadsheet above to get started.</div>
@@ -287,72 +287,87 @@ dz.addEventListener('dragover', function(e){ e.preventDefault(); dz.classList.ad
 dz.addEventListener('dragleave', function(){ dz.classList.remove('drag'); });
 dz.addEventListener('drop', function(e){
   e.preventDefault(); dz.classList.remove('drag');
-  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  if (e.dataTransfer.files.length) handleFiles(Array.prototype.slice.call(e.dataTransfer.files));
 });
 document.getElementById('fileInput').addEventListener('change', function(e){
-  if (e.target.files.length) handleFile(e.target.files[0]);
+  if (e.target.files.length) handleFiles(Array.prototype.slice.call(e.target.files));
   e.target.value = '';
 });
 
-function handleFile(file) {
+// Process multiple files sequentially (parallel saves would race on sheet rows)
+async function handleFiles(files) {
   var st = document.getElementById('uploadStatus');
-  st.textContent = 'Parsing ' + file.name + '...';
-  st.style.color = 'var(--text-muted)';
-  if (/\.pdf$/i.test(file.name)) { handlePdf(file, st); return; }
-  var reader = new FileReader();
-  reader.onload = function(ev) {
+  var results = [];
+  for (var i = 0; i < files.length; i++) {
+    var prefix = files.length > 1 ? '[' + (i + 1) + '/' + files.length + '] ' : '';
     try {
-      var wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array', cellDates: true });
-      var parsed = parseWorkbook(wb);
-      if (!parsed || parsed.months.length === 0) {
-        st.textContent = 'Could not find month columns in this file. Expected a header row with months (e.g. "Jan 2026") and line items in the first column.';
-        st.style.color = 'var(--red)';
-        return;
-      }
-      var ds = (document.querySelector('input[name="dsType"]:checked') || {}).value === 'budget' ? 'budget' : 'actual';
-      st.textContent = 'Found ' + parsed.months.length + ' month(s), ' + parsed.lineCount + ' line items (sheet "' + parsed.sheet + '"). Saving as ' + ds + '...';
-      fetch('/api/financials', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ months: parsed.months, dataset: ds })
-      }).then(function(r){
-        if (r.status === 401) { window.location.href = '/auth/login'; throw new Error('unauth'); }
-        return r.json();
-      }).then(function(d){
-        if (d.error) { st.textContent = 'Save failed: ' + d.error; st.style.color = 'var(--red)'; return; }
-        st.textContent = 'Saved ' + d.saved + ' month(s) of ' + d.dataset + ' data from ' + file.name;
-        st.style.color = 'var(--green)';
-        toast('P&L ' + d.dataset + ' data saved', true);
-        load();
-      }).catch(function(e){ if (e.message !== 'unauth') { st.textContent = 'Save failed: ' + e.message; st.style.color = 'var(--red)'; } });
+      var msg = await processOneFile(files[i], prefix, st);
+      results.push('✓ ' + msg);
     } catch (err) {
-      st.textContent = 'Parse error: ' + err.message;
-      st.style.color = 'var(--red)';
+      results.push('✗ ' + files[i].name + ': ' + err.message);
     }
-  };
-  reader.readAsArrayBuffer(file);
+  }
+  var fails = results.filter(function(r){ return r.indexOf('✗') === 0; }).length;
+  st.innerHTML = results.join('<br>');
+  st.style.color = fails === 0 ? 'var(--green)' : (fails === results.length ? 'var(--red)' : 'var(--orange)');
+  toast(fails === 0 ? 'All ' + results.length + ' file(s) saved' : (results.length - fails) + ' saved, ' + fails + ' failed', fails === 0);
+  load();
 }
 
-function handlePdf(file, st) {
-  if (file.size > 12 * 1024 * 1024) { st.textContent = 'PDF too large (max 12MB)'; st.style.color = 'var(--red)'; return; }
-  st.textContent = 'Uploading ' + file.name + ' for parsing (Actual + Budget will both be saved)...';
-  var reader = new FileReader();
-  reader.onload = function(ev) {
-    var b64 = String(ev.target.result).split(',')[1] || '';
-    fetch('/api/financials/parse-pdf', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pdf_base64: b64, filename: file.name })
-    }).then(function(r){
-      if (r.status === 401) { window.location.href = '/auth/login'; throw new Error('unauth'); }
-      return r.json();
-    }).then(function(d){
-      if (d.error) { st.textContent = 'PDF parse failed: ' + d.error; st.style.color = 'var(--red)'; return; }
-      st.textContent = 'Saved ' + d.month + ' — ' + d.lines + ' line items (actual + budget) from ' + file.name;
-      st.style.color = 'var(--green)';
-      toast('P&L actual + budget saved for ' + d.month, true);
-      load();
-    }).catch(function(e){ if (e.message !== 'unauth') { st.textContent = 'Upload failed: ' + e.message; st.style.color = 'var(--red)'; } });
-  };
-  reader.readAsDataURL(file);
+function checkAuth(r) {
+  if (r.status === 401) { window.location.href = '/auth/login'; throw new Error('session expired'); }
+  return r.json();
+}
+
+// Parse + save one file; resolves with a summary string, rejects with an Error
+function processOneFile(file, prefix, st) {
+  return new Promise(function(resolve, reject) {
+    st.style.color = 'var(--text-muted)';
+    st.textContent = prefix + 'Parsing ' + file.name + '...';
+
+    if (/\.pdf$/i.test(file.name)) {
+      if (file.size > 12 * 1024 * 1024) return reject(new Error('PDF too large (max 12MB)'));
+      var pReader = new FileReader();
+      pReader.onload = function(ev) {
+        var b64 = String(ev.target.result).split(',')[1] || '';
+        st.textContent = prefix + 'Extracting Actual + Budget from ' + file.name + '...';
+        fetch('/api/financials/parse-pdf', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pdf_base64: b64, filename: file.name })
+        }).then(checkAuth).then(function(d){
+          if (d.error) return reject(new Error(d.error));
+          resolve(file.name + ' → ' + d.month + ' actual + budget (' + d.lines + ' lines)');
+        }).catch(reject);
+      };
+      pReader.onerror = function(){ reject(new Error('could not read file')); };
+      pReader.readAsDataURL(file);
+      return;
+    }
+
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        var wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array', cellDates: true });
+        var parsed = parseWorkbook(wb);
+        if (!parsed || parsed.months.length === 0) {
+          return reject(new Error('no month columns found — expected a header row with months (e.g. "Jan 2026")'));
+        }
+        var ds = (document.querySelector('input[name="dsType"]:checked') || {}).value === 'budget' ? 'budget' : 'actual';
+        st.textContent = prefix + 'Saving ' + parsed.months.length + ' month(s) from ' + file.name + ' as ' + ds + '...';
+        fetch('/api/financials', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ months: parsed.months, dataset: ds })
+        }).then(checkAuth).then(function(d){
+          if (d.error) return reject(new Error(d.error));
+          resolve(file.name + ' → ' + d.saved + ' month(s) of ' + d.dataset);
+        }).catch(reject);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = function(){ reject(new Error('could not read file')); };
+    reader.readAsArrayBuffer(file);
+  });
 }
 
 function clearAll() {
