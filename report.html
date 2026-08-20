@@ -166,18 +166,12 @@ th.q-backlog-collapsed:hover .q-backlog-tab{opacity:1}
 td.q-backlog-collapsed{background:#f8fafc}
 .q-backlog-expanded{min-width:180px}
 
-.side-nav{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:100;display:flex;flex-direction:column;gap:2px;padding:8px 0}
-.side-nav a{display:block;padding:8px 14px 8px 12px;font-size:11px;font-weight:600;color:var(--text-muted);text-decoration:none;border-left:3px solid transparent;transition:all .15s;white-space:nowrap;background:rgba(255,255,255,.9);backdrop-filter:blur(8px)}
-.side-nav a:hover{color:var(--text);background:#f1f5f9;border-left-color:var(--blue)}
-.side-nav a.active{color:var(--blue);border-left-color:var(--blue);background:#eff6ff}
-.side-nav .nav-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
-.side-nav{transition:transform .2s}
-.side-nav.collapsed{transform:translateY(-50%) translateX(-100%)}
-.side-nav .nav-hide{display:block;padding:6px 12px;border:none;border-bottom:1px solid var(--border);background:transparent;cursor:pointer;font-size:10px;font-weight:600;color:var(--text-muted);text-align:center;width:100%;white-space:nowrap}
-.side-nav .nav-hide:hover{color:var(--blue);background:#f1f5f9}
-.nav-show{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:101;width:26px;border:1px solid var(--border);border-left:none;border-radius:0 8px 8px 0;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);cursor:pointer;display:none;align-items:center;justify-content:center;font-size:10px;font-weight:600;letter-spacing:.5px;color:var(--text-muted);padding:12px 0;writing-mode:vertical-rl;text-orientation:mixed;white-space:nowrap}
-.nav-show:hover{color:var(--blue);background:#f1f5f9}
-.nav-show.visible{display:flex}
+.top-nav{position:sticky;top:0;z-index:100;display:flex;gap:2px;align-items:center;background:rgba(255,255,255,.97);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);padding:0 32px;overflow-x:auto;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.top-nav a{display:inline-block;padding:12px 14px;font-size:12px;font-weight:600;color:var(--text-muted);text-decoration:none;border-bottom:3px solid transparent;transition:all .15s}
+.top-nav a:hover{color:var(--text);background:#f1f5f9;border-bottom-color:var(--blue)}
+.top-nav a.active{color:var(--blue);border-bottom-color:var(--blue);background:#eff6ff}
+.top-nav .nav-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.section,#monthlyUpdates,#quarterlyRoadmap{scroll-margin-top:56px}
 @media(max-width:1100px){.q-cat-header{width:120px!important}.highlight-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:900px){.chart-grid{grid-template-columns:1fr}.header,.main{padding-left:20px;padding-right:20px}.highlight-grid{grid-template-columns:1fr}.quarterly-grid{grid-template-columns:1fr}}
 @media print{.header{background:#1e293b!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.nav-links,.month-nav{display:none!important}.main{padding:16px}}
@@ -197,18 +191,17 @@ td.q-backlog-collapsed{background:#f8fafc}
     <a href="/logout" class="header-link">Log out</a>
   </div>
 </div>
-<div class="main">
-<div id="loading" class="loading"><div class="spinner"></div><div>Loading report data...</div></div>
-<nav class="side-nav collapsed" id="sideNav">
-  <button class="nav-hide" id="navHide">Hide Menu &#9664;</button>
+<nav class="top-nav" id="topNav">
   <a href="#" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;" data-section="top"><span class="nav-dot" style="background:var(--text-muted)"></span>Company KPI Summary</a>
   <a href="#salesAcquisition" data-section="salesAcquisition"><span class="nav-dot" style="background:var(--blue)"></span>Sales &amp; New FTE Acquisition</a>
   <a href="#clientExpansion" data-section="clientExpansion"><span class="nav-dot" style="background:var(--green)"></span>Client FTE Expansion</a>
   <a href="#churnRetention" data-section="churnRetention"><span class="nav-dot" style="background:var(--red)"></span>Churn &amp; Backfill Retention</a>
+  <a href="#teamScalability" data-section="teamScalability"><span class="nav-dot" style="background:var(--purple)"></span>Team Scalability</a>
   <a href="#monthlyUpdates" data-section="monthlyUpdates"><span class="nav-dot" style="background:var(--orange)"></span>Monthly Updates</a>
   <a href="#quarterlyRoadmap" data-section="quarterlyRoadmap"><span class="nav-dot" style="background:var(--purple)"></span>Quarterly Roadmap</a>
 </nav>
-<button class="nav-show visible" id="navShow" title="Show menu">Show Menu</button>
+<div class="main">
+<div id="loading" class="loading"><div class="spinner"></div><div>Loading report data...</div></div>
 <div id="content" style="display:none">
 
 <!-- Highlight Panels -->
@@ -1501,10 +1494,10 @@ function saveQuarterly() {
 // Load quarterly data on page load
 loadQuarterlyGoals();
 
-// === Scroll spy for side nav ===
+// === Scroll spy for top nav ===
 (function() {
-  var sections = ['salesAcquisition','clientExpansion','churnRetention','monthlyUpdates','quarterlyRoadmap'];
-  var navLinks = document.querySelectorAll('.side-nav a');
+  var sections = ['salesAcquisition','clientExpansion','churnRetention','teamScalability','monthlyUpdates','quarterlyRoadmap'];
+  var navLinks = document.querySelectorAll('.top-nav a');
   function updateActive() {
     var scrollY = window.scrollY + 120;
     var active = 'top';
@@ -1519,21 +1512,6 @@ loadQuarterlyGoals();
   }
   window.addEventListener('scroll', updateActive);
   updateActive();
-})();
-
-// === Side nav toggle ===
-(function() {
-  var sideNav = document.getElementById('sideNav');
-  var navHide = document.getElementById('navHide');
-  var navShow = document.getElementById('navShow');
-  navHide.addEventListener('click', function() {
-    sideNav.classList.add('collapsed');
-    navShow.classList.add('visible');
-  });
-  navShow.addEventListener('click', function() {
-    sideNav.classList.remove('collapsed');
-    navShow.classList.remove('visible');
-  });
 })();
 </script>
 </body>
