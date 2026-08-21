@@ -178,6 +178,11 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
       </div>
       <div class="tbl-scroll"><table class="fin-table" id="kpiTable"></table></div>
     </div>
+    <div style="text-align:center;margin-top:14px"><a href="#" class="upload-toggle" id="glossaryToggle" onclick="toggleGlossary(event)">&#9656; Rolled-up line items reference</a></div>
+    <div class="tbl-block" id="glossaryWrap" style="display:none">
+      <h3>Rolled-Up Line Items</h3>
+      <div id="glossaryList" style="font-size:12px;line-height:1.8;padding:4px 20px 14px"></div>
+    </div>
   </div>
 
   <!-- Admin: access control (visible to admins only) -->
@@ -627,13 +632,15 @@ function exportPdf() {
     if (bIdx !== -1) subCols.push({ key: 'bud', name: 'Budget' });
     if (aIdx !== -1 && bIdx !== -1) subCols.push({ key: 'vsb', name: 'vs Budget %' });
 
-    var head = [
-      [{ content: '', rowSpan: 2 }],
-      []
-    ];
+    // Single header row; the month name is embedded in the Actual/Budget labels
+    // (e.g. "June 2026 Actual") so every column is self-describing.
+    var head = [['']];
     perLabels.forEach(function(pl) {
-      head[0].push({ content: fullPeriodLabel(pl), colSpan: subCols.length, styles: { halign: 'center' } });
-      subCols.forEach(function(sc){ head[1].push({ content: sc.name, styles: { halign: 'right' } }); });
+      var full = fullPeriodLabel(pl);
+      subCols.forEach(function(sc) {
+        var name = (sc.key === 'act' || sc.key === 'bud') ? full + ' ' + sc.name : sc.name;
+        head[0].push({ content: name, styles: { halign: 'right' } });
+      });
     });
 
     var body = rows.map(function(r) {
@@ -664,10 +671,18 @@ function exportPdf() {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(15, 23, 42);
     doc.text('PROFIT & LOSS', pageW / 2, 58, { align: 'center' });
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(100, 116, 139);
-    doc.text(viewName + '  ·  ' + period + '  ·  Generated ' + new Date().toLocaleDateString('en-AU', { day:'numeric', month:'long', year:'numeric' }), pageW / 2, 72, { align: 'center' });
+    doc.text(viewName + '  ·  ' + period, pageW / 2, 72, { align: 'center' });
 
     var totalCols = 1 + perLabels.length * subCols.length;
     var baseFont = totalCols > 30 ? 5.2 : (totalCols > 20 ? 6 : 7);
+    // Column sizing: wide, wrapping label column; value columns sized to
+    // content scale (capped) so a few columns don't stretch across the page.
+    var labelW = 150;
+    var availW = pageW - margin * 2 - labelW;
+    var nValCols = perLabels.length * subCols.length;
+    var valW = Math.min(72, Math.max(26, availW / nValCols));
+    var colStyles = { 0: { cellWidth: labelW, overflow: 'linebreak' } };
+    for (var ci = 1; ci <= nValCols; ci++) colStyles[ci] = { cellWidth: valW };
     var SECTION_ROW = /^(Revenue|Cost of Sales|Expenses)$/;
     var KEY_ROW = /^(Total Revenue|Total Cost of Sales|Gross Profit|Total Expenses|Operating Profit|Net Income)$/;
     var BOLD_ROW = /^(Total |Gross Profit$|Operating Profit$|Net Income$|Other Income$|Other Expenses$|Tax Expenses$)/;
@@ -678,8 +693,8 @@ function exportPdf() {
       margin: { left: margin, right: margin, top: 50 },
       theme: 'plain',
       styles: { fontSize: baseFont, cellPadding: { top: 2.6, bottom: 2.6, left: 3, right: 3 }, textColor: [30, 41, 59], overflow: 'ellipsize' },
-      headStyles: { textColor: [15, 23, 42], fontStyle: 'bold', fontSize: baseFont, lineWidth: { bottom: 0.75 }, lineColor: [30, 41, 59] },
-      columnStyles: { 0: { cellWidth: 110 } },
+      headStyles: { textColor: [15, 23, 42], fontStyle: 'bold', fontSize: baseFont, lineWidth: { bottom: 0.75 }, lineColor: [30, 41, 59], overflow: 'linebreak', valign: 'bottom' },
+      columnStyles: colStyles,
       didParseCell: function(data) {
         if (data.column.index > 0 && data.section === 'body') data.cell.styles.halign = 'right';
         if (data.section !== 'body') return;
@@ -717,6 +732,23 @@ function exportPdf() {
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+function toggleGlossary(ev) {
+  ev.preventDefault();
+  var w = document.getElementById('glossaryWrap');
+  var open = w.style.display === 'none';
+  w.style.display = open ? 'block' : 'none';
+  document.getElementById('glossaryToggle').innerHTML = open ? '&#9662; Rolled-up line items reference' : '&#9656; Rolled-up line items reference';
+}
+function renderGlossary(gl) {
+  var order = ['Other (Cost of Sales)', 'Administrative Staff - Operations', 'Miscellaneous', 'Other Income', 'Other Expenses (below Operating Profit)', 'Tax Expenses'];
+  var h = '';
+  order.forEach(function(k) {
+    if (!gl[k] || !gl[k].length) return;
+    h += '<div style="margin-bottom:8px"><b>' + escH(k) + '</b> <span style="color:var(--text-muted)">includes:</span> ' + gl[k].map(escH).join(', ') + '</div>';
+  });
+  h += '<div style="margin-top:10px;color:var(--text-muted);font-size:11px">Intermediate subtotals (Earnings Before Interest &amp; Tax, Earnings Before Tax, Earnings After Tax) are not shown separately — Net Income is retained. Lines from older report layouts that belong to pre-Operating-Profit sections in their own months are hidden below Operating Profit to avoid double counting.</div>';
+  document.getElementById('glossaryList').innerHTML = h;
 }
 function toggleChartData(ev) {
   ev.preventDefault();
@@ -1080,6 +1112,8 @@ function render() {
     'Freight & Courier': 'misc',
     'Merchant Fees': 'misc',
     'Unallocated expense': 'misc',
+    'IT and office equipment expenses': 'misc',
+    'Printing & Stationery': 'misc',
     'Depreciation': 'deprec' // displayed below Operating Profit, inside Other Expenses
   };
   var nPer = shared.periods.length;
@@ -1092,10 +1126,18 @@ function render() {
     }
     return out;
   }
+  // Glossary of what got rolled up where (rendered under the tables).
+  var glossary = {};
+  function glAdd(disp, nm) {
+    glossary[disp] = glossary[disp] || [];
+    if (glossary[disp].indexOf(nm) === -1) glossary[disp].push(nm);
+  }
+  var GL_GROUP = { cogsOther: 'Other (Cost of Sales)', adminOps: 'Administrative Staff - Operations', misc: 'Miscellaneous', deprec: 'Other Expenses (below Operating Profit)' };
   var rollAct = {}, rollBud = {};
   baseTbl.order.forEach(function(o) {
     var g = TBL_ROLLUP[o.name];
     if (!g) return;
+    glAdd(GL_GROUP[g], o.name);
     var key = o.name + '|' + o.occ;
     if (actRow[key]) rollAct[g] = mergeArrays(rollAct[g], actRow[key]);
     if (budRow[key]) rollBud[g] = mergeArrays(rollBud[g], budRow[key]);
@@ -1162,6 +1204,7 @@ function render() {
     }
     var bucket = /tax/i.test(nm) ? 'tax'
       : (/income|recovered|revenue|business rights|trust distribution|unallocated sales/i.test(nm) ? 'income' : 'expense');
+    glAdd({ income: 'Other Income', expense: 'Other Expenses (below Operating Profit)', tax: 'Tax Expenses' }[bucket], nm);
     if (actRow[key]) below[bucket].a = mergeArrays(below[bucket].a, actRow[key]);
     if (budRow[key]) below[bucket].b = mergeArrays(below[bucket].b, budRow[key]);
   });
@@ -1228,6 +1271,7 @@ function render() {
   });
   h += '</tbody>';
   document.getElementById('finTable').innerHTML = h;
+  renderGlossary(glossary);
 
   renderKpiTable(shared);
 }
