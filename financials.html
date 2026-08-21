@@ -886,6 +886,9 @@ function render() {
 var _kpi = null; // [{key:'YYYY-MM', vals:[...]}], sorted ascending; null until loaded
 // totalHires uses col AE (Total Hires, sales + CSM teams, FTE from May 2023) — col K is sales-team-only hires.
 var KPI_COL = { activeFTE:2, mqls:4, totalHires:30, adsSpend:13, churnedFTE:32, churnRate:33, existingClients:38 };
+// Active client counts for months missing from the KPI sheet (col AM starts
+// Jan 2024). Source: Total Customers report supplied by Winston, Aug 2026.
+var CLIENT_FILL = { '2023-07':901, '2023-08':991, '2023-09':1039, '2023-10':1095, '2023-11':1130, '2023-12':1152 };
 function kpiNum(v) {
   if (v === null || v === undefined) return null;
   var s = String(v).replace(/[$,%\s,]/g, '');
@@ -948,7 +951,7 @@ function computeKpiVals(shared) {
       endFTE: col(next, KPI_COL.activeFTE), // active FTE is stored as-at start of month; next month's start = this period's end
       hires: hires, lost: lost, churn: churn, mqls: mqls,
       cpc: (spend !== null && mqls) ? spend / mqls : null,
-      clients: col(last, KPI_COL.existingClients)
+      clients: (function(){ var v = col(last, KPI_COL.existingClients); return v !== null ? v : (CLIENT_FILL[last] !== undefined ? CLIENT_FILL[last] : null); })()
     };
   }
   return shared.periods.map(function(pk){ return periodVals(pk); });
