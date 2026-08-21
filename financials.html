@@ -1310,6 +1310,10 @@ var KPI_COL = { activeFTE:2, mqls:4, totalHires:30, adsSpend:13, churnedFTE:32, 
 // Active client counts for months missing from the KPI sheet (col AM starts
 // Jan 2024). Source: Total Customers report supplied by Winston, Aug 2026.
 var CLIENT_FILL = { '2023-07':901, '2023-08':991, '2023-09':1039, '2023-10':1095, '2023-11':1130, '2023-12':1152 };
+// MQLs for the Nov 2022 - Feb 2023 sheet gap: interpolated between the real
+// Oct 2022 (663) and Mar 2023 (743) values, with a seasonal December dip.
+// Approved by Winston (Aug 2026) as indicative on-trend estimates.
+var MQL_FILL = { '2022-11': 685, '2022-12': 590, '2023-01': 700, '2023-02': 725 };
 function kpiNum(v) {
   if (v === null || v === undefined) return null;
   var s = String(v).replace(/[$,%\s,]/g, '');
@@ -1333,6 +1337,12 @@ function loadKpi() {
     _kpi = d.months.map(function(vals){
       return { key: parseKpiMonthKey(vals[0]), vals: vals };
     }).filter(function(m){ return !!m.key; }).sort(function(a,b){ return a.key < b.key ? -1 : 1; });
+    _kpi.forEach(function(m) {
+      var f = MQL_FILL[m.key];
+      if (f === undefined) return;
+      var cur = String(m.vals[KPI_COL.mqls] || '').trim();
+      if (!cur || cur === '-') m.vals[KPI_COL.mqls] = String(f);
+    });
     if (_act.length || _bud.length) render();
   }).catch(function(){ _kpi = []; });
 }
