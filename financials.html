@@ -1024,8 +1024,11 @@ function render() {
   // Expenses, and Tax Expenses — then Net Income. Misplaced pre-OP components
   // from older month layouts (grouped under Revenue/COGS/Expenses) are hidden,
   // never rolled, since their months' totals already include them.
-  var opIdx = -1;
-  baseTbl.order.forEach(function(o, ri){ if (opIdx === -1 && /^operating profit/i.test(o.name)) opIdx = ri; });
+  var opIdx = -1, niIdx = -1;
+  baseTbl.order.forEach(function(o, ri){
+    if (opIdx === -1 && /^operating profit/i.test(o.name)) opIdx = ri;
+    if (/^net (income|profit)/i.test(o.name)) niIdx = ri;
+  });
   var lineGroups = buildLineGroups();
   var below = { income: { a:null, b:null }, expense: { a:null, b:null }, tax: { a:null, b:null } };
   if (opIdx !== -1) baseTbl.order.forEach(function(o, ri) {
@@ -1033,9 +1036,14 @@ function render() {
     var nm = o.name;
     if (/^(earnings (before|after)|net (income|profit))/i.test(nm)) return; // hidden or kept as-is
     var key = nm + '|' + o.occ;
-    var g = lineGroups[key] || '';
-    if (g === 'Revenue' || g === 'Expenses' || g === 'Cost of Sales') return;
-    var bucket = (g === 'Tax Expenses' || /tax/i.test(nm)) ? 'tax'
+    // Rows between OP and Net Income are genuinely below-OP. Rows appended
+    // after Net Income come from older month layouts — hide the ones whose own
+    // months place them pre-OP (their totals already include them).
+    if (niIdx !== -1 && ri > niIdx) {
+      var g = lineGroups[key] || '';
+      if (g === 'Revenue' || g === 'Expenses' || g === 'Cost of Sales') return;
+    }
+    var bucket = /tax/i.test(nm) ? 'tax'
       : (/income|recovered|revenue|business rights|trust distribution|unallocated sales/i.test(nm) ? 'income' : 'expense');
     if (actRow[key]) below[bucket].a = mergeArrays(below[bucket].a, actRow[key]);
     if (budRow[key]) below[bucket].b = mergeArrays(below[bucket].b, budRow[key]);
