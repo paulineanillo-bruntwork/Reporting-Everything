@@ -1034,8 +1034,8 @@ function render() {
     var key = nm + '|' + o.occ;
     var g = lineGroups[key] || '';
     if (g === 'Revenue' || g === 'Expenses' || g === 'Cost of Sales') return;
-    var bucket = /income|recovered|revenue|business rights|trust distribution|unallocated sales/i.test(nm) ? 'income'
-      : ((g === 'Tax Expenses' || /tax/i.test(nm)) ? 'tax' : 'expense');
+    var bucket = (g === 'Tax Expenses' || /tax/i.test(nm)) ? 'tax'
+      : (/income|recovered|revenue|business rights|trust distribution|unallocated sales/i.test(nm) ? 'income' : 'expense');
     if (actRow[key]) below[bucket].a = mergeArrays(below[bucket].a, actRow[key]);
     if (budRow[key]) below[bucket].b = mergeArrays(below[bucket].b, budRow[key]);
   });
