@@ -218,6 +218,12 @@ var _showBudget = (function(){ try { return localStorage.getItem('fin_show_budge
 var LINE_PALETTE = ['#2563eb','#d97706','#059669','#7c3aed','#e11d48','#0891b2','#65a30d','#db2777','#475569','#b45309'];
 
 var _quickKeys = {};
+// Calculated ratio series (numerator / Total Revenue, as %) available as quick views.
+var RATIOS = {
+  'ratio:gm': { label: 'Gross Margin %', num: 'gp' },
+  'ratio:om': { label: 'Operating Margin %', num: 'op' },
+  'ratio:bd': { label: 'Bad Debt Ratio %', num: 'bad' }
+};
 function addChartLine(k) {
   if (!k) return;
   if (_selLines.indexOf(k) === -1) { _selLines.push(k); render(); }
@@ -231,7 +237,7 @@ function resetChartLines() {
   render();
 }
 function quickView(which) {
-  var k = _quickKeys[which];
+  var k = RATIOS['ratio:' + which] ? 'ratio:' + which : _quickKeys[which];
   if (!k) return;
   _selLines = [k];
   render();
@@ -262,15 +268,17 @@ function buildLineGroups() {
 function renderLinePicker(availList) {
   var el = document.getElementById('linePicker');
   var h = '<span class="qv-group"><span class="qv-lbl">Quick views:</span>';
-  [['rev','Total Revenue'],['gp','Gross Profit'],['op','Operating Profit'],['exp','Total Expenses']].forEach(function(q) {
-    if (!_quickKeys[q[0]]) return;
-    var on = _selLines.length === 1 && _selLines[0] === _quickKeys[q[0]];
+  [['rev','Total Revenue'],['gp','Gross Profit'],['op','Operating Profit'],['exp','Total Expenses'],['gm','Gross Margin %'],['om','Operating Margin %'],['bd','Bad Debt %']].forEach(function(q) {
+    var key = RATIOS['ratio:' + q[0]] ? 'ratio:' + q[0] : _quickKeys[q[0]];
+    if (!key) return;
+    var on = _selLines.length === 1 && _selLines[0] === key;
     h += '<button class="qv-btn' + (on ? ' active' : '') + '" onclick="quickView(\'' + q[0] + '\')">' + q[1] + '</button>';
   });
   h += '</span>';
   _selLines.forEach(function(k, i) {
     var color = LINE_PALETTE[i % LINE_PALETTE.length];
-    h += '<span class="line-chip" data-key="' + escH(k) + '" style="border-color:' + color + '"><span class="dot" style="background:' + color + '"></span>' + escH(k.split('|')[0]) + '<button title="Remove from chart">&times;</button></span>';
+    var nm = RATIOS[k] ? RATIOS[k].label : k.split('|')[0];
+    h += '<span class="line-chip" data-key="' + escH(k) + '" style="border-color:' + color + '"><span class="dot" style="background:' + color + '"></span>' + escH(nm) + '<button title="Remove from chart">&times;</button></span>';
   });
   h += '<select id="lineAdd"><option value="">+ Add line to chart…</option>';
   var groupOf = buildLineGroups();
@@ -612,8 +620,20 @@ var PAT = {
   gp: [/gross\s*profit/i],
   exp: [/^total\s+(operating\s+)?expenses?/i, /total.*expens/i, /^(operating\s+)?expenses?$/i],
   net: [/net\s*(profit|income|earnings)/i, /profit\s*(\/|\(|for|after)/i],
-  op: [/^operating\s*profit/i, /profit\s*from\s*operations/i]
+  op: [/^operating\s*profit/i, /profit\s*from\s*operations/i],
+  bad: [/^bad\s*debts?\s*expense/i]
 };
+// Ratio series: numerator / Total Revenue as a percentage, per period.
+function ratioRow(mx, which) {
+  if (!mx) return null;
+  var rev = metricRow(mx, PAT.rev);
+  var num = which === 'op' ? (metricRow(mx, PAT.op, true) || metricRow(mx, PAT.net, true)) : metricRow(mx, PAT[which]);
+  if (!rev || !num) return null;
+  return rev.map(function(r, i) {
+    var n = num[i];
+    return (r && n !== null) ? Math.round(n / r * 1000) / 10 : null;
+  });
+}
 function setView(v) {
   _view = v;
   ['monthly','quarterly','annual'].forEach(function(t){
@@ -681,7 +701,7 @@ function render() {
   _quickKeys = { rev: revKey, gp: gpKey, op: opKey, exp: expKey };
   var defaultKeys = [revKey, opKey].filter(Boolean);
   if (!_selLines || !_selLines.length) _selLines = defaultKeys.slice();
-  _selLines = _selLines.filter(function(k){ return availMap[k]; });
+  _selLines = _selLines.filter(function(k){ return availMap[k] || RATIOS[k]; });
   if (!_selLines.length) _selLines = defaultKeys.slice();
   renderLinePicker(availList);
 
@@ -689,6 +709,18 @@ function render() {
   var manySeries = _selLines.length > 3;
   _selLines.forEach(function(k, i) {
     var color = LINE_PALETTE[i % LINE_PALETTE.length];
+    if (RATIOS[k]) {
+      var rr = RATIOS[k];
+      var ra = ratioRow(mxA, rr.num), rb = ratioRow(mxB, rr.num);
+      if (ra && ra.some(function(v){ return v !== null; })) {
+        dsets.push({ type:'line', label:rr.label, data:ra, _pct:true, borderColor:color, backgroundColor:'transparent', borderWidth:2.5, tension:.3, pointRadius:3,
+          datalabels: manySeries ? { display:false } : { display:true, anchor:'end', align:'top', color:color, font:{size:9,weight:'bold'}, formatter:function(v){ return v === null ? '' : v.toFixed(1) + '%'; } } });
+      }
+      if (_showBudget && rb && rb.some(function(v){ return v !== null; })) {
+        dsets.push({ type:'line', label:'Budget ' + rr.label, data:rb, _pct:true, borderColor:color, backgroundColor:'transparent', borderWidth:1.5, borderDash:[6,4], tension:0, pointRadius:0, pointHoverRadius:4 });
+      }
+      return;
+    }
     var nm = k.split('|')[0];
     var a = actRow[k], b = budRow[k];
     var isBar = (k === revKey || k === expKey);
@@ -704,15 +736,22 @@ function render() {
       dsets.push({ type:'line', label:'Budget ' + nm, data:b, borderColor:color, backgroundColor:'transparent', borderWidth:1.5, borderDash:[6,4], tension:0, pointRadius:0, pointHoverRadius:4 });
     }
   });
+  var pctAll = dsets.length > 0 && dsets.every(function(d){ return d._pct; });
+  var pctAny = dsets.some(function(d){ return d._pct; });
+  if (pctAny && !pctAll) dsets.forEach(function(d){ if (d._pct) d.yAxisID = 'y1'; });
   var opts = {
     responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
     layout:{padding:{top:18}},
     plugins:{ legend:{display:true,position:'bottom',labels:{boxWidth:10,font:{size:10},padding:12}},
       tooltip:{ enabled:true, animation:false, backgroundColor:'rgba(15,23,42,1)', titleColor:'#fff', bodyColor:'#fff', borderColor:'rgba(255,255,255,.25)', borderWidth:1, padding:10, cornerRadius:6,
-        callbacks:{ label:function(ctx){ return ctx.dataset.label + ': ' + fmtMoney(ctx.parsed.y); },
+        callbacks:{ label:function(ctx){ var v = ctx.parsed.y; return ctx.dataset.label + ': ' + (ctx.dataset._pct ? (v === null ? '—' : v.toFixed(1) + '%') : fmtMoney(v)); },
           labelColor:function(ctx){ var c = ctx.dataset.borderColor || '#64748b'; if (typeof c !== 'string') c = '#64748b'; return { borderColor:c, backgroundColor:c, borderWidth:0, borderRadius:2 }; } } } },
-    scales:{ x:{grid:{display:false},ticks:{font:{size:10}}}, y:{ticks:{font:{size:10},callback:function(v){ return '$'+(Math.abs(v)>=1e6?(v/1e6)+'M':(v/1e3)+'k'); }}} }
+    scales:{ x:{grid:{display:false},ticks:{font:{size:10}}},
+      y:{ticks:{font:{size:10},callback: pctAll ? function(v){ return v + '%'; } : function(v){ return '$'+(Math.abs(v)>=1e6?(v/1e6)+'M':(v/1e3)+'k'); }}} }
   };
+  if (pctAny && !pctAll) {
+    opts.scales.y1 = { position:'right', grid:{drawOnChartArea:false}, ticks:{font:{size:10}, callback:function(v){ return v + '%'; }} };
+  }
   _charts.push(new Chart(document.getElementById('chartMain').getContext('2d'), { type:'bar', data:{labels:shared.labels, datasets:dsets}, options:opts }));
 
   // Table — Actuals / Budget / Variance are multi-select; each period column
