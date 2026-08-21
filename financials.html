@@ -768,7 +768,7 @@ function render() {
         kd = kpiVals.map(function(p){ var v = p ? p[ks.field] : null; return (v === null || v === undefined) ? null : v; });
       }
       if (!kd.some(function(v){ return v !== null; })) return;
-      dsets.push({ type:'line', label:ks.label, data:kd, _fmt:ks.fmt, borderColor:color, backgroundColor:'transparent', borderWidth:2.5, tension:.3, pointRadius:3,
+      dsets.push({ type:'line', label:ks.label, data:kd, _fmt:ks.fmt, _aux:!!ks.perFTE, borderColor:color, backgroundColor:'transparent', borderWidth:2.5, tension:.3, pointRadius:3,
         datalabels: manySeries ? { display:false } : { display:true, anchor:'end', align:'top', color:color, font:{size:9,weight:'bold'}, formatter:fmtLabel[ks.fmt] } });
       return;
     }
@@ -796,14 +796,17 @@ function render() {
     num: function(v){ return Math.abs(v) >= 1000 ? v.toLocaleString('en-US') : v; }
   };
   var fmtOf = function(d){ return d._fmt || 'money'; };
+  // Axis groups: unit, with per-FTE money series ('_aux') kept off the main $
+  // axis so ~$2k values aren't flattened by multi-million P&L lines.
+  var groupOfD = function(d){ return d._aux ? fmtOf(d) + '@aux' : fmtOf(d); };
   var uniqF = [];
-  dsets.forEach(function(d){ var f = fmtOf(d); if (uniqF.indexOf(f) === -1) uniqF.push(f); });
-  var mainFmt = uniqF.length === 1 ? uniqF[0] : (uniqF.indexOf('money') !== -1 ? 'money' : uniqF[0]);
+  dsets.forEach(function(d){ var g = groupOfD(d); if (uniqF.indexOf(g) === -1) uniqF.push(g); });
+  var mainGroup = uniqF.length === 1 ? uniqF[0] : (uniqF.indexOf('money') !== -1 ? 'money' : uniqF[0]);
+  var mainFmt = mainGroup.split('@')[0];
   var auxFmts = [];
   if (uniqF.length > 1) {
     dsets.forEach(function(d) {
-      var f = fmtOf(d);
-      if (f !== mainFmt) { d.yAxisID = 'y1'; if (auxFmts.indexOf(f) === -1) auxFmts.push(f); }
+      if (groupOfD(d) !== mainGroup) { d.yAxisID = 'y1'; var f = fmtOf(d); if (auxFmts.indexOf(f) === -1) auxFmts.push(f); }
     });
   }
   var fmtVal = {
