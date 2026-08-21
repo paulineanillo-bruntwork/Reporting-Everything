@@ -236,6 +236,29 @@ function quickView(which) {
   _selLines = [k];
   render();
 }
+// Map each "name|occ" line key to its P&L section, using the null header rows
+// (Revenue / Cost of Sales / Expenses / ...) in each month's stored line order.
+// Latest actual months take precedence, then budgets.
+function buildLineGroups() {
+  var HEADERS = {
+    'Revenue': 'Revenue',
+    'Cost of Sales': 'Cost of Sales', 'Cost of Goods Sold': 'Cost of Sales',
+    'Expenses': 'Expenses', 'Operating Expenses': 'Expenses',
+    'Other Income': 'Other Income', 'Other Expenses': 'Other Expenses',
+    'Tax Expenses': 'Tax Expenses'
+  };
+  var groupOf = {};
+  var src = _act.slice().reverse().concat(_bud.slice().reverse());
+  src.forEach(function(m) {
+    var cur = 'Revenue';
+    m.lines.forEach(function(l, i) {
+      if ((l[1] === null || l[1] === undefined) && HEADERS[l[0]]) { cur = HEADERS[l[0]]; return; }
+      var k = l[0] + '|' + occIndex(m.lines, i);
+      if (!(k in groupOf)) groupOf[k] = cur;
+    });
+  });
+  return groupOf;
+}
 function renderLinePicker(availList) {
   var el = document.getElementById('linePicker');
   var h = '<span class="qv-group"><span class="qv-lbl">Quick views:</span>';
@@ -250,8 +273,22 @@ function renderLinePicker(availList) {
     h += '<span class="line-chip" data-key="' + escH(k) + '" style="border-color:' + color + '"><span class="dot" style="background:' + color + '"></span>' + escH(k.split('|')[0]) + '<button title="Remove from chart">&times;</button></span>';
   });
   h += '<select id="lineAdd"><option value="">+ Add line to chart…</option>';
+  var groupOf = buildLineGroups();
+  var GROUP_ORDER = ['Revenue', 'Cost of Sales', 'Expenses', 'Other Income', 'Other Expenses', 'Tax Expenses', 'Other'];
+  var groups = {};
   availList.forEach(function(a) {
-    if (_selLines.indexOf(a.key) === -1) h += '<option value="' + escH(a.key) + '">' + escH(a.name) + '</option>';
+    if (_selLines.indexOf(a.key) !== -1) return;
+    var g = groupOf[a.key] || 'Other';
+    if (GROUP_ORDER.indexOf(g) === -1) g = 'Other';
+    (groups[g] = groups[g] || []).push(a);
+  });
+  GROUP_ORDER.forEach(function(g) {
+    if (!groups[g] || !groups[g].length) return;
+    h += '<optgroup label="' + escH(g) + '">';
+    groups[g].forEach(function(a) {
+      h += '<option value="' + escH(a.key) + '">' + escH(a.name) + '</option>';
+    });
+    h += '</optgroup>';
   });
   h += '</select><button class="line-reset" id="lineReset">Reset</button>';
   h += '<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#475569;margin-left:10px;cursor:pointer"><input type="checkbox" id="budgetToggle"' + (_showBudget ? ' checked' : '') + '> Show budget line</label>';
