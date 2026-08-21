@@ -566,6 +566,17 @@ function exportPdf() {
     if (!tbl || !tbl.tHead || !tbl.tHead.rows.length) { toast('No table to export yet', false); return; }
     if (btn) btn.disabled = true;
 
+    // Temporarily extend the range one period earlier so the first exported
+    // period gets a MoM % too; the extra leading column is dropped from output.
+    var origFirstLabel = tbl.tHead.rows[0].cells[1] ? tbl.tHead.rows[0].cells[1].textContent.trim() : null;
+    var stepBack = { monthly: 1, quarterly: 3, annual: 12 }[_view] || 1;
+    var savedFrom = _rangeFrom, extended = false;
+    if (_rangeFrom) {
+      _rangeFrom = monthAdd(_rangeFrom, -stepBack);
+      extended = true;
+      render();
+    }
+
     // --- read the displayed (rolled-up) table ---
     var headRows = tbl.tHead.rows;
     var perLabels = Array.prototype.slice.call(headRows[0].cells, 1).map(function(c){ return c.textContent.trim(); });
@@ -606,6 +617,13 @@ function exportPdf() {
       }
       rows.push({ label: label, vals: vals, isSection: vals.every(function(mv){ return mv.every(function(x){ return x === null; }); }) });
     });
+    // Leading period added only for MoM: excluded from output columns.
+    var leadCount = 0;
+    if (extended && origFirstLabel) {
+      var fi = perLabels.indexOf(origFirstLabel);
+      if (fi > 0) leadCount = fi;
+    }
+    var outLabels = perLabels.slice(leadCount);
 
     // --- formatting ---
     function fullPeriodLabel(l) {
@@ -635,7 +653,7 @@ function exportPdf() {
     // Single header row; the month name is embedded in the Actual/Budget labels
     // (e.g. "June 2026 Actual") so every column is self-describing.
     var head = [['']];
-    perLabels.forEach(function(pl) {
+    outLabels.forEach(function(pl) {
       var full = fullPeriodLabel(pl);
       subCols.forEach(function(sc) {
         var name = (sc.key === 'act' || sc.key === 'bud') ? full + ' ' + sc.name : sc.name;
@@ -645,7 +663,8 @@ function exportPdf() {
 
     var body = rows.map(function(r) {
       var out = [r.label];
-      r.vals.forEach(function(mv, i) {
+      for (var i = leadCount; i < r.vals.length; i++) {
+        var mv = r.vals[i];
         subCols.forEach(function(sc) {
           if (r.isSection) { out.push(''); return; }
           if (sc.key === 'act') out.push(fVal(mv[aIdx]));
@@ -656,13 +675,13 @@ function exportPdf() {
             out.push((a === null || b === null) ? '' : (a.pct ? fSigned(a.v - b.v, 'pp') : (b.v ? fSigned((a.v - b.v) / Math.abs(b.v) * 100, '%') : '')));
           }
         });
-      });
+      }
       return out;
     });
 
     // --- document ---
     var viewName = { monthly:'Monthly', quarterly:'Quarterly (FY)', annual:'Annual (FY, Jul–Jun)' }[_view];
-    var period = fullPeriodLabel(perLabels[0]) + (perLabels.length > 1 ? ' – ' + fullPeriodLabel(perLabels[perLabels.length - 1]) : '');
+    var period = fullPeriodLabel(outLabels[0]) + (outLabels.length > 1 ? ' – ' + fullPeriodLabel(outLabels[outLabels.length - 1]) : '');
     var doc = new window.jspdf.jsPDF({ orientation:'landscape', unit:'pt', format:'a4' });
     var pageW = doc.internal.pageSize.getWidth();
     var margin = 36;
@@ -673,16 +692,19 @@ function exportPdf() {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(100, 116, 139);
     doc.text(viewName + '  ·  ' + period, pageW / 2, 72, { align: 'center' });
 
-    var totalCols = 1 + perLabels.length * subCols.length;
+    var totalCols = 1 + outLabels.length * subCols.length;
     var baseFont = totalCols > 30 ? 5.2 : (totalCols > 20 ? 6 : 7);
     // Column sizing: wide, wrapping label column; value columns sized to
     // content scale (capped) so a few columns don't stretch across the page.
+    // The table is centered when narrower than the page.
     var labelW = 150;
     var availW = pageW - margin * 2 - labelW;
-    var nValCols = perLabels.length * subCols.length;
+    var nValCols = outLabels.length * subCols.length;
     var valW = Math.min(72, Math.max(26, availW / nValCols));
     var colStyles = { 0: { cellWidth: labelW, overflow: 'linebreak' } };
     for (var ci = 1; ci <= nValCols; ci++) colStyles[ci] = { cellWidth: valW };
+    var tableW = labelW + nValCols * valW;
+    var leftMargin = Math.max(margin, (pageW - tableW) / 2);
     var SECTION_ROW = /^(Revenue|Cost of Sales|Expenses)$/;
     var KEY_ROW = /^(Total Revenue|Total Cost of Sales|Gross Profit|Total Expenses|Operating Profit|Net Income)$/;
     var BOLD_ROW = /^(Total |Gross Profit$|Operating Profit$|Net Income$|Other Income$|Other Expenses$|Tax Expenses$)/;
@@ -690,7 +712,7 @@ function exportPdf() {
       head: head,
       body: body,
       startY: 86,
-      margin: { left: margin, right: margin, top: 50 },
+      margin: { left: leftMargin, right: leftMargin, top: 50 },
       theme: 'plain',
       styles: { fontSize: baseFont, cellPadding: { top: 2.6, bottom: 2.6, left: 3, right: 3 }, textColor: [30, 41, 59], overflow: 'ellipsize' },
       headStyles: { textColor: [15, 23, 42], fontStyle: 'bold', fontSize: baseFont, lineWidth: { bottom: 0.75 }, lineColor: [30, 41, 59], overflow: 'linebreak', valign: 'bottom' },
@@ -724,12 +746,17 @@ function exportPdf() {
         }
       }
     });
-    var fname = 'BruntWork_PL_' + (_rangeFrom || 'all') + '_' + (_rangeTo || 'latest') + '_' + _view + '.pdf';
+    var fname = 'BruntWork_PL_' + (savedFrom || 'all') + '_' + (_rangeTo || 'latest') + '_' + _view + '.pdf';
     doc.save(fname);
     toast('Exported ' + fname, true);
   } catch (e) {
     toast('Export failed: ' + e.message, false);
   } finally {
+    // restore the on-screen range if it was extended for the MoM lead column
+    if (typeof extended !== 'undefined' && extended) {
+      _rangeFrom = savedFrom;
+      render();
+    }
     if (btn) btn.disabled = false;
   }
 }
