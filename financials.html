@@ -230,6 +230,17 @@ var RATIOS = {
   'ratio:om': { label: 'Operating Margin %', num: 'op' },
   'ratio:bd': { label: 'Bad Debt Ratio %', num: 'bad' }
 };
+// Non-financial KPI series (from the KPI tracker's Monthly sheet), overlayable on the chart.
+var KPI_SERIES = {
+  'kpi:endFTE':  { label: 'Active Staff FTE', field: 'endFTE', fmt: 'num' },
+  'kpi:hires':   { label: 'FTEs Hired', field: 'hires', fmt: 'num' },
+  'kpi:lost':    { label: 'Lost FTEs', field: 'lost', fmt: 'num' },
+  'kpi:churn':   { label: 'Churn Rate %', field: 'churn', fmt: 'pct' },
+  'kpi:mqls':    { label: 'Discovery Calls (MQLs)', field: 'mqls', fmt: 'num' },
+  'kpi:cpc':     { label: 'Cost Per Discovery Call', field: 'cpc', fmt: 'money' },
+  'kpi:clients': { label: 'Active Clients', field: 'clients', fmt: 'num' }
+};
+function chipName(k) { return RATIOS[k] ? RATIOS[k].label : (KPI_SERIES[k] ? KPI_SERIES[k].label : k.split('|')[0]); }
 function addChartLine(k) {
   if (!k) return;
   if (_selLines.indexOf(k) === -1) { _selLines.push(k); render(); }
@@ -283,8 +294,7 @@ function renderLinePicker(availList) {
   h += '</span>';
   _selLines.forEach(function(k, i) {
     var color = LINE_PALETTE[i % LINE_PALETTE.length];
-    var nm = RATIOS[k] ? RATIOS[k].label : k.split('|')[0];
-    h += '<span class="line-chip" data-key="' + escH(k) + '" style="border-color:' + color + '"><span class="dot" style="background:' + color + '"></span>' + escH(nm) + '<button title="Remove from chart">&times;</button></span>';
+    h += '<span class="line-chip" data-key="' + escH(k) + '" style="border-color:' + color + '"><span class="dot" style="background:' + color + '"></span>' + escH(chipName(k)) + '<button title="Remove from chart">&times;</button></span>';
   });
   h += '<select id="lineAdd"><option value="">+ Add line to chart…</option>';
   var groupOf = buildLineGroups();
@@ -304,6 +314,11 @@ function renderLinePicker(availList) {
     });
     h += '</optgroup>';
   });
+  h += '</select>';
+  h += '<select id="kpiAdd"><option value="">+ Add KPI to chart…</option>';
+  Object.keys(KPI_SERIES).forEach(function(k) {
+    if (_selLines.indexOf(k) === -1) h += '<option value="' + escH(k) + '">' + escH(KPI_SERIES[k].label) + '</option>';
+  });
   h += '</select><button class="line-reset" id="lineReset">Reset</button>';
   h += '<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#475569;margin-left:10px;cursor:pointer"><input type="checkbox" id="budgetToggle"' + (_showBudget ? ' checked' : '') + '> Show budget line</label>';
   el.innerHTML = h;
@@ -311,6 +326,7 @@ function renderLinePicker(availList) {
     btn.addEventListener('click', function() { removeChartLine(btn.parentElement.getAttribute('data-key')); });
   });
   document.getElementById('lineAdd').addEventListener('change', function() { addChartLine(this.value); });
+  document.getElementById('kpiAdd').addEventListener('change', function() { addChartLine(this.value); });
   document.getElementById('lineReset').addEventListener('click', resetChartLines);
   document.getElementById('budgetToggle').addEventListener('change', function() {
     _showBudget = this.checked;
@@ -707,24 +723,40 @@ function render() {
   _quickKeys = { rev: revKey, gp: gpKey, op: opKey, exp: expKey };
   var defaultKeys = [revKey, opKey].filter(Boolean);
   if (!_selLines || !_selLines.length) _selLines = defaultKeys.slice();
-  _selLines = _selLines.filter(function(k){ return availMap[k] || RATIOS[k]; });
+  _selLines = _selLines.filter(function(k){ return availMap[k] || RATIOS[k] || KPI_SERIES[k]; });
   if (!_selLines.length) _selLines = defaultKeys.slice();
   renderLinePicker(availList);
 
   var dsets = [];
   var manySeries = _selLines.length > 3;
+  var fmtLabel = {
+    pct: function(v){ return v === null ? '' : v.toFixed(1) + '%'; },
+    num: function(v){ return v === null ? '' : v.toLocaleString('en-US', { maximumFractionDigits: 1 }); },
+    money: function(v){ if (v === null) return ''; var s = v < 0 ? '-' : ''; var a = Math.abs(v); return a >= 1e6 ? s + '$' + (a / 1e6).toFixed(2) + 'm' : s + '$' + Math.round(a / 1000) + 'k'; }
+  };
+  var kpiVals; // lazily computed once, shared by all selected KPI series
   _selLines.forEach(function(k, i) {
     var color = LINE_PALETTE[i % LINE_PALETTE.length];
     if (RATIOS[k]) {
       var rr = RATIOS[k];
       var ra = ratioRow(mxA, rr.num), rb = ratioRow(mxB, rr.num);
       if (ra && ra.some(function(v){ return v !== null; })) {
-        dsets.push({ type:'line', label:rr.label, data:ra, _pct:true, borderColor:color, backgroundColor:'transparent', borderWidth:2.5, tension:.3, pointRadius:3,
-          datalabels: manySeries ? { display:false } : { display:true, anchor:'end', align:'top', color:color, font:{size:9,weight:'bold'}, formatter:function(v){ return v === null ? '' : v.toFixed(1) + '%'; } } });
+        dsets.push({ type:'line', label:rr.label, data:ra, _fmt:'pct', borderColor:color, backgroundColor:'transparent', borderWidth:2.5, tension:.3, pointRadius:3,
+          datalabels: manySeries ? { display:false } : { display:true, anchor:'end', align:'top', color:color, font:{size:9,weight:'bold'}, formatter:fmtLabel.pct } });
       }
       if (_showBudget && rb && rb.some(function(v){ return v !== null; })) {
-        dsets.push({ type:'line', label:'Budget ' + rr.label, data:rb, _pct:true, borderColor:color, backgroundColor:'transparent', borderWidth:1.5, borderDash:[6,4], tension:0, pointRadius:0, pointHoverRadius:4 });
+        dsets.push({ type:'line', label:'Budget ' + rr.label, data:rb, _fmt:'pct', borderColor:color, backgroundColor:'transparent', borderWidth:1.5, borderDash:[6,4], tension:0, pointRadius:0, pointHoverRadius:4 });
       }
+      return;
+    }
+    if (KPI_SERIES[k]) {
+      var ks = KPI_SERIES[k];
+      if (kpiVals === undefined) kpiVals = computeKpiVals(shared);
+      if (!kpiVals) return; // KPI history not loaded yet — re-rendered when it arrives
+      var kd = kpiVals.map(function(p){ var v = p ? p[ks.field] : null; return (v === null || v === undefined) ? null : v; });
+      if (!kd.some(function(v){ return v !== null; })) return;
+      dsets.push({ type:'line', label:ks.label, data:kd, _fmt:ks.fmt, borderColor:color, backgroundColor:'transparent', borderWidth:2.5, tension:.3, pointRadius:3,
+        datalabels: manySeries ? { display:false } : { display:true, anchor:'end', align:'top', color:color, font:{size:9,weight:'bold'}, formatter:fmtLabel[ks.fmt] } });
       return;
     }
     var nm = k.split('|')[0];
@@ -742,21 +774,42 @@ function render() {
       dsets.push({ type:'line', label:'Budget ' + nm, data:b, borderColor:color, backgroundColor:'transparent', borderWidth:1.5, borderDash:[6,4], tension:0, pointRadius:0, pointHoverRadius:4 });
     }
   });
-  var pctAll = dsets.length > 0 && dsets.every(function(d){ return d._pct; });
-  var pctAny = dsets.some(function(d){ return d._pct; });
-  if (pctAny && !pctAll) dsets.forEach(function(d){ if (d._pct) d.yAxisID = 'y1'; });
+  // Axis assignment by unit: single-unit charts use the main axis with matching
+  // ticks; mixed-unit charts keep dollars on the left and put the other unit(s)
+  // on a right-hand axis.
+  var tickCb = {
+    money: function(v){ return '$' + (Math.abs(v) >= 1e6 ? (v / 1e6) + 'M' : (v / 1e3) + 'k'); },
+    pct: function(v){ return v + '%'; },
+    num: function(v){ return Math.abs(v) >= 1000 ? v.toLocaleString('en-US') : v; }
+  };
+  var fmtOf = function(d){ return d._fmt || 'money'; };
+  var uniqF = [];
+  dsets.forEach(function(d){ var f = fmtOf(d); if (uniqF.indexOf(f) === -1) uniqF.push(f); });
+  var mainFmt = uniqF.length === 1 ? uniqF[0] : (uniqF.indexOf('money') !== -1 ? 'money' : uniqF[0]);
+  var auxFmts = [];
+  if (uniqF.length > 1) {
+    dsets.forEach(function(d) {
+      var f = fmtOf(d);
+      if (f !== mainFmt) { d.yAxisID = 'y1'; if (auxFmts.indexOf(f) === -1) auxFmts.push(f); }
+    });
+  }
+  var fmtVal = {
+    money: function(v){ return fmtMoney(v); },
+    pct: function(v){ return v === null ? '—' : v.toFixed(1) + '%'; },
+    num: function(v){ return v === null ? '—' : v.toLocaleString('en-US', { maximumFractionDigits: 1 }); }
+  };
   var opts = {
     responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
     layout:{padding:{top:18}},
     plugins:{ legend:{display:true,position:'bottom',labels:{boxWidth:10,font:{size:10},padding:12}},
       tooltip:{ enabled:true, animation:false, backgroundColor:'rgba(15,23,42,1)', titleColor:'#fff', bodyColor:'#fff', borderColor:'rgba(255,255,255,.25)', borderWidth:1, padding:10, cornerRadius:6,
-        callbacks:{ label:function(ctx){ var v = ctx.parsed.y; return ctx.dataset.label + ': ' + (ctx.dataset._pct ? (v === null ? '—' : v.toFixed(1) + '%') : fmtMoney(v)); },
+        callbacks:{ label:function(ctx){ return ctx.dataset.label + ': ' + fmtVal[fmtOf(ctx.dataset)](ctx.parsed.y); },
           labelColor:function(ctx){ var c = ctx.dataset.borderColor || '#64748b'; if (typeof c !== 'string') c = '#64748b'; return { borderColor:c, backgroundColor:c, borderWidth:0, borderRadius:2 }; } } } },
     scales:{ x:{grid:{display:false},ticks:{font:{size:10}}},
-      y:{ticks:{font:{size:10},callback: pctAll ? function(v){ return v + '%'; } : function(v){ return '$'+(Math.abs(v)>=1e6?(v/1e6)+'M':(v/1e3)+'k'); }}} }
+      y:{ticks:{font:{size:10},callback: tickCb[mainFmt]}} }
   };
-  if (pctAny && !pctAll) {
-    opts.scales.y1 = { position:'right', grid:{drawOnChartArea:false}, ticks:{font:{size:10}, callback:function(v){ return v + '%'; }} };
+  if (uniqF.length > 1) {
+    opts.scales.y1 = { position:'right', grid:{drawOnChartArea:false}, ticks:{font:{size:10}, callback: tickCb[auxFmts.length === 1 ? auxFmts[0] : 'num']} };
   }
   _charts.push(new Chart(document.getElementById('chartMain').getContext('2d'), { type:'bar', data:{labels:shared.labels, datasets:dsets}, options:opts }));
 
@@ -844,9 +897,10 @@ function loadKpi() {
   }).catch(function(){ _kpi = []; });
 }
 function fmtKpiNum(v, dp) { return v === null ? '—' : v.toLocaleString('en-US', { maximumFractionDigits: dp === undefined ? 1 : dp }); }
-function renderKpiTable(shared) {
-  var block = document.getElementById('kpiBlock');
-  if (!_kpi || !_kpi.length) { block.style.display = 'none'; return; }
+// Per-period KPI values aligned with the chart/table periods. Returns null
+// until the KPI history has loaded; entries are null for periods with no data.
+function computeKpiVals(shared) {
+  if (!_kpi || !_kpi.length) return null;
   var periodOf = periodOfFn();
   var byMonth = {};
   _kpi.forEach(function(m){ byMonth[m.key] = m.vals; });
@@ -881,6 +935,12 @@ function renderKpiTable(shared) {
       clients: col(last, KPI_COL.existingClients)
     };
   }
+  return shared.periods.map(function(pk){ return periodVals(pk); });
+}
+function renderKpiTable(shared) {
+  var block = document.getElementById('kpiBlock');
+  var vals = computeKpiVals(shared);
+  if (!vals) { block.style.display = 'none'; return; }
   var rows = [
     { label: 'Active Staff FTE (end of period)', get: function(p){ return fmtKpiNum(p.endFTE); } },
     { label: 'FTEs Hired', get: function(p){ return fmtKpiNum(p.hires); } },
@@ -890,7 +950,6 @@ function renderKpiTable(shared) {
     { label: 'Cost Per Discovery Call', get: function(p){ return p.cpc === null ? '—' : '$' + Math.round(p.cpc).toLocaleString('en-US'); } },
     { label: 'Number of Active Clients', get: function(p){ return fmtKpiNum(p.clients, 0); } }
   ];
-  var vals = shared.periods.map(function(pk){ return periodVals(pk); });
   if (!vals.some(function(v){ return v !== null; })) { block.style.display = 'none'; return; }
   var h = '<thead><tr><th>Metric</th>';
   shared.labels.forEach(function(l){ h += '<th>' + escH(l) + '</th>'; });
