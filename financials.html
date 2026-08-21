@@ -947,9 +947,58 @@ function render() {
   document.getElementById('tblTitle').textContent = 'Profit & Loss Reports';
 
   var baseTbl = mxA || mxB;
+
+  // Display-only roll-ups (stored data untouched): small COGS lines combine
+  // into an "Other" row before Total Cost of Sales; admin salary components
+  // combine into Administrative Staff - Operations.
+  var TBL_ROLLUP = {
+    'Client Recharge': 'cogsOther',
+    'Cognitive': 'cogsOther',
+    'Staff Incentives Payout': 'cogsOther',
+    'Cogntiv Non-Taxable Compensation': 'cogsOther',
+    'Administrative Staff - 13th Month Pay': 'adminOps',
+    'Administrative Staff - Executive': 'adminOps',
+    'Administrative Staff - SSS/PHIC/HDMF Contribution': 'adminOps',
+    'Employee CPF': 'adminOps',
+    'Employer CPF': 'adminOps',
+    'SG Salaries & Wages': 'adminOps',
+    'Skills Development Levy (SDL)': 'adminOps'
+  };
+  var nPer = shared.periods.length;
+  function mergeArrays(a, b) {
+    if (!a && !b) return null;
+    var out = [];
+    for (var i = 0; i < nPer; i++) {
+      var x = a ? a[i] : null, y = b ? b[i] : null;
+      out.push((x === null || x === undefined) && (y === null || y === undefined) ? null : (x || 0) + (y || 0));
+    }
+    return out;
+  }
+  var rollAct = {}, rollBud = {};
+  baseTbl.order.forEach(function(o) {
+    var g = TBL_ROLLUP[o.name];
+    if (!g) return;
+    var key = o.name + '|' + o.occ;
+    if (actRow[key]) rollAct[g] = mergeArrays(rollAct[g], actRow[key]);
+    if (budRow[key]) rollBud[g] = mergeArrays(rollBud[g], budRow[key]);
+  });
+  var tActRow = Object.assign({}, actRow), tBudRow = Object.assign({}, budRow);
+  var opsKey = null;
+  baseTbl.order.forEach(function(o) { if (!opsKey && o.name === 'Administrative Staff - Operations') opsKey = o.name + '|' + o.occ; });
+  if (opsKey && (rollAct.adminOps || rollBud.adminOps)) {
+    tActRow[opsKey] = mergeArrays(actRow[opsKey], rollAct.adminOps);
+    tBudRow[opsKey] = mergeArrays(budRow[opsKey], rollBud.adminOps);
+  }
   function cellVal(key, mode, ci) {
-    var a = actRow[key] ? actRow[key][ci] : null;
-    var b = budRow[key] ? budRow[key][ci] : null;
+    var a = tActRow[key] ? tActRow[key][ci] : null;
+    var b = tBudRow[key] ? tBudRow[key][ci] : null;
+    if (mode === 'actual') return a;
+    if (mode === 'budget') return b;
+    return (a !== null && b !== null) ? a - b : null;
+  }
+  function rollVal(group, mode, ci) {
+    var a = rollAct[group] ? rollAct[group][ci] : null;
+    var b = rollBud[group] ? rollBud[group][ci] : null;
     if (mode === 'actual') return a;
     if (mode === 'budget') return b;
     return (a !== null && b !== null) ? a - b : null;
@@ -969,6 +1018,17 @@ function render() {
   h += '</thead><tbody>';
   baseTbl.order.forEach(function(o, ri) {
     var key = o.name + '|' + o.occ;
+    if (TBL_ROLLUP[o.name]) return; // rolled into "Other" / Administrative Staff - Operations
+    if (o.name === 'Total Cost of Sales' && (rollAct.cogsOther || rollBud.cogsOther)) {
+      h += '<tr><td>Other</td>';
+      shared.labels.forEach(function(_, ci) {
+        modes.forEach(function(m, mi) {
+          var rv = rollVal('cogsOther', m, ci);
+          h += '<td' + (rv !== null && rv < 0 ? ' class="neg"' : '') + (mi === 0 && modes.length > 1 ? ' style="border-left:1px solid var(--border)"' : '') + '>' + (rv === null ? '' : fmtMoney(rv)) + '</td>';
+        });
+      });
+      h += '</tr>';
+    }
     var isSection = baseTbl.matrix[ri].every(function(v){ return v === null; })
       && (!budRow[key] || budRow[key].every(function(v){ return v === null; }));
     var isTotal = /^total|gross profit|net (profit|income)/i.test(o.name);
