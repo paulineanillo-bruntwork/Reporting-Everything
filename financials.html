@@ -81,6 +81,7 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .fin-table tr:hover td{background:#f8fafc}
 .fin-table tr.sec td{font-weight:700;background:#f1f5f9!important;color:var(--text);border-bottom:1px solid var(--border)}
 .fin-table tr.tot td{font-weight:700;border-top:2px solid var(--border)}
+.fin-table tr.op td{font-weight:800;background:#eff6ff!important;color:#1d4ed8;border-top:2px solid var(--blue);border-bottom:2px solid var(--blue)}
 .neg{color:var(--red)}
 .empty-state{text-align:center;padding:60px 20px;color:var(--text-muted)}
 .loading{text-align:center;padding:60px 20px;color:var(--text-muted)}
@@ -1016,30 +1017,64 @@ function render() {
     h += '</tr>';
   }
   h += '</thead><tbody>';
-  baseTbl.order.forEach(function(o, ri) {
-    var key = o.name + '|' + o.occ;
-    if (TBL_ROLLUP[o.name]) return; // rolled into "Other" / Administrative Staff - Operations
-    if (o.name === 'Total Cost of Sales' && (rollAct.cogsOther || rollBud.cogsOther)) {
-      h += '<tr><td>Other</td>';
-      shared.labels.forEach(function(_, ci) {
-        modes.forEach(function(m, mi) {
-          var rv = rollVal('cogsOther', m, ci);
-          h += '<td' + (rv !== null && rv < 0 ? ' class="neg"' : '') + (mi === 0 && modes.length > 1 ? ' style="border-left:1px solid var(--border)"' : '') + '>' + (rv === null ? '' : fmtMoney(rv)) + '</td>';
-        });
-      });
-      h += '</tr>';
-    }
-    var isSection = baseTbl.matrix[ri].every(function(v){ return v === null; })
-      && (!budRow[key] || budRow[key].every(function(v){ return v === null; }));
-    var isTotal = /^total|gross profit|net (profit|income)/i.test(o.name);
-    h += '<tr class="' + (isSection ? 'sec' : (isTotal ? 'tot' : '')) + '"><td>' + escH(o.name) + '</td>';
+
+  // Everything below Operating Profit is consolidated into three display rows:
+  // Other Income (incl. Sales of Business Rights and interest income), Other
+  // Expenses, and Tax Expenses — then Net Income. Misplaced pre-OP components
+  // from older month layouts (grouped under Revenue/COGS/Expenses) are hidden,
+  // never rolled, since their months' totals already include them.
+  var opIdx = -1;
+  baseTbl.order.forEach(function(o, ri){ if (opIdx === -1 && /^operating profit/i.test(o.name)) opIdx = ri; });
+  var lineGroups = buildLineGroups();
+  var below = { income: { a:null, b:null }, expense: { a:null, b:null }, tax: { a:null, b:null } };
+  if (opIdx !== -1) baseTbl.order.forEach(function(o, ri) {
+    if (ri <= opIdx) return;
+    var nm = o.name;
+    if (/^(earnings (before|after)|net (income|profit))/i.test(nm)) return; // hidden or kept as-is
+    var key = nm + '|' + o.occ;
+    var g = lineGroups[key] || '';
+    if (g === 'Revenue' || g === 'Expenses' || g === 'Cost of Sales') return;
+    var bucket = /income|recovered|revenue|business rights|trust distribution|unallocated sales/i.test(nm) ? 'income'
+      : ((g === 'Tax Expenses' || /tax/i.test(nm)) ? 'tax' : 'expense');
+    if (actRow[key]) below[bucket].a = mergeArrays(below[bucket].a, actRow[key]);
+    if (budRow[key]) below[bucket].b = mergeArrays(below[bucket].b, budRow[key]);
+  });
+  function belowVal(bucket, mode, ci) {
+    var a = below[bucket].a ? below[bucket].a[ci] : null;
+    var b = below[bucket].b ? below[bucket].b[ci] : null;
+    if (mode === 'actual') return a;
+    if (mode === 'budget') return b;
+    return (a !== null && b !== null) ? a - b : null;
+  }
+  function emitRow(label, cls, valFn) {
+    h += '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + escH(label) + '</td>';
     shared.labels.forEach(function(_, ci) {
       modes.forEach(function(m, mi) {
-        var v = isSection ? null : cellVal(key, m, ci);
+        var v = valFn(m, ci);
         h += '<td' + (v !== null && v < 0 ? ' class="neg"' : '') + (mi === 0 && modes.length > 1 ? ' style="border-left:1px solid var(--border)"' : '') + '>' + (v === null ? '' : fmtMoney(v)) + '</td>';
       });
     });
     h += '</tr>';
+  }
+
+  baseTbl.order.forEach(function(o, ri) {
+    var key = o.name + '|' + o.occ;
+    if (TBL_ROLLUP[o.name]) return; // rolled into "Other" / Administrative Staff - Operations
+    if (opIdx !== -1 && ri > opIdx && !/^net (income|profit)/i.test(o.name)) return; // consolidated below OP
+    if (o.name === 'Total Cost of Sales' && (rollAct.cogsOther || rollBud.cogsOther)) {
+      emitRow('Other', '', function(m, ci){ return rollVal('cogsOther', m, ci); });
+    }
+    var isSection = baseTbl.matrix[ri].every(function(v){ return v === null; })
+      && (!budRow[key] || budRow[key].every(function(v){ return v === null; }));
+    var isOp = /^operating profit/i.test(o.name);
+    var isTotal = /^total|gross profit|net (profit|income)/i.test(o.name);
+    emitRow(o.name, isSection ? 'sec' : (isOp ? 'op' : (isTotal ? 'tot' : '')), function(m, ci){ return isSection ? null : cellVal(key, m, ci); });
+    if (ri === opIdx) {
+      [['income', 'Other Income'], ['expense', 'Other Expenses'], ['tax', 'Tax Expenses']].forEach(function(bk) {
+        if (!below[bk[0]].a && !below[bk[0]].b) return;
+        emitRow(bk[1], '', function(m, ci){ return belowVal(bk[0], m, ci); });
+      });
+    }
   });
   h += '</tbody>';
   document.getElementById('finTable').innerHTML = h;
