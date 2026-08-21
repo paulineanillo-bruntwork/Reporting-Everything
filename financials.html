@@ -82,6 +82,7 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .fin-table tr.sec td{font-weight:700;background:#f1f5f9!important;color:var(--text);border-bottom:1px solid var(--border)}
 .fin-table tr.tot td{font-weight:700;border-top:2px solid var(--border)}
 .fin-table tr.op td{font-weight:800;background:#eff6ff!important;color:#1d4ed8;border-top:2px solid var(--blue);border-bottom:2px solid var(--blue)}
+.fin-table tr.sub td{font-size:11px;font-style:italic;color:var(--text-muted)}
 .neg{color:var(--red)}
 .empty-state{text-align:center;padding:60px 20px;color:var(--text-muted)}
 .loading{text-align:center;padding:60px 20px;color:var(--text-muted)}
@@ -1055,16 +1056,31 @@ function render() {
     if (mode === 'budget') return b;
     return (a !== null && b !== null) ? a - b : null;
   }
-  function emitRow(label, cls, valFn) {
+  function emitRow(label, cls, valFn, fmtFn) {
+    var fv = fmtFn || fmtMoney;
     h += '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + escH(label) + '</td>';
     shared.labels.forEach(function(_, ci) {
       modes.forEach(function(m, mi) {
         var v = valFn(m, ci);
-        h += '<td' + (v !== null && v < 0 ? ' class="neg"' : '') + (mi === 0 && modes.length > 1 ? ' style="border-left:1px solid var(--border)"' : '') + '>' + (v === null ? '' : fmtMoney(v)) + '</td>';
+        h += '<td' + (v !== null && v < 0 ? ' class="neg"' : '') + (mi === 0 && modes.length > 1 ? ' style="border-left:1px solid var(--border)"' : '') + '>' + (v === null ? '' : fv(v)) + '</td>';
       });
     });
     h += '</tr>';
   }
+  // Gross Margin % row (GP / Total Revenue), shown under Gross Profit.
+  function marginOfMode(rowsMap, ci) {
+    var r = rowsMap === 'a' ? (actRow[revKey] ? actRow[revKey][ci] : null) : (budRow[revKey] ? budRow[revKey][ci] : null);
+    var g = rowsMap === 'a' ? (actRow[gpKey] ? actRow[gpKey][ci] : null) : (budRow[gpKey] ? budRow[gpKey][ci] : null);
+    return (r && g !== null && g !== undefined) ? g / r * 100 : null;
+  }
+  function marginVal(mode, ci) {
+    if (!revKey || !gpKey) return null;
+    if (mode === 'actual') return marginOfMode('a', ci);
+    if (mode === 'budget') return marginOfMode('b', ci);
+    var a = marginOfMode('a', ci), b = marginOfMode('b', ci);
+    return (a !== null && b !== null) ? a - b : null;
+  }
+  function fmtPct(v) { return v.toFixed(1) + '%'; }
 
   baseTbl.order.forEach(function(o, ri) {
     var key = o.name + '|' + o.occ;
@@ -1075,9 +1091,12 @@ function render() {
     }
     var isSection = baseTbl.matrix[ri].every(function(v){ return v === null; })
       && (!budRow[key] || budRow[key].every(function(v){ return v === null; }));
-    var isOp = /^operating profit/i.test(o.name);
+    var isAnchor = /^(operating profit|total revenue|gross profit)$/i.test(o.name); // key lines get the emphasis style
     var isTotal = /^total|gross profit|net (profit|income)/i.test(o.name);
-    emitRow(o.name, isSection ? 'sec' : (isOp ? 'op' : (isTotal ? 'tot' : '')), function(m, ci){ return isSection ? null : cellVal(key, m, ci); });
+    emitRow(o.name, isSection ? 'sec' : (isAnchor ? 'op' : (isTotal ? 'tot' : '')), function(m, ci){ return isSection ? null : cellVal(key, m, ci); });
+    if (/^gross profit$/i.test(o.name) && revKey && gpKey) {
+      emitRow('Gross Margin %', 'sub', marginVal, fmtPct);
+    }
     if (ri === opIdx) {
       [['income', 'Other Income'], ['expense', 'Other Expenses'], ['tax', 'Tax Expenses']].forEach(function(bk) {
         if (!below[bk[0]].a && !below[bk[0]].b) return;
