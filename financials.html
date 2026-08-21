@@ -144,7 +144,13 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
       </div>
     </div>
     <div class="chart-grid">
-      <div class="chart-block"><h3 id="chart1Title">P&amp;L Trends — Actual vs Budget</h3><div class="line-picker" id="linePicker"></div><canvas id="chartMain"></canvas></div>
+      <div class="chart-block"><h3 id="chart1Title">P&amp;L Trends — Actual vs Budget</h3><div class="line-picker" id="linePicker"></div><canvas id="chartMain"></canvas>
+        <div style="text-align:center;margin-top:10px"><a href="#" class="upload-toggle" id="chartDataToggle" onclick="toggleChartData(event)">&#9656; Show chart data</a></div>
+        <div id="chartDataWrap" style="display:none">
+          <div id="chartDataCaption" style="font-size:12px;color:var(--text-muted);margin:8px 0 6px"></div>
+          <div class="tbl-scroll"><table class="fin-table" id="chartDataTable"></table></div>
+        </div>
+      </div>
     </div>
     <div class="tbl-block">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;padding-right:20px">
@@ -534,6 +540,13 @@ function processOneFile(file, prefix, st) {
   });
 }
 
+function toggleChartData(ev) {
+  ev.preventDefault();
+  var w = document.getElementById('chartDataWrap');
+  var open = w.style.display === 'none';
+  w.style.display = open ? 'block' : 'none';
+  document.getElementById('chartDataToggle').innerHTML = open ? '&#9662; Hide chart data' : '&#9656; Show chart data';
+}
 function toggleUpload(ev) {
   ev.preventDefault();
   var p = document.getElementById('uploadPanel');
@@ -831,6 +844,26 @@ function render() {
     opts.scales.y1 = { position:'right', grid:{drawOnChartArea:false}, ticks:{font:{size:10}, callback: tickCb[auxFmts.length === 1 ? auxFmts[0] : 'num']} };
   }
   _charts.push(new Chart(document.getElementById('chartMain').getContext('2d'), { type:'bar', data:{labels:shared.labels, datasets:dsets}, options:opts }));
+
+  // Chart data table (collapsed under the chart): exactly the series and
+  // periods currently displayed, formatted per series unit.
+  (function() {
+    var viewName = { monthly:'Monthly', quarterly:'Quarterly (FY)', annual:'Annual (FY, Jul–Jun)' }[_view];
+    var capt = viewName;
+    if (shared.labels.length) capt += ' · ' + shared.labels[0] + ' – ' + shared.labels[shared.labels.length - 1];
+    document.getElementById('chartDataCaption').textContent = capt + ' · ' + dsets.length + (dsets.length === 1 ? ' series' : ' series');
+    var h = '<thead><tr><th>Metric</th>';
+    shared.labels.forEach(function(l){ h += '<th>' + escH(l) + '</th>'; });
+    h += '</tr></thead><tbody>';
+    dsets.forEach(function(d) {
+      h += '<tr><td>' + escH(d.label) + '</td>';
+      var fv = fmtVal[fmtOf(d)];
+      d.data.forEach(function(v){ h += '<td>' + (v === null || v === undefined ? '—' : fv(v)) + '</td>'; });
+      h += '</tr>';
+    });
+    h += '</tbody>';
+    document.getElementById('chartDataTable').innerHTML = h;
+  })();
 
   // Table — Actuals / Budget / Variance are multi-select; each period column
   // splits into one sub-column per selected mode.
