@@ -564,43 +564,43 @@ function exportPdf() {
     var pageW = doc.internal.pageSize.getWidth();
     var margin = 36;
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.setTextColor(15, 23, 42);
-    doc.text('BruntWork — Consolidated Financial Reports', margin, 42);
+    // Header styled after the monthly board report P&L pages
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.text('Brunt Work Consolidated', pageW / 2, 40, { align: 'center' });
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.setTextColor(15, 23, 42);
+    doc.text('PROFIT & LOSS', pageW / 2, 58, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
     doc.setTextColor(100, 116, 139);
-    doc.text('Profit & Loss — ' + viewName + ' — ' + _tblModes.map(function(m){ return modeNames[m]; }).join(' + '), margin, 58);
-    doc.text('Period: ' + period + '    Generated: ' + new Date().toLocaleDateString('en-AU', { day:'numeric', month:'short', year:'numeric' }), margin, 72);
+    doc.text(viewName + ' — ' + _tblModes.map(function(m){ return modeNames[m]; }).join(' + ') + ' — ' + period, pageW / 2, 72, { align: 'center' });
 
-    // Chart snapshot
-    var y = 86;
-    try {
-      var canvas = document.getElementById('chartMain');
-      var img = canvas.toDataURL('image/png', 1.0);
-      var imgW = pageW - margin * 2;
-      var imgH = imgW * (canvas.height / canvas.width);
-      if (imgH > 260) { imgW = imgW * (260 / imgH); imgH = 260; }
-      doc.addImage(img, 'PNG', margin, y, imgW, imgH);
-      y += imgH + 16;
-    } catch (e) { /* chart image is best-effort */ }
-
+    var SECTION_ROW = /^(Revenue|Cost of Sales|Expenses|Other Income|Other Expenses|Tax Expenses)$/;
+    var BOLD_ROW = /^(Total |Gross Profit$|Operating Profit$|Net Income$|Other Income$|Other Expenses$|Tax Expenses$)/;
+    var ANCHOR_ROW = /^(Total Revenue|Gross Profit|Operating Profit)$/;
     doc.autoTable({
       html: '#finTable',
-      startY: y,
+      startY: 86,
       margin: { left: margin, right: margin, top: 50 },
-      styles: { fontSize: 6, cellPadding: 2, textColor: [30, 41, 59], lineColor: [226, 232, 240], lineWidth: 0.25 },
-      headStyles: { fillColor: [37, 99, 235], textColor: 255, fontSize: 6, halign: 'right' },
+      theme: 'plain',
+      styles: { fontSize: 6.5, cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 }, textColor: [30, 41, 59] },
+      headStyles: { textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 6.5, halign: 'right', lineWidth: { bottom: 0.75 }, lineColor: [30, 41, 59] },
       didParseCell: function(data) {
         if (data.column.index > 0) data.cell.styles.halign = 'right';
-        if (data.column.index === 0 && data.section === 'head') data.cell.styles.halign = 'left';
-        var t = (data.cell.raw && data.cell.raw.textContent) || '';
-        if (data.section === 'body') {
-          var isHeaderRow = data.row.raw && data.row.raw.cells && data.row.raw.cells.length && !String(data.row.raw.cells[1] ? data.row.raw.cells[1].textContent : '').trim() && data.column.index === 0;
-          if (isHeaderRow || /^(Total |Gross Profit|Operating Profit|Net Income|Earnings )/.test(t)) data.cell.styles.fontStyle = 'bold';
-          if (/^\(.*\)$/.test(t.trim())) data.cell.styles.textColor = [220, 38, 38];
-        }
+        var t = String((data.cell.raw && data.cell.raw.textContent) || '').trim();
+        if (data.section === 'head' && data.column.index === 0) { data.cell.text = ['']; return; }
+        if (data.section !== 'body') return;
+        // Board-report number style: -$1,234 instead of ($1,234)
+        var m = t.match(/^\((\$[\d,.]+)\)$/);
+        if (m) { data.cell.text = ['-' + m[1]]; data.cell.styles.textColor = [185, 28, 28]; }
+        var rowLabel = String((data.row.raw && data.row.raw.cells && data.row.raw.cells[0] ? data.row.raw.cells[0].textContent : '') || '').trim();
+        if (SECTION_ROW.test(rowLabel) || BOLD_ROW.test(rowLabel)) data.cell.styles.fontStyle = 'bold';
+        if (/^Total |^Gross Profit$|^Operating Profit$|^Net Income$/.test(rowLabel)) data.cell.styles.lineWidth = { top: 0.5 };
+        if (ANCHOR_ROW.test(rowLabel)) data.cell.styles.fillColor = [239, 246, 255];
+        if (rowLabel === 'Gross Margin %') { data.cell.styles.fontStyle = 'italic'; data.cell.styles.textColor = [100, 116, 139]; }
       }
     });
     var fname = 'BruntWork_PL_' + (_rangeFrom || 'all') + '_' + (_rangeTo || 'latest') + '_' + _view + '.pdf';
