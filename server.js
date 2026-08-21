@@ -2287,9 +2287,13 @@ app.get('/api/kpi-history', async function(req, res) {
     if (!GOOGLE_SA_KEY) {
       return res.status(500).json({ error: 'Google service account key not configured' });
     }
+    var wantAll = req.query && req.query.all === '1';
+    var shape = function(full) {
+      return { columns: full.columns, months: wantAll ? full.months : full.months.slice(-24) };
+    };
     var now = Date.now();
     if (kpiHistoryCache.data && (now - kpiHistoryCache.ts) < KPI_HISTORY_CACHE_TTL) {
-      return res.json(Object.assign({}, kpiHistoryCache.data, { cached: true }));
+      return res.json(Object.assign({}, shape(kpiHistoryCache.data), { cached: true }));
     }
     // Read all data from the Monthly tab
     var data = await sheetsGet(KPI_SOURCE_SHEET_ID, KPI_SOURCE_TAB + '!A1:AZ');
@@ -2316,7 +2320,8 @@ app.get('/api/kpi-history', async function(req, res) {
       });
     }
 
-    // Filter to last 24 months of data (non-empty rows with a month value)
+    // All months with a non-empty month value; the response is sliced to the
+    // last 24 unless ?all=1 is passed (used by /financials for full history).
     var monthRows = [];
     for (var j = 0; j < dataRows.length; j++) {
       var row = dataRows[j];
@@ -2324,13 +2329,9 @@ app.get('/api/kpi-history', async function(req, res) {
         monthRows.push(row);
       }
     }
-    // Take last 24
-    var last24 = monthRows.slice(-24);
-
-    // Build response
     var months = [];
-    for (var k = 0; k < last24.length; k++) {
-      var r = last24[k];
+    for (var k = 0; k < monthRows.length; k++) {
+      var r = monthRows[k];
       var values = [];
       for (var m = 0; m < columns.length; m++) {
         values.push(r[m] !== undefined ? r[m] : '');
@@ -2340,7 +2341,7 @@ app.get('/api/kpi-history', async function(req, res) {
 
     var result = { columns: columns, months: months };
     kpiHistoryCache = { data: result, ts: now };
-    res.json(Object.assign({}, result, { cached: false }));
+    res.json(Object.assign({}, shape(result), { cached: false }));
   } catch (err) {
     console.error('KPI History API error:', err.message);
     res.status(500).json({ error: err.message });

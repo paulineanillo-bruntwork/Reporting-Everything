@@ -834,7 +834,7 @@ function parseKpiMonthKey(label) {
   return y + '-' + (mi + 1 < 10 ? '0' : '') + (mi + 1);
 }
 function loadKpi() {
-  fetch('/api/kpi-history').then(function(r){ return r.json(); }).then(function(d){
+  fetch('/api/kpi-history?all=1').then(function(r){ return r.json(); }).then(function(d){
     if (!d || d.error || !d.months) { _kpi = []; return; }
     _kpi = d.months.map(function(vals){
       return { key: parseKpiMonthKey(vals[0]), vals: vals };
