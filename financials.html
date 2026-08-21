@@ -256,10 +256,13 @@ function resetChartLines() {
   _selLines = null;
   render();
 }
+// Quick view pills toggle: click to add the metric to the chart, click again to remove it.
 function quickView(which) {
   var k = RATIOS['ratio:' + which] ? 'ratio:' + which : _quickKeys[which];
   if (!k) return;
-  _selLines = [k];
+  var i = _selLines.indexOf(k);
+  if (i === -1) _selLines.push(k);
+  else _selLines.splice(i, 1);
   render();
 }
 // Map each "name|occ" line key to its P&L section, using the null header rows
@@ -291,8 +294,8 @@ function renderLinePicker(availList) {
   [['rev','Total Revenue'],['gp','Gross Profit'],['op','Operating Profit'],['exp','Total Expenses'],['gm','Gross Margin %'],['om','Operating Margin %'],['bd','Bad Debt %']].forEach(function(q) {
     var key = RATIOS['ratio:' + q[0]] ? 'ratio:' + q[0] : _quickKeys[q[0]];
     if (!key) return;
-    var on = _selLines.length === 1 && _selLines[0] === key;
-    h += '<button class="qv-btn' + (on ? ' active' : '') + '" onclick="quickView(\'' + q[0] + '\')">' + q[1] + '</button>';
+    var on = _selLines.indexOf(key) !== -1;
+    h += '<button class="qv-btn' + (on ? ' active' : '') + '" onclick="quickView(\'' + q[0] + '\')" title="' + (on ? 'Remove from chart' : 'Add to chart') + '">' + q[1] + '</button>';
   });
   h += '</span>';
   _selLines.forEach(function(k, i) {
