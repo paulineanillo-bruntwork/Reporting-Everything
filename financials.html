@@ -8,6 +8,8 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
 <style>
 :root{--bg:#f4f6fb;--surface:#fff;--border:#e2e8f0;--text:#1e293b;--text-muted:#64748b;--blue:#2563eb;--green:#059669;--green-light:#d1fae5;--red:#dc2626;--red-light:#fee2e2;--orange:#d97706;--purple:#7c3aed;--cyan:#0891b2;--radius:16px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -40,6 +42,9 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .view-tabs button{padding:8px 18px;border:1px solid var(--border);background:var(--surface);color:var(--text-muted);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer}
 .view-tabs button.active{background:var(--blue);border-color:var(--blue);color:#fff}
 .range-ctl{display:flex;gap:10px;align-items:center;font-size:12px;font-weight:600;color:var(--text-muted)}
+.btn-export{padding:6px 14px;border:1px solid var(--blue);background:var(--blue);color:#fff;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer}
+.btn-export:hover{background:#1d4ed8}
+.btn-export:disabled{opacity:.6;cursor:wait}
 .range-ctl input[type=month]{padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;color:var(--text)}
 .range-ctl button{padding:6px 12px;border:1px solid var(--border);background:var(--surface);color:var(--text-muted);border-radius:6px;font-size:12px;font-weight:600;cursor:pointer}
 .range-ctl button:hover{color:var(--blue);border-color:var(--blue)}
@@ -142,6 +147,7 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
           <label>To <input type="month" id="rangeTo"></label>
         </div>
       </div>
+      <button class="btn-export" onclick="exportPdf()" title="Export the P&amp;L for the selected range as a PDF report">Export PDF</button>
     </div>
     <div class="chart-grid">
       <div class="chart-block"><h3 id="chart1Title">P&amp;L Trends — Actual vs Budget</h3><div class="line-picker" id="linePicker"></div><canvas id="chartMain"></canvas>
@@ -540,6 +546,69 @@ function processOneFile(file, prefix, st) {
   });
 }
 
+// Export the P&L for the selected range as a PDF report: title page header,
+// the trends chart as an image, then the P&L table (current view + modes).
+function exportPdf() {
+  var btn = document.querySelector('.btn-export');
+  try {
+    if (!window.jspdf || !window.jspdf.jsPDF) { toast('PDF library failed to load — check your connection and reload', false); return; }
+    if (!_act.length && !_bud.length) { toast('No data to export yet', false); return; }
+    if (btn) btn.disabled = true;
+    var viewName = { monthly:'Monthly', quarterly:'Quarterly (FY)', annual:'Annual (FY, Jul–Jun)' }[_view];
+    var modeNames = { actual:'Actuals', budget:'Budget', variance:'Variance' };
+    var period = (_rangeFrom || 'start') + ' to ' + (_rangeTo || 'latest');
+    var doc = new window.jspdf.jsPDF({ orientation:'landscape', unit:'pt', format:'a4' });
+    var pageW = doc.internal.pageSize.getWidth();
+    var margin = 36;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.setTextColor(15, 23, 42);
+    doc.text('BruntWork — Consolidated Financial Reports', margin, 42);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Profit & Loss — ' + viewName + ' — ' + _tblModes.map(function(m){ return modeNames[m]; }).join(' + '), margin, 58);
+    doc.text('Period: ' + period + '    Generated: ' + new Date().toLocaleDateString('en-AU', { day:'numeric', month:'short', year:'numeric' }), margin, 72);
+
+    // Chart snapshot
+    var y = 86;
+    try {
+      var canvas = document.getElementById('chartMain');
+      var img = canvas.toDataURL('image/png', 1.0);
+      var imgW = pageW - margin * 2;
+      var imgH = imgW * (canvas.height / canvas.width);
+      if (imgH > 260) { imgW = imgW * (260 / imgH); imgH = 260; }
+      doc.addImage(img, 'PNG', margin, y, imgW, imgH);
+      y += imgH + 16;
+    } catch (e) { /* chart image is best-effort */ }
+
+    doc.autoTable({
+      html: '#finTable',
+      startY: y,
+      margin: { left: margin, right: margin, top: 50 },
+      styles: { fontSize: 6, cellPadding: 2, textColor: [30, 41, 59], lineColor: [226, 232, 240], lineWidth: 0.25 },
+      headStyles: { fillColor: [37, 99, 235], textColor: 255, fontSize: 6, halign: 'right' },
+      didParseCell: function(data) {
+        if (data.column.index > 0) data.cell.styles.halign = 'right';
+        if (data.column.index === 0 && data.section === 'head') data.cell.styles.halign = 'left';
+        var t = (data.cell.raw && data.cell.raw.textContent) || '';
+        if (data.section === 'body') {
+          var isHeaderRow = data.row.raw && data.row.raw.cells && data.row.raw.cells.length && !String(data.row.raw.cells[1] ? data.row.raw.cells[1].textContent : '').trim() && data.column.index === 0;
+          if (isHeaderRow || /^(Total |Gross Profit|Operating Profit|Net Income|Earnings )/.test(t)) data.cell.styles.fontStyle = 'bold';
+          if (/^\(.*\)$/.test(t.trim())) data.cell.styles.textColor = [220, 38, 38];
+        }
+      }
+    });
+    var fname = 'BruntWork_PL_' + (_rangeFrom || 'all') + '_' + (_rangeTo || 'latest') + '_' + _view + '.pdf';
+    doc.save(fname);
+    toast('Exported ' + fname, true);
+  } catch (e) {
+    toast('Export failed: ' + e.message, false);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
 function toggleChartData(ev) {
   ev.preventDefault();
   var w = document.getElementById('chartDataWrap');
