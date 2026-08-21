@@ -22,6 +22,9 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .header-link:hover{color:var(--text);background:#f1f5f9}
 .main{padding:28px 40px 60px;max-width:1400px;margin:0 auto}
 .drop-zone{border:2px dashed var(--border);border-radius:var(--radius);background:var(--surface);padding:28px;text-align:center;color:var(--text-muted);font-size:13px;cursor:pointer;transition:all .15s;margin-bottom:24px}
+.upload-section{margin-top:28px;padding-top:14px;border-top:1px solid var(--border);text-align:center}
+.upload-toggle{font-size:12px;color:var(--text-muted);text-decoration:none}
+.upload-toggle:hover{color:var(--blue);text-decoration:underline}
 .drop-zone:hover,.drop-zone.drag{border-color:var(--blue);background:#eff6ff;color:var(--blue)}
 .drop-zone b{color:var(--text)}
 .drop-zone.drag b{color:var(--blue)}
@@ -103,7 +106,7 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
     <img src="/bruntwork-logo.svg" alt="BruntWork" class="header-logo">
     <div>
       <h1>Financials — P&amp;L</h1>
-      <div class="sub">Upload P&amp;L spreadsheets to visualise monthly, quarterly and annual results</div>
+      <div class="sub">Monthly, quarterly and annual P&amp;L results — actuals vs budget</div>
     </div>
   </div>
   <div class="header-right">
@@ -114,21 +117,8 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
   </div>
 </div>
 <div class="main">
-  <div style="display:flex;justify-content:center;gap:18px;align-items:center;margin-bottom:10px;font-size:13px;font-weight:600">
-    <span style="color:var(--text-muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px">Upload as:</span>
-    <label style="cursor:pointer"><input type="radio" name="dsType" value="actual" checked> Actuals</label>
-    <label style="cursor:pointer"><input type="radio" name="dsType" value="budget"> Budget</label>
-  </div>
-  <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
-    <b>Drop a P&amp;L file here</b> or click to browse (.xlsx, .xls, .csv, .pdf)<br>
-    <span style="font-size:11px">Excel/CSV: line items in the first column, month columns across the top — saved as Actuals or Budget per the toggle above.<br>
-    PDF: a "P&amp;L vs Budget" report (e.g. Xero export) — the Actual and Budget columns are both extracted and saved automatically.</span>
-    <div class="upload-status" id="uploadStatus"></div>
-  </div>
-  <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.pdf" multiple>
-
   <div id="loading" class="loading"><div class="spinner"></div><div>Loading financial data...</div></div>
-  <div id="emptyState" class="empty-state" style="display:none">No financial data yet — drop in a P&amp;L spreadsheet above to get started.</div>
+  <div id="emptyState" class="empty-state" style="display:none">No financial data yet — use the "Upload P&amp;L data" link at the bottom of the page to get started.</div>
 
   <div id="content" style="display:none">
     <div class="view-bar">
@@ -176,6 +166,25 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
         <input type="email" id="accessEmail" placeholder="name@bruntwork.co" onkeydown="if(event.key==='Enter')addAccess()">
         <button id="accessAddBtn" onclick="addAccess()">Add Email</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Upload (collapsed by default; deliberately unobtrusive) -->
+  <div class="upload-section">
+    <a href="#" class="upload-toggle" id="uploadToggle" onclick="toggleUpload(event)">Upload P&amp;L data</a>
+    <div id="uploadPanel" style="display:none">
+      <div style="display:flex;justify-content:center;gap:18px;align-items:center;margin:14px 0 10px;font-size:13px;font-weight:600">
+        <span style="color:var(--text-muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px">Upload as:</span>
+        <label style="cursor:pointer"><input type="radio" name="dsType" value="actual" checked> Actuals</label>
+        <label style="cursor:pointer"><input type="radio" name="dsType" value="budget"> Budget</label>
+      </div>
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+        <b>Drop a P&amp;L file here</b> or click to browse (.xlsx, .xls, .csv, .pdf)<br>
+        <span style="font-size:11px">Excel/CSV: line items in the first column, month columns across the top — saved as Actuals or Budget per the toggle above.<br>
+        PDF: a "P&amp;L vs Budget" report (e.g. Xero export) — the Actual and Budget columns are both extracted and saved automatically.</span>
+        <div class="upload-status" id="uploadStatus"></div>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.pdf" multiple>
     </div>
   </div>
 </div>
@@ -437,6 +446,11 @@ function processOneFile(file, prefix, st) {
   });
 }
 
+function toggleUpload(ev) {
+  ev.preventDefault();
+  var p = document.getElementById('uploadPanel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
 function clearAll() {
   if (!confirm('Delete ALL stored P&L data? This cannot be undone.')) return;
   fetch('/api/financials/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
