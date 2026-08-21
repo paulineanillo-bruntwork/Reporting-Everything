@@ -23,6 +23,11 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
 .main{padding:28px 40px 60px;max-width:1400px;margin:0 auto}
 .drop-zone{border:2px dashed var(--border);border-radius:var(--radius);background:var(--surface);padding:28px;text-align:center;color:var(--text-muted);font-size:13px;cursor:pointer;transition:all .15s;margin-bottom:24px}
 .upload-section{margin-top:28px;padding-top:14px;border-top:1px solid var(--border);text-align:center}
+.qv-group{display:inline-flex;align-items:center;gap:6px;margin-right:14px}
+.qv-lbl{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.qv-btn{border:1px solid var(--border);background:var(--surface);color:var(--text-muted);border-radius:14px;padding:3px 11px;font-size:12px;font-weight:600;cursor:pointer;transition:all .12s}
+.qv-btn:hover{border-color:var(--blue);color:var(--blue)}
+.qv-btn.active{background:var(--blue);border-color:var(--blue);color:#fff}
 .upload-toggle{font-size:12px;color:var(--text-muted);text-decoration:none}
 .upload-toggle:hover{color:var(--blue);text-decoration:underline}
 .drop-zone:hover,.drop-zone.drag{border-color:var(--blue);background:#eff6ff;color:var(--blue)}
@@ -128,10 +133,15 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
           <button id="tab-quarterly" onclick="setView('quarterly')">Quarterly</button>
           <button id="tab-annual" onclick="setView('annual')">Annual</button>
         </div>
+        <div class="view-tabs" id="rangePresets" title="Quick date ranges (ending at the latest actual month)">
+          <button data-n="6">6M</button>
+          <button data-n="12" class="active">12M</button>
+          <button data-n="24">24M</button>
+          <button data-n="all">All</button>
+        </div>
         <div class="range-ctl">
           <label>From <input type="month" id="rangeFrom"></label>
           <label>To <input type="month" id="rangeTo"></label>
-          <button id="rangeAll" title="Show the full available range">All</button>
         </div>
       </div>
       <button class="btn-clear" onclick="clearAll()">Clear All Data</button>
@@ -210,26 +220,34 @@ var _selLines = null; // chart series selection: ['Name|occ', ...], persisted
 var _showBudget = (function(){ try { return localStorage.getItem('fin_show_budget') !== '0'; } catch (e) { return true; } })();
 var LINE_PALETTE = ['#2563eb','#d97706','#059669','#7c3aed','#e11d48','#0891b2','#65a30d','#db2777','#475569','#b45309'];
 
-function persistSelLines() {
-  try { localStorage.setItem('fin_sel_lines', JSON.stringify(_selLines)); } catch (e) {}
-}
+var _quickKeys = {};
 function addChartLine(k) {
   if (!k) return;
-  if (_selLines.indexOf(k) === -1) { _selLines.push(k); persistSelLines(); render(); }
+  if (_selLines.indexOf(k) === -1) { _selLines.push(k); render(); }
 }
 function removeChartLine(k) {
   _selLines = _selLines.filter(function(x){ return x !== k; });
-  persistSelLines();
   render();
 }
 function resetChartLines() {
   _selLines = null;
-  try { localStorage.removeItem('fin_sel_lines'); } catch (e) {}
+  render();
+}
+function quickView(which) {
+  var k = _quickKeys[which];
+  if (!k) return;
+  _selLines = [k];
   render();
 }
 function renderLinePicker(availList) {
   var el = document.getElementById('linePicker');
-  var h = '';
+  var h = '<span class="qv-group"><span class="qv-lbl">Quick views:</span>';
+  [['rev','Total Revenue'],['gp','Gross Profit'],['op','Operating Profit'],['exp','Total Expenses']].forEach(function(q) {
+    if (!_quickKeys[q[0]]) return;
+    var on = _selLines.length === 1 && _selLines[0] === _quickKeys[q[0]];
+    h += '<button class="qv-btn' + (on ? ' active' : '') + '" onclick="quickView(\'' + q[0] + '\')">' + q[1] + '</button>';
+  });
+  h += '</span>';
   _selLines.forEach(function(k, i) {
     var color = LINE_PALETTE[i % LINE_PALETTE.length];
     h += '<span class="line-chip" data-key="' + escH(k) + '" style="border-color:' + color + '"><span class="dot" style="background:' + color + '"></span>' + escH(k.split('|')[0]) + '<button title="Remove from chart">&times;</button></span>';
@@ -480,11 +498,7 @@ function annualKey(mk) {
 // per-period value matrix over a SHARED period list so actuals and budget
 // columns align. Duplicate line names are aligned by occurrence.
 // Date range filtering ('YYYY-MM' or null = unbounded)
-var _rangeFrom = null, _rangeTo = null;
-try {
-  _rangeFrom = localStorage.getItem('fin_range_from') || null;
-  _rangeTo = localStorage.getItem('fin_range_to') || null;
-} catch (e) {}
+var _rangeFrom = null, _rangeTo = null; // defaults to the last 12 months on load (see setRangePreset)
 function inRange(mk) {
   if (_rangeFrom && mk < _rangeFrom) return false;
   if (_rangeTo && mk > _rangeTo) return false;
@@ -624,7 +638,7 @@ function render() {
   var baseMx = mxA || mxB;
   var availMap = {}, availList = [];
   baseMx.order.forEach(function(o, ri) {
-    if (!baseMx.matrix[ri].some(function(v){ return v !== null; })) return;
+    if (!baseMx.matrix[ri].some(function(v){ return v !== null && v !== 0; })) return;
     var k = o.name + '|' + o.occ;
     if (availMap[k]) return;
     availMap[k] = true;
@@ -639,11 +653,10 @@ function render() {
     return idx === -1 ? null : baseMx.order[idx].name + '|' + baseMx.order[idx].occ;
   }
   var revKey = keyForRow(PAT.rev), expKey = keyForRow(PAT.exp);
+  var gpKey = keyForRow(PAT.gp);
   var opKey = keyForRow(PAT.op, true) || keyForRow(PAT.net, true);
-  var defaultKeys = [revKey, expKey, opKey].filter(Boolean);
-  if (_selLines === null) {
-    try { _selLines = JSON.parse(localStorage.getItem('fin_sel_lines') || 'null'); } catch (e) { _selLines = null; }
-  }
+  _quickKeys = { rev: revKey, gp: gpKey, op: opKey, exp: expKey };
+  var defaultKeys = [revKey, opKey].filter(Boolean);
   if (!_selLines || !_selLines.length) _selLines = defaultKeys.slice();
   _selLines = _selLines.filter(function(k){ return availMap[k]; });
   if (!_selLines.length) _selLines = defaultKeys.slice();
@@ -753,6 +766,7 @@ function load() {
     }
     document.getElementById('emptyState').style.display = 'none';
     document.getElementById('content').style.display = 'block';
+    setRangePreset(12, true); // default view: last 12 months, monthly
     render();
   }).catch(function(e){
     if (e.message !== 'unauth') {
@@ -762,11 +776,35 @@ function load() {
   });
 }
 // === Date range controls ===
+function monthAdd(mk, delta) {
+  var y = +mk.slice(0, 4), m = +mk.slice(5, 7) - 1 + delta;
+  var yy = Math.floor(m / 12);
+  var mm = m - yy * 12 + 1;
+  return (y + yy) + '-' + (mm < 10 ? '0' : '') + mm;
+}
+function latestActualMonth() {
+  var latest = null;
+  _act.forEach(function(m){ if (!latest || m.month > latest) latest = m.month; });
+  if (!latest) _bud.forEach(function(m){ if (!latest || m.month > latest) latest = m.month; });
+  return latest;
+}
+function highlightPreset(n) {
+  document.querySelectorAll('#rangePresets button').forEach(function(b) {
+    b.classList.toggle('active', String(n) === b.getAttribute('data-n'));
+  });
+}
+function setRangePreset(n, skipRender) {
+  var toM = latestActualMonth();
+  if (n === 'all' || !toM) { _rangeFrom = null; _rangeTo = null; }
+  else { _rangeTo = toM; _rangeFrom = monthAdd(toM, -(n - 1)); }
+  document.getElementById('rangeFrom').value = _rangeFrom || '';
+  document.getElementById('rangeTo').value = _rangeTo || '';
+  highlightPreset(n);
+  if (!skipRender && (_act.length || _bud.length)) render();
+}
 (function() {
   var fromEl = document.getElementById('rangeFrom');
   var toEl = document.getElementById('rangeTo');
-  if (_rangeFrom) fromEl.value = _rangeFrom;
-  if (_rangeTo) toEl.value = _rangeTo;
   function apply() {
     _rangeFrom = fromEl.value || null;
     _rangeTo = toEl.value || null;
@@ -774,16 +812,16 @@ function load() {
       var t = _rangeFrom; _rangeFrom = _rangeTo; _rangeTo = t;
       fromEl.value = _rangeFrom; toEl.value = _rangeTo;
     }
-    try {
-      if (_rangeFrom) localStorage.setItem('fin_range_from', _rangeFrom); else localStorage.removeItem('fin_range_from');
-      if (_rangeTo) localStorage.setItem('fin_range_to', _rangeTo); else localStorage.removeItem('fin_range_to');
-    } catch (e) {}
+    highlightPreset(null); // custom range — no preset active
     if (_act.length || _bud.length) render();
   }
   fromEl.addEventListener('change', apply);
   toEl.addEventListener('change', apply);
-  document.getElementById('rangeAll').addEventListener('click', function() {
-    fromEl.value = ''; toEl.value = ''; apply();
+  document.querySelectorAll('#rangePresets button').forEach(function(b) {
+    b.addEventListener('click', function() {
+      var n = b.getAttribute('data-n');
+      setRangePreset(n === 'all' ? 'all' : +n);
+    });
   });
 })();
 
