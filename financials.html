@@ -255,6 +255,7 @@ var KPI_SERIES = {
   'kpi:endFTE':  { label: 'Active Staff FTE', field: 'endFTE', fmt: 'num' },
   'kpi:hires':   { label: 'FTEs Hired', field: 'hires', fmt: 'num' },
   'kpi:lost':    { label: 'Lost FTEs', field: 'lost', fmt: 'num' },
+  'kpi:netFTE':  { label: 'Net FTE Gain', field: 'netFTE', fmt: 'num' },
   'kpi:churn':   { label: 'Monthly Churn Rate %', field: 'churn', fmt: 'pct' },
   'kpi:mqls':    { label: 'Discovery Calls (MQLs)', field: 'mqls', fmt: 'num' },
   'kpi:cpc':     { label: 'Cost Per Discovery Call', field: 'cpc', fmt: 'money' },
@@ -1385,6 +1386,7 @@ function computeKpiVals(shared) {
     return {
       endFTE: col(next, KPI_COL.activeFTE), // active FTE is stored as-at start of month; next month's start = this period's end
       hires: hires, lost: lost, churn: churn, mqls: mqls,
+      netFTE: (hires !== null && lost !== null) ? hires - lost : null,
       cpc: (spend !== null && mqls) ? spend / mqls : null,
       clients: (function(){ var v = col(last, KPI_COL.existingClients); return v !== null ? v : (CLIENT_FILL[last] !== undefined ? CLIENT_FILL[last] : null); })()
     };
@@ -1399,6 +1401,7 @@ function renderKpiTable(shared) {
     { label: 'Active Staff FTE (end of period)', get: function(p){ return fmtKpiNum(p.endFTE); } },
     { label: 'FTEs Hired', get: function(p){ return fmtKpiNum(p.hires); } },
     { label: 'Lost FTEs', get: function(p){ return fmtKpiNum(p.lost); } },
+    { label: 'Net FTE Gain', get: function(p){ return fmtKpiNum(p.netFTE); } },
     { label: 'Monthly Churn Rate (avg over period)', get: function(p){ return p.churn === null ? '—' : p.churn.toFixed(1) + '%'; } },
     { label: 'Discovery Calls (MQLs) Booked', get: function(p){ return fmtKpiNum(p.mqls, 0); } },
     { label: 'Cost Per Discovery Call', get: function(p){ return p.cpc === null ? '—' : '$' + Math.round(p.cpc).toLocaleString('en-US'); } },
