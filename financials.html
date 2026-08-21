@@ -238,7 +238,10 @@ var KPI_SERIES = {
   'kpi:churn':   { label: 'Churn Rate %', field: 'churn', fmt: 'pct' },
   'kpi:mqls':    { label: 'Discovery Calls (MQLs)', field: 'mqls', fmt: 'num' },
   'kpi:cpc':     { label: 'Cost Per Discovery Call', field: 'cpc', fmt: 'money' },
-  'kpi:clients': { label: 'Active Clients', field: 'clients', fmt: 'num' }
+  'kpi:clients': { label: 'Active Clients', field: 'clients', fmt: 'num' },
+  // Calculated: P&L actuals divided by Active Staff FTE (end of period)
+  'kpi:revPerFTE': { label: 'Revenue per Active FTE', perFTE: 'rev', fmt: 'money' },
+  'kpi:gpPerFTE':  { label: 'Gross Profit per Active FTE', perFTE: 'gp', fmt: 'money' }
 };
 function chipName(k) { return RATIOS[k] ? RATIOS[k].label : (KPI_SERIES[k] ? KPI_SERIES[k].label : k.split('|')[0]); }
 function addChartLine(k) {
@@ -732,7 +735,7 @@ function render() {
   var fmtLabel = {
     pct: function(v){ return v === null ? '' : v.toFixed(1) + '%'; },
     num: function(v){ return v === null ? '' : v.toLocaleString('en-US', { maximumFractionDigits: 1 }); },
-    money: function(v){ if (v === null) return ''; var s = v < 0 ? '-' : ''; var a = Math.abs(v); return a >= 1e6 ? s + '$' + (a / 1e6).toFixed(2) + 'm' : s + '$' + Math.round(a / 1000) + 'k'; }
+    money: function(v){ if (v === null) return ''; var s = v < 0 ? '-' : ''; var a = Math.abs(v); return a >= 1e6 ? s + '$' + (a / 1e6).toFixed(2) + 'm' : (a >= 1e4 ? s + '$' + Math.round(a / 1000) + 'k' : s + '$' + Math.round(a).toLocaleString('en-US')); }
   };
   var kpiVals; // lazily computed once, shared by all selected KPI series
   _selLines.forEach(function(k, i) {
@@ -753,7 +756,17 @@ function render() {
       var ks = KPI_SERIES[k];
       if (kpiVals === undefined) kpiVals = computeKpiVals(shared);
       if (!kpiVals) return; // KPI history not loaded yet — re-rendered when it arrives
-      var kd = kpiVals.map(function(p){ var v = p ? p[ks.field] : null; return (v === null || v === undefined) ? null : v; });
+      var kd;
+      if (ks.perFTE) {
+        var numRow = metricRow(mxA, ks.perFTE === 'rev' ? PAT.rev : PAT.gp);
+        kd = kpiVals.map(function(p, ci) {
+          var fte = p ? p.endFTE : null;
+          var n = numRow ? numRow[ci] : null;
+          return (fte && n !== null) ? Math.round(n / fte) : null;
+        });
+      } else {
+        kd = kpiVals.map(function(p){ var v = p ? p[ks.field] : null; return (v === null || v === undefined) ? null : v; });
+      }
       if (!kd.some(function(v){ return v !== null; })) return;
       dsets.push({ type:'line', label:ks.label, data:kd, _fmt:ks.fmt, borderColor:color, backgroundColor:'transparent', borderWidth:2.5, tension:.3, pointRadius:3,
         datalabels: manySeries ? { display:false } : { display:true, anchor:'end', align:'top', color:color, font:{size:9,weight:'bold'}, formatter:fmtLabel[ks.fmt] } });
@@ -778,7 +791,7 @@ function render() {
   // ticks; mixed-unit charts keep dollars on the left and put the other unit(s)
   // on a right-hand axis.
   var tickCb = {
-    money: function(v){ return '$' + (Math.abs(v) >= 1e6 ? (v / 1e6) + 'M' : (v / 1e3) + 'k'); },
+    money: function(v){ var a = Math.abs(v); return a >= 1e6 ? '$' + (v / 1e6) + 'M' : (a >= 1e4 ? '$' + (v / 1e3) + 'k' : '$' + v.toLocaleString('en-US')); },
     pct: function(v){ return v + '%'; },
     num: function(v){ return Math.abs(v) >= 1000 ? v.toLocaleString('en-US') : v; }
   };
