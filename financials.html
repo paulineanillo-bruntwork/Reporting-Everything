@@ -965,7 +965,16 @@ function render() {
     'Employee CPF': 'adminOps',
     'Employer CPF': 'adminOps',
     'SG Salaries & Wages': 'adminOps',
-    'Skills Development Levy (SDL)': 'adminOps'
+    'Skills Development Levy (SDL)': 'adminOps',
+    'Salaries & Wages': 'adminOps',
+    'Wages and Salaries - De Minimis Benefits': 'adminOps',
+    'Redundancy Pay': 'adminOps',
+    'Bank Fees': 'misc',
+    'Filing Fees': 'misc',
+    'Freight & Courier': 'misc',
+    'Merchant Fees': 'misc',
+    'Unallocated expense': 'misc',
+    'Depreciation': 'deprec' // displayed below Operating Profit, inside Other Expenses
   };
   var nPer = shared.periods.length;
   function mergeArrays(a, b) {
@@ -1035,6 +1044,7 @@ function render() {
   if (opIdx !== -1) baseTbl.order.forEach(function(o, ri) {
     if (ri <= opIdx) return;
     var nm = o.name;
+    if (TBL_ROLLUP[nm]) return; // already accumulated into a roll-up group
     if (/^(earnings (before|after)|net (income|profit))/i.test(nm)) return; // hidden or kept as-is
     var key = nm + '|' + o.occ;
     // Rows between OP and Net Income are genuinely below-OP. Rows appended
@@ -1049,6 +1059,9 @@ function render() {
     if (actRow[key]) below[bucket].a = mergeArrays(below[bucket].a, actRow[key]);
     if (budRow[key]) below[bucket].b = mergeArrays(below[bucket].b, budRow[key]);
   });
+  // Depreciation is pushed below Operating Profit into the Other Expenses row.
+  if (rollAct.deprec) below.expense.a = mergeArrays(below.expense.a, rollAct.deprec);
+  if (rollBud.deprec) below.expense.b = mergeArrays(below.expense.b, rollBud.deprec);
   function belowVal(bucket, mode, ci) {
     var a = below[bucket].a ? below[bucket].a[ci] : null;
     var b = below[bucket].b ? below[bucket].b[ci] : null;
@@ -1088,6 +1101,9 @@ function render() {
     if (opIdx !== -1 && ri > opIdx && !/^net (income|profit)/i.test(o.name)) return; // consolidated below OP
     if (o.name === 'Total Cost of Sales' && (rollAct.cogsOther || rollBud.cogsOther)) {
       emitRow('Other', '', function(m, ci){ return rollVal('cogsOther', m, ci); });
+    }
+    if (o.name === 'Total Expenses' && (rollAct.misc || rollBud.misc)) {
+      emitRow('Miscellaneous', '', function(m, ci){ return rollVal('misc', m, ci); });
     }
     var isSection = baseTbl.matrix[ri].every(function(v){ return v === null; })
       && (!budRow[key] || budRow[key].every(function(v){ return v === null; }));
