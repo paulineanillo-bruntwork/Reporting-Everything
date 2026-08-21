@@ -146,15 +146,9 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
     <div class="chart-grid">
       <div class="chart-block"><h3 id="chart1Title">P&amp;L Trends — Actual vs Budget</h3><div class="line-picker" id="linePicker"></div><canvas id="chartMain"></canvas></div>
     </div>
-    <div class="tbl-block" id="kpiBlock" style="display:none">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;padding-right:20px">
-        <h3 id="kpiTitle">Key Operating Metrics</h3>
-      </div>
-      <div class="tbl-scroll"><table class="fin-table" id="kpiTable"></table></div>
-    </div>
     <div class="tbl-block">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;padding-right:20px">
-        <h3 id="tblTitle">Profit &amp; Loss</h3>
+        <h3 id="tblTitle">Profit &amp; Loss Reports</h3>
         <div class="view-tabs" id="tblModeTabs" style="display:none">
           <button id="tmode-actual" class="active" onclick="setTblMode('actual')">Actuals</button>
           <button id="tmode-budget" onclick="setTblMode('budget')">Budget</button>
@@ -162,6 +156,12 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;background:va
         </div>
       </div>
       <div class="tbl-scroll"><table class="fin-table" id="finTable"></table></div>
+    </div>
+    <div class="tbl-block" id="kpiBlock" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;padding-right:20px">
+        <h3 id="kpiTitle">Non-Financial KPIs</h3>
+      </div>
+      <div class="tbl-scroll"><table class="fin-table" id="kpiTable"></table></div>
     </div>
   </div>
 
@@ -762,8 +762,6 @@ function render() {
 
   // Table — Actuals / Budget / Variance are multi-select; each period column
   // splits into one sub-column per selected mode.
-  var viewNames = { monthly:'Monthly', quarterly:'Quarterly (FY)', annual:'Annual (FY, Jul–Jun)' };
-  var modeNames = { actual:'Actuals', budget:'Budget', variance:'Variance' };
   var subNames = { actual:'Actual', budget:'Budget', variance:'Var' };
   var modes = _tblModes.filter(function(m) {
     if (m === 'actual') return !!mxA;
@@ -772,8 +770,7 @@ function render() {
   });
   if (!modes.length) modes = [mxA ? 'actual' : 'budget'];
   syncTblModePills(modes);
-  document.getElementById('tblTitle').textContent = 'Profit & Loss — ' + viewNames[_view]
-    + (mxB ? ' — ' + modes.map(function(m){ return modeNames[m]; }).join(' + ') : '');
+  document.getElementById('tblTitle').textContent = 'Profit & Loss Reports';
 
   var baseTbl = mxA || mxB;
   function cellVal(key, mode, ci) {
