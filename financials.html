@@ -815,7 +815,8 @@ function render() {
 
 // ===== Key Operating Metrics (from the KPI tracker's Monthly sheet) =====
 var _kpi = null; // [{key:'YYYY-MM', vals:[...]}], sorted ascending; null until loaded
-var KPI_COL = { activeFTE:2, mqls:4, totalHires:10, adsSpend:13, churnedFTE:32, churnRate:33, existingClients:38 };
+// totalHires uses col AE (Total Hires, sales + CSM teams, FTE from May 2023) — col K is sales-team-only hires.
+var KPI_COL = { activeFTE:2, mqls:4, totalHires:30, adsSpend:13, churnedFTE:32, churnRate:33, existingClients:38 };
 function kpiNum(v) {
   if (v === null || v === undefined) return null;
   var s = String(v).replace(/[$,%\s,]/g, '');
