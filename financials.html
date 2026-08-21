@@ -549,58 +549,164 @@ function processOneFile(file, prefix, st) {
   });
 }
 
-// Export the P&L for the selected range as a PDF report: title page header,
-// the trends chart as an image, then the P&L table (current view + modes).
+// Export the P&L for the selected range as a PDF report styled after the
+// monthly board reports: full month names as column groups, per-month Actual
+// plus month-on-month %, budget variance as %, banded section callouts.
 function exportPdf() {
   var btn = document.querySelector('.btn-export');
   try {
     if (!window.jspdf || !window.jspdf.jsPDF) { toast('PDF library failed to load — check your connection and reload', false); return; }
     if (!_act.length && !_bud.length) { toast('No data to export yet', false); return; }
+    var tbl = document.getElementById('finTable');
+    if (!tbl || !tbl.tHead || !tbl.tHead.rows.length) { toast('No table to export yet', false); return; }
     if (btn) btn.disabled = true;
+
+    // --- read the displayed (rolled-up) table ---
+    var headRows = tbl.tHead.rows;
+    var perLabels = Array.prototype.slice.call(headRows[0].cells, 1).map(function(c){ return c.textContent.trim(); });
+    var nSub = headRows.length > 1 ? Math.max(1, Math.round(headRows[1].cells.length / perLabels.length)) : 1;
+    var subNamesDisp = headRows.length > 1
+      ? Array.prototype.slice.call(headRows[1].cells, 0, nSub).map(function(c){ return c.textContent.trim(); })
+      : [{ actual:'Actual', budget:'Budget', variance:'Var' }[_tblModes[0]] || 'Actual'];
+    var aIdx, bIdx;
+    if (subNamesDisp.length === 1) {
+      aIdx = subNamesDisp[0] === 'Budget' ? -1 : 0;
+      bIdx = subNamesDisp[0] === 'Budget' ? 0 : -1;
+    } else {
+      aIdx = subNamesDisp.indexOf('Actual');
+      bIdx = subNamesDisp.indexOf('Budget');
+    }
+    var primaryIdx = aIdx !== -1 ? aIdx : bIdx; // series used for MoM %
+
+    function parseCell(s) {
+      s = String(s || '').trim();
+      if (!s) return null;
+      var neg = /^\(/.test(s);
+      var isPct = /%$/.test(s);
+      var n = parseFloat(s.replace(/[$,()%]/g, ''));
+      if (isNaN(n)) return null;
+      return { v: neg ? -n : n, pct: isPct };
+    }
+    var rows = [];
+    Array.prototype.forEach.call(tbl.tBodies[0].rows, function(tr) {
+      var label = tr.cells[0].textContent.trim();
+      var vals = [];
+      for (var i = 0; i < perLabels.length; i++) {
+        var mv = [];
+        for (var j = 0; j < nSub; j++) {
+          var cell = tr.cells[1 + i * nSub + j];
+          mv.push(parseCell(cell ? cell.textContent : ''));
+        }
+        vals.push(mv);
+      }
+      rows.push({ label: label, vals: vals, isSection: vals.every(function(mv){ return mv.every(function(x){ return x === null; }); }) });
+    });
+
+    // --- formatting ---
+    function fullPeriodLabel(l) {
+      var m = l.match(/^([A-Za-z]{3}) (\d{2})$/);
+      if (!m) return l; // quarterly/annual labels stay as-is
+      var idx = MONTHS_SHORT.indexOf(m[1]);
+      return idx === -1 ? l : MONTHS_FULL[idx] + ' 20' + m[2];
+    }
+    function fMoney(v) { return (v < 0 ? '-' : '') + '$' + Math.round(Math.abs(v)).toLocaleString('en-US'); }
+    function fSigned(v, suffix) { return (v > 0 ? '+' : '') + v.toFixed(1) + suffix; }
+    function fVal(x) { return x === null ? '' : (x.pct ? x.v.toFixed(1) + '%' : fMoney(x.v)); }
+    function changePct(cur, prev) {
+      if (cur === null || prev === null) return '';
+      if (cur.pct) return fSigned(cur.v - prev.v, 'pp'); // percentage rows compare in points
+      if (!prev.v) return '';
+      return fSigned((cur.v - prev.v) / Math.abs(prev.v) * 100, '%');
+    }
+
+    // --- export columns per period ---
+    var momLabel = _view === 'monthly' ? 'MoM %' : 'vs Prior %';
+    var subCols = [];
+    if (aIdx !== -1) subCols.push({ key: 'act', name: 'Actual' });
+    subCols.push({ key: 'mom', name: momLabel });
+    if (bIdx !== -1) subCols.push({ key: 'bud', name: 'Budget' });
+    if (aIdx !== -1 && bIdx !== -1) subCols.push({ key: 'vsb', name: 'vs Budget %' });
+
+    var head = [
+      [{ content: '', rowSpan: 2 }],
+      []
+    ];
+    perLabels.forEach(function(pl) {
+      head[0].push({ content: fullPeriodLabel(pl), colSpan: subCols.length, styles: { halign: 'center' } });
+      subCols.forEach(function(sc){ head[1].push({ content: sc.name, styles: { halign: 'right' } }); });
+    });
+
+    var body = rows.map(function(r) {
+      var out = [r.label];
+      r.vals.forEach(function(mv, i) {
+        subCols.forEach(function(sc) {
+          if (r.isSection) { out.push(''); return; }
+          if (sc.key === 'act') out.push(fVal(mv[aIdx]));
+          else if (sc.key === 'bud') out.push(fVal(mv[bIdx]));
+          else if (sc.key === 'mom') out.push(i === 0 ? '' : changePct(mv[primaryIdx], r.vals[i - 1][primaryIdx]));
+          else if (sc.key === 'vsb') {
+            var a = mv[aIdx], b = mv[bIdx];
+            out.push((a === null || b === null) ? '' : (a.pct ? fSigned(a.v - b.v, 'pp') : (b.v ? fSigned((a.v - b.v) / Math.abs(b.v) * 100, '%') : '')));
+          }
+        });
+      });
+      return out;
+    });
+
+    // --- document ---
     var viewName = { monthly:'Monthly', quarterly:'Quarterly (FY)', annual:'Annual (FY, Jul–Jun)' }[_view];
-    var modeNames = { actual:'Actuals', budget:'Budget', variance:'Variance' };
-    var period = (_rangeFrom || 'start') + ' to ' + (_rangeTo || 'latest');
+    var period = fullPeriodLabel(perLabels[0]) + (perLabels.length > 1 ? ' – ' + fullPeriodLabel(perLabels[perLabels.length - 1]) : '');
     var doc = new window.jspdf.jsPDF({ orientation:'landscape', unit:'pt', format:'a4' });
     var pageW = doc.internal.pageSize.getWidth();
     var margin = 36;
-
-    // Header styled after the monthly board report P&L pages
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(71, 85, 105);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(71, 85, 105);
     doc.text('Brunt Work Consolidated', pageW / 2, 40, { align: 'center' });
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(15);
-    doc.setTextColor(15, 23, 42);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(15, 23, 42);
     doc.text('PROFIT & LOSS', pageW / 2, 58, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(100, 116, 139);
-    doc.text(viewName + ' — ' + _tblModes.map(function(m){ return modeNames[m]; }).join(' + ') + ' — ' + period, pageW / 2, 72, { align: 'center' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(100, 116, 139);
+    doc.text(viewName + '  ·  ' + period + '  ·  Generated ' + new Date().toLocaleDateString('en-AU', { day:'numeric', month:'long', year:'numeric' }), pageW / 2, 72, { align: 'center' });
 
-    var SECTION_ROW = /^(Revenue|Cost of Sales|Expenses|Other Income|Other Expenses|Tax Expenses)$/;
+    var totalCols = 1 + perLabels.length * subCols.length;
+    var baseFont = totalCols > 30 ? 5.2 : (totalCols > 20 ? 6 : 7);
+    var SECTION_ROW = /^(Revenue|Cost of Sales|Expenses)$/;
+    var KEY_ROW = /^(Total Revenue|Total Cost of Sales|Gross Profit|Total Expenses|Operating Profit|Net Income)$/;
     var BOLD_ROW = /^(Total |Gross Profit$|Operating Profit$|Net Income$|Other Income$|Other Expenses$|Tax Expenses$)/;
-    var ANCHOR_ROW = /^(Total Revenue|Gross Profit|Operating Profit)$/;
     doc.autoTable({
-      html: '#finTable',
+      head: head,
+      body: body,
       startY: 86,
       margin: { left: margin, right: margin, top: 50 },
       theme: 'plain',
-      styles: { fontSize: 6.5, cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 }, textColor: [30, 41, 59] },
-      headStyles: { textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 6.5, halign: 'right', lineWidth: { bottom: 0.75 }, lineColor: [30, 41, 59] },
+      styles: { fontSize: baseFont, cellPadding: { top: 2.6, bottom: 2.6, left: 3, right: 3 }, textColor: [30, 41, 59], overflow: 'ellipsize' },
+      headStyles: { textColor: [15, 23, 42], fontStyle: 'bold', fontSize: baseFont, lineWidth: { bottom: 0.75 }, lineColor: [30, 41, 59] },
+      columnStyles: { 0: { cellWidth: 110 } },
       didParseCell: function(data) {
-        if (data.column.index > 0) data.cell.styles.halign = 'right';
-        var t = String((data.cell.raw && data.cell.raw.textContent) || '').trim();
-        if (data.section === 'head' && data.column.index === 0) { data.cell.text = ['']; return; }
+        if (data.column.index > 0 && data.section === 'body') data.cell.styles.halign = 'right';
         if (data.section !== 'body') return;
-        // Board-report number style: -$1,234 instead of ($1,234)
-        var m = t.match(/^\((\$[\d,.]+)\)$/);
-        if (m) { data.cell.text = ['-' + m[1]]; data.cell.styles.textColor = [185, 28, 28]; }
-        var rowLabel = String((data.row.raw && data.row.raw.cells && data.row.raw.cells[0] ? data.row.raw.cells[0].textContent : '') || '').trim();
-        if (SECTION_ROW.test(rowLabel) || BOLD_ROW.test(rowLabel)) data.cell.styles.fontStyle = 'bold';
-        if (/^Total |^Gross Profit$|^Operating Profit$|^Net Income$/.test(rowLabel)) data.cell.styles.lineWidth = { top: 0.5 };
-        if (ANCHOR_ROW.test(rowLabel)) data.cell.styles.fillColor = [239, 246, 255];
-        if (rowLabel === 'Gross Margin %') { data.cell.styles.fontStyle = 'italic'; data.cell.styles.textColor = [100, 116, 139]; }
+        var t = String(data.cell.text && data.cell.text[0] || '').trim();
+        var rowLabel = String(data.row.raw && data.row.raw[0] || '').trim();
+        if (/^-/.test(t)) data.cell.styles.textColor = [185, 28, 28];
+        // Section callout bands: Revenue / Cost of Sales / Expenses
+        if (SECTION_ROW.test(rowLabel)) {
+          data.cell.styles.fillColor = [30, 41, 59];
+          data.cell.styles.textColor = [255, 255, 255];
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fontSize = baseFont + 0.8;
+        }
+        // Key results: Gross Profit / Operating Profit and the section totals
+        if (KEY_ROW.test(rowLabel)) {
+          data.cell.styles.fillColor = [219, 234, 254];
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.lineWidth = { top: 0.5 };
+          data.cell.styles.lineColor = [37, 99, 235];
+        } else if (BOLD_ROW.test(rowLabel)) {
+          data.cell.styles.fontStyle = 'bold';
+        }
+        if (rowLabel === 'Gross Margin %') { data.cell.styles.fontStyle = 'italic'; data.cell.styles.textColor = /^-/.test(t) ? [185, 28, 28] : [100, 116, 139]; }
+        // zebra striping for readability on plain rows
+        if (!SECTION_ROW.test(rowLabel) && !KEY_ROW.test(rowLabel) && data.row.index % 2 === 1) {
+          data.cell.styles.fillColor = data.cell.styles.fillColor || [248, 250, 252];
+        }
       }
     });
     var fname = 'BruntWork_PL_' + (_rangeFrom || 'all') + '_' + (_rangeTo || 'latest') + '_' + _view + '.pdf';
