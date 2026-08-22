@@ -1181,11 +1181,30 @@ function render() {
       if (!kd.some(function(v){ return v !== null; })) return;
       dsets.push({ type:'line', label:ks.label, data:kd, _fmt:ks.fmt, _aux:!!ks.perFTE, borderColor:color, backgroundColor:'transparent', borderWidth:2.5, tension:.3, pointRadius:3,
         datalabels: manySeries ? { display:false } : { display:true, anchor:'end', align:'top', color:color, font:{size:9,weight:'bold'}, formatter:fmtLabel[ks.fmt] } });
-      // Dashed target line from the KPI tracker's monthly targets
-      if (_showBudget && !ks.perFTE) {
-        var kt = kpiVals.map(function(p){ var v = p && p.tgt ? p.tgt[ks.field] : null; return (v === null || v === undefined) ? null : v; });
+      // Dashed target line from the KPI tracker's monthly targets. For per-FTE
+      // metrics the target is derived: budget P&L revenue (or GP) divided by
+      // the month's target Active FTE, averaged over the period like actuals.
+      if (_showBudget) {
+        var kt;
+        if (ks.perFTE) {
+          var tsums = {}, tcounts = {};
+          _bud.forEach(function(mo) {
+            if (!inRange(mo.month)) return;
+            var pk = perOf(mo.month);
+            if (!(pk in shared.pIndex)) return;
+            var n = lineVal(mo);
+            var t = _kpiTgt && _kpiTgt[mo.month] ? _kpiTgt[mo.month].active_fte : null;
+            if (n === null || t === null || t === undefined || isNaN(t) || !t) return;
+            var pi3 = shared.pIndex[pk];
+            tsums[pi3] = (tsums[pi3] || 0) + n / t;
+            tcounts[pi3] = (tcounts[pi3] || 0) + 1;
+          });
+          kt = shared.periods.map(function(_, ci){ return tcounts[ci] ? Math.round(tsums[ci] / tcounts[ci]) : null; });
+        } else {
+          kt = kpiVals.map(function(p){ var v = p && p.tgt ? p.tgt[ks.field] : null; return (v === null || v === undefined) ? null : v; });
+        }
         if (kt.some(function(v){ return v !== null; })) {
-          dsets.push({ type:'line', label:'Target ' + ks.label, data:kt, _fmt:ks.fmt, borderColor:color, backgroundColor:'transparent', borderWidth:1.5, borderDash:[6,4], tension:0, pointRadius:0, pointHoverRadius:4 });
+          dsets.push({ type:'line', label:'Target ' + ks.label, data:kt, _fmt:ks.fmt, _aux:!!ks.perFTE, borderColor:color, backgroundColor:'transparent', borderWidth:1.5, borderDash:[6,4], tension:0, pointRadius:0, pointHoverRadius:4 });
         }
       }
       return;
