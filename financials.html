@@ -1317,8 +1317,18 @@ var _kpi = null; // [{key:'YYYY-MM', vals:[...]}], sorted ascending; null until 
 // totalHires uses col AE (Total Hires, sales + CSM teams, FTE from May 2023) — col K is sales-team-only hires.
 var KPI_COL = { activeFTE:2, mqls:4, totalHires:30, adsSpend:13, churnedFTE:32, churnRate:33, existingClients:38 };
 // Active client counts for months missing from the KPI sheet (col AM starts
-// Jan 2024). Source: Total Customers report supplied by Winston, Aug 2026.
-var CLIENT_FILL = { '2023-07':901, '2023-08':991, '2023-09':1039, '2023-10':1095, '2023-11':1130, '2023-12':1152 };
+// Jan 2024). Sources supplied by Winston, Aug 2026: Total Customers report
+// (Jul-Dec 2023) and historical counts back to Jul 2020. Months before
+// Jul 2021 predate all other dashboard data but are kept for completeness.
+var CLIENT_FILL = {
+  '2020-07':1, '2020-08':1, '2020-09':4, '2020-10':7, '2020-11':7, '2020-12':7,
+  '2021-01':7, '2021-02':15, '2021-03':38, '2021-04':55, '2021-05':68, '2021-06':99,
+  '2021-07':120, '2021-08':133, '2021-09':165, '2021-10':204, '2021-11':227, '2021-12':219,
+  '2022-01':232, '2022-02':288, '2022-03':340, '2022-04':342, '2022-05':382, '2022-06':416,
+  '2022-07':438, '2022-08':464, '2022-09':487, '2022-10':546, '2022-11':588, '2022-12':601,
+  '2023-01':630, '2023-02':677, '2023-03':721, '2023-04':777, '2023-05':848, '2023-06':881,
+  '2023-07':901, '2023-08':991, '2023-09':1039, '2023-10':1095, '2023-11':1130, '2023-12':1152
+};
 // MQLs for the Nov 2022 - Feb 2023 sheet gap: interpolated between the real
 // Oct 2022 (663) and Mar 2023 (743) values, with a seasonal December dip.
 // Approved by Winston (Aug 2026) as indicative on-trend estimates.
