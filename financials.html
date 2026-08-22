@@ -264,7 +264,10 @@ var KPI_SERIES = {
   'kpi:revPerFTE': { label: 'Revenue per Active FTE (monthly avg)', perFTE: 'rev', fmt: 'money' },
   'kpi:gpPerFTE':  { label: 'Gross Profit per Active FTE (monthly avg)', perFTE: 'gp', fmt: 'money' }
 };
-function chipName(k) { return RATIOS[k] ? RATIOS[k].label : (KPI_SERIES[k] ? KPI_SERIES[k].label : k.split('|')[0]); }
+// Synthetic chart series mirroring the P&L table's roll-up display rows.
+var SYN_LABEL = { 'roll:cogsOther': 'Other (Cost of Sales)', 'roll:misc': 'Miscellaneous', 'below:income': 'Other Income', 'below:expense': 'Other Expenses', 'below:tax': 'Tax Expenses' };
+var SYN_GROUP = { 'roll:cogsOther': 'Cost of Sales', 'roll:misc': 'Expenses', 'below:income': 'Other Income', 'below:expense': 'Other Expenses', 'below:tax': 'Tax Expenses' };
+function chipName(k) { return SYN_LABEL[k] || (RATIOS[k] ? RATIOS[k].label : (KPI_SERIES[k] ? KPI_SERIES[k].label : k.split('|')[0])); }
 function addChartLine(k) {
   if (!k) return;
   if (_selLines.indexOf(k) === -1) { _selLines.push(k); render(); }
@@ -329,7 +332,7 @@ function renderLinePicker(availList) {
   var groups = {};
   availList.forEach(function(a) {
     if (_selLines.indexOf(a.key) !== -1) return;
-    var g = groupOf[a.key] || 'Other';
+    var g = SYN_GROUP[a.key] || groupOf[a.key] || 'Other';
     if (GROUP_ORDER.indexOf(g) === -1) g = 'Other';
     (groups[g] = groups[g] || []).push(a);
   });
@@ -958,17 +961,146 @@ function render() {
 
   // Main chart: user-selectable line series (chips + add dropdown)
   var baseMx = mxA || mxB;
-  var availMap = {}, availList = [];
-  baseMx.order.forEach(function(o, ri) {
-    if (!baseMx.matrix[ri].some(function(v){ return v !== null && v !== 0; })) return;
-    var k = o.name + '|' + o.occ;
-    if (availMap[k]) return;
-    availMap[k] = true;
-    availList.push({ key: k, name: o.name });
-  });
   var actRow = {}, budRow = {};
   if (mxA) mxA.order.forEach(function(o, ri){ actRow[o.name + '|' + o.occ] = mxA.matrix[ri]; });
   if (mxB) mxB.order.forEach(function(o, ri){ budRow[o.name + '|' + o.occ] = mxB.matrix[ri]; });
+
+  // Display-only roll-ups (stored data untouched), shared by the chart picker
+  // and the P&L table: small COGS lines combine into an "Other" row, admin
+  // salary components into Administrative Staff - Operations, sundry expense
+  // lines into Miscellaneous, and everything below Operating Profit into
+  // consolidated Other Income / Other Expenses / Tax Expenses rows.
+  var TBL_ROLLUP = {
+    'Client Recharge': 'cogsOther',
+    'Cognitive': 'cogsOther',
+    'Staff Incentives Payout': 'cogsOther',
+    'Cogntiv Non-Taxable Compensation': 'cogsOther',
+    'Administrative Staff - 13th Month Pay': 'adminOps',
+    'Administrative Staff - Executive': 'adminOps',
+    'Administrative Staff - SSS/PHIC/HDMF Contribution': 'adminOps',
+    'Employee CPF': 'adminOps',
+    'Employer CPF': 'adminOps',
+    'SG Salaries & Wages': 'adminOps',
+    'Skills Development Levy (SDL)': 'adminOps',
+    'Salaries & Wages': 'adminOps',
+    'Wages and Salaries - De Minimis Benefits': 'adminOps',
+    'Redundancy Pay': 'adminOps',
+    'Bank Fees': 'misc',
+    'Filing Fees': 'misc',
+    'Freight & Courier': 'misc',
+    'Merchant Fees': 'misc',
+    'Unallocated expense': 'misc',
+    'IT and office equipment expenses': 'misc',
+    'Printing & Stationery': 'misc',
+    'Depreciation': 'deprec' // displayed below Operating Profit, inside Other Expenses
+  };
+  var nPer = shared.periods.length;
+  function mergeArrays(a, b) {
+    if (!a && !b) return null;
+    var out = [];
+    for (var i = 0; i < nPer; i++) {
+      var x = a ? a[i] : null, y = b ? b[i] : null;
+      out.push((x === null || x === undefined) && (y === null || y === undefined) ? null : (x || 0) + (y || 0));
+    }
+    return out;
+  }
+  // Glossary of what got rolled up where (rendered under the tables).
+  var glossary = {};
+  function glAdd(disp, nm) {
+    glossary[disp] = glossary[disp] || [];
+    if (glossary[disp].indexOf(nm) === -1) glossary[disp].push(nm);
+  }
+  var GL_GROUP = { cogsOther: 'Other (Cost of Sales)', adminOps: 'Administrative Staff - Operations', misc: 'Miscellaneous', deprec: 'Other Expenses (below Operating Profit)' };
+  var rollAct = {}, rollBud = {};
+  baseMx.order.forEach(function(o) {
+    var g = TBL_ROLLUP[o.name];
+    if (!g) return;
+    glAdd(GL_GROUP[g], o.name);
+    var key = o.name + '|' + o.occ;
+    if (actRow[key]) rollAct[g] = mergeArrays(rollAct[g], actRow[key]);
+    if (budRow[key]) rollBud[g] = mergeArrays(rollBud[g], budRow[key]);
+  });
+  var tActRow = Object.assign({}, actRow), tBudRow = Object.assign({}, budRow);
+  var opsKey = null;
+  baseMx.order.forEach(function(o) { if (!opsKey && o.name === 'Administrative Staff - Operations') opsKey = o.name + '|' + o.occ; });
+  if (opsKey && (rollAct.adminOps || rollBud.adminOps)) {
+    tActRow[opsKey] = mergeArrays(actRow[opsKey], rollAct.adminOps);
+    tBudRow[opsKey] = mergeArrays(budRow[opsKey], rollBud.adminOps);
+  }
+  function cellVal(key, mode, ci) {
+    var a = tActRow[key] ? tActRow[key][ci] : null;
+    var b = tBudRow[key] ? tBudRow[key][ci] : null;
+    if (mode === 'actual') return a;
+    if (mode === 'budget') return b;
+    return (a !== null && b !== null) ? a - b : null;
+  }
+  function rollVal(group, mode, ci) {
+    var a = rollAct[group] ? rollAct[group][ci] : null;
+    var b = rollBud[group] ? rollBud[group][ci] : null;
+    if (mode === 'actual') return a;
+    if (mode === 'budget') return b;
+    return (a !== null && b !== null) ? a - b : null;
+  }
+  // Everything below Operating Profit is consolidated into three display rows:
+  // Other Income, Other Expenses, and Tax Expenses — then Net Income.
+  var opIdx = -1, niIdx = -1;
+  baseMx.order.forEach(function(o, ri){
+    if (opIdx === -1 && /^operating profit/i.test(o.name)) opIdx = ri;
+    if (/^net (income|profit)/i.test(o.name)) niIdx = ri;
+  });
+  var lineGroups = buildLineGroups();
+  var below = { income: { a:null, b:null }, expense: { a:null, b:null }, tax: { a:null, b:null } };
+  if (opIdx !== -1) baseMx.order.forEach(function(o, ri) {
+    if (ri <= opIdx) return;
+    var nm = o.name;
+    if (TBL_ROLLUP[nm]) return; // already accumulated into a roll-up group
+    if (/^(earnings (before|after)|net (income|profit))/i.test(nm)) return; // hidden or kept as-is
+    var key = nm + '|' + o.occ;
+    // Rows between OP and Net Income are genuinely below-OP. Rows appended
+    // after Net Income come from older month layouts — hide the ones whose own
+    // months place them pre-OP (their totals already include them).
+    if (niIdx !== -1 && ri > niIdx) {
+      var g = lineGroups[key] || '';
+      if (g === 'Revenue' || g === 'Expenses' || g === 'Cost of Sales') return;
+    }
+    var bucket = /tax/i.test(nm) ? 'tax'
+      : (/income|recovered|revenue|business rights|trust distribution|unallocated sales/i.test(nm) ? 'income' : 'expense');
+    glAdd({ income: 'Other Income', expense: 'Other Expenses (below Operating Profit)', tax: 'Tax Expenses' }[bucket], nm);
+    if (actRow[key]) below[bucket].a = mergeArrays(below[bucket].a, actRow[key]);
+    if (budRow[key]) below[bucket].b = mergeArrays(below[bucket].b, budRow[key]);
+  });
+  // Depreciation is pushed below Operating Profit into the Other Expenses row.
+  if (rollAct.deprec) below.expense.a = mergeArrays(below.expense.a, rollAct.deprec);
+  if (rollBud.deprec) below.expense.b = mergeArrays(below.expense.b, rollBud.deprec);
+  function belowVal(bucket, mode, ci) {
+    var a = below[bucket].a ? below[bucket].a[ci] : null;
+    var b = below[bucket].b ? below[bucket].b[ci] : null;
+    if (mode === 'actual') return a;
+    if (mode === 'budget') return b;
+    return (a !== null && b !== null) ? a - b : null;
+  }
+
+  // Chart options mirror the displayed P&L rows: rolled-up lines are replaced
+  // by their display rows (Other, Miscellaneous, consolidated below-OP rows).
+  var availMap = {}, availList = [];
+  function availPush(key, name) { if (availMap[key]) return; availMap[key] = true; availList.push({ key: key, name: name }); }
+  function hasRowData(k) {
+    var a = tActRow[k], b = tBudRow[k];
+    return (a && a.some(function(v){ return v !== null && v !== 0; })) || (b && b.some(function(v){ return v !== null && v !== 0; }));
+  }
+  baseMx.order.forEach(function(o, ri) {
+    if (TBL_ROLLUP[o.name]) return;
+    if (opIdx !== -1 && ri > opIdx && !/^net (income|profit)/i.test(o.name)) return;
+    var k = o.name + '|' + o.occ;
+    if (o.name === 'Total Cost of Sales' && (rollAct.cogsOther || rollBud.cogsOther)) availPush('roll:cogsOther', SYN_LABEL['roll:cogsOther']);
+    if (o.name === 'Total Expenses' && (rollAct.misc || rollBud.misc)) availPush('roll:misc', SYN_LABEL['roll:misc']);
+    if (hasRowData(k)) availPush(k, o.name);
+    if (ri === opIdx) {
+      if (below.income.a || below.income.b) availPush('below:income', SYN_LABEL['below:income']);
+      if (below.expense.a || below.expense.b) availPush('below:expense', SYN_LABEL['below:expense']);
+      if (below.tax.a || below.tax.b) availPush('below:tax', SYN_LABEL['below:tax']);
+    }
+  });
 
   function keyForRow(patterns, fromBottom) {
     var idx = findLineIdx(baseMx, patterns, fromBottom);
@@ -1058,8 +1190,14 @@ function render() {
       }
       return;
     }
-    var nm = k.split('|')[0];
-    var a = actRow[k], b = budRow[k];
+    var nm = SYN_LABEL[k] || k.split('|')[0];
+    var a, b;
+    if (k === 'roll:cogsOther') { a = rollAct.cogsOther; b = rollBud.cogsOther; }
+    else if (k === 'roll:misc') { a = rollAct.misc; b = rollBud.misc; }
+    else if (k === 'below:income') { a = below.income.a; b = below.income.b; }
+    else if (k === 'below:expense') { a = below.expense.a; b = below.expense.b; }
+    else if (k === 'below:tax') { a = below.tax.a; b = below.tax.b; }
+    else { a = tActRow[k]; b = tBudRow[k]; } // merged rows so Admin Ops matches the table
     var isBar = (k === revKey || k === expKey);
     if (a && a.some(function(v){ return v !== null; })) {
       if (isBar) {
@@ -1148,81 +1286,6 @@ function render() {
   document.getElementById('tblTitle').textContent = 'Profit & Loss Reports';
 
   var baseTbl = mxA || mxB;
-
-  // Display-only roll-ups (stored data untouched): small COGS lines combine
-  // into an "Other" row before Total Cost of Sales; admin salary components
-  // combine into Administrative Staff - Operations.
-  var TBL_ROLLUP = {
-    'Client Recharge': 'cogsOther',
-    'Cognitive': 'cogsOther',
-    'Staff Incentives Payout': 'cogsOther',
-    'Cogntiv Non-Taxable Compensation': 'cogsOther',
-    'Administrative Staff - 13th Month Pay': 'adminOps',
-    'Administrative Staff - Executive': 'adminOps',
-    'Administrative Staff - SSS/PHIC/HDMF Contribution': 'adminOps',
-    'Employee CPF': 'adminOps',
-    'Employer CPF': 'adminOps',
-    'SG Salaries & Wages': 'adminOps',
-    'Skills Development Levy (SDL)': 'adminOps',
-    'Salaries & Wages': 'adminOps',
-    'Wages and Salaries - De Minimis Benefits': 'adminOps',
-    'Redundancy Pay': 'adminOps',
-    'Bank Fees': 'misc',
-    'Filing Fees': 'misc',
-    'Freight & Courier': 'misc',
-    'Merchant Fees': 'misc',
-    'Unallocated expense': 'misc',
-    'IT and office equipment expenses': 'misc',
-    'Printing & Stationery': 'misc',
-    'Depreciation': 'deprec' // displayed below Operating Profit, inside Other Expenses
-  };
-  var nPer = shared.periods.length;
-  function mergeArrays(a, b) {
-    if (!a && !b) return null;
-    var out = [];
-    for (var i = 0; i < nPer; i++) {
-      var x = a ? a[i] : null, y = b ? b[i] : null;
-      out.push((x === null || x === undefined) && (y === null || y === undefined) ? null : (x || 0) + (y || 0));
-    }
-    return out;
-  }
-  // Glossary of what got rolled up where (rendered under the tables).
-  var glossary = {};
-  function glAdd(disp, nm) {
-    glossary[disp] = glossary[disp] || [];
-    if (glossary[disp].indexOf(nm) === -1) glossary[disp].push(nm);
-  }
-  var GL_GROUP = { cogsOther: 'Other (Cost of Sales)', adminOps: 'Administrative Staff - Operations', misc: 'Miscellaneous', deprec: 'Other Expenses (below Operating Profit)' };
-  var rollAct = {}, rollBud = {};
-  baseTbl.order.forEach(function(o) {
-    var g = TBL_ROLLUP[o.name];
-    if (!g) return;
-    glAdd(GL_GROUP[g], o.name);
-    var key = o.name + '|' + o.occ;
-    if (actRow[key]) rollAct[g] = mergeArrays(rollAct[g], actRow[key]);
-    if (budRow[key]) rollBud[g] = mergeArrays(rollBud[g], budRow[key]);
-  });
-  var tActRow = Object.assign({}, actRow), tBudRow = Object.assign({}, budRow);
-  var opsKey = null;
-  baseTbl.order.forEach(function(o) { if (!opsKey && o.name === 'Administrative Staff - Operations') opsKey = o.name + '|' + o.occ; });
-  if (opsKey && (rollAct.adminOps || rollBud.adminOps)) {
-    tActRow[opsKey] = mergeArrays(actRow[opsKey], rollAct.adminOps);
-    tBudRow[opsKey] = mergeArrays(budRow[opsKey], rollBud.adminOps);
-  }
-  function cellVal(key, mode, ci) {
-    var a = tActRow[key] ? tActRow[key][ci] : null;
-    var b = tBudRow[key] ? tBudRow[key][ci] : null;
-    if (mode === 'actual') return a;
-    if (mode === 'budget') return b;
-    return (a !== null && b !== null) ? a - b : null;
-  }
-  function rollVal(group, mode, ci) {
-    var a = rollAct[group] ? rollAct[group][ci] : null;
-    var b = rollBud[group] ? rollBud[group][ci] : null;
-    if (mode === 'actual') return a;
-    if (mode === 'budget') return b;
-    return (a !== null && b !== null) ? a - b : null;
-  }
   var h = '<thead><tr><th' + (modes.length > 1 ? ' rowspan="2"' : '') + '>Line Item</th>';
   shared.labels.forEach(function(l){ h += '<th' + (modes.length > 1 ? ' colspan="' + modes.length + '" style="border-left:1px solid var(--border)"' : '') + '>' + l + '</th>'; });
   h += '</tr>';
@@ -1236,48 +1299,6 @@ function render() {
     h += '</tr>';
   }
   h += '</thead><tbody>';
-
-  // Everything below Operating Profit is consolidated into three display rows:
-  // Other Income (incl. Sales of Business Rights and interest income), Other
-  // Expenses, and Tax Expenses — then Net Income. Misplaced pre-OP components
-  // from older month layouts (grouped under Revenue/COGS/Expenses) are hidden,
-  // never rolled, since their months' totals already include them.
-  var opIdx = -1, niIdx = -1;
-  baseTbl.order.forEach(function(o, ri){
-    if (opIdx === -1 && /^operating profit/i.test(o.name)) opIdx = ri;
-    if (/^net (income|profit)/i.test(o.name)) niIdx = ri;
-  });
-  var lineGroups = buildLineGroups();
-  var below = { income: { a:null, b:null }, expense: { a:null, b:null }, tax: { a:null, b:null } };
-  if (opIdx !== -1) baseTbl.order.forEach(function(o, ri) {
-    if (ri <= opIdx) return;
-    var nm = o.name;
-    if (TBL_ROLLUP[nm]) return; // already accumulated into a roll-up group
-    if (/^(earnings (before|after)|net (income|profit))/i.test(nm)) return; // hidden or kept as-is
-    var key = nm + '|' + o.occ;
-    // Rows between OP and Net Income are genuinely below-OP. Rows appended
-    // after Net Income come from older month layouts — hide the ones whose own
-    // months place them pre-OP (their totals already include them).
-    if (niIdx !== -1 && ri > niIdx) {
-      var g = lineGroups[key] || '';
-      if (g === 'Revenue' || g === 'Expenses' || g === 'Cost of Sales') return;
-    }
-    var bucket = /tax/i.test(nm) ? 'tax'
-      : (/income|recovered|revenue|business rights|trust distribution|unallocated sales/i.test(nm) ? 'income' : 'expense');
-    glAdd({ income: 'Other Income', expense: 'Other Expenses (below Operating Profit)', tax: 'Tax Expenses' }[bucket], nm);
-    if (actRow[key]) below[bucket].a = mergeArrays(below[bucket].a, actRow[key]);
-    if (budRow[key]) below[bucket].b = mergeArrays(below[bucket].b, budRow[key]);
-  });
-  // Depreciation is pushed below Operating Profit into the Other Expenses row.
-  if (rollAct.deprec) below.expense.a = mergeArrays(below.expense.a, rollAct.deprec);
-  if (rollBud.deprec) below.expense.b = mergeArrays(below.expense.b, rollBud.deprec);
-  function belowVal(bucket, mode, ci) {
-    var a = below[bucket].a ? below[bucket].a[ci] : null;
-    var b = below[bucket].b ? below[bucket].b[ci] : null;
-    if (mode === 'actual') return a;
-    if (mode === 'budget') return b;
-    return (a !== null && b !== null) ? a - b : null;
-  }
   function emitRow(label, cls, valFn, fmtFn) {
     var fv = fmtFn || fmtMoney;
     h += '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + escH(label) + '</td>';
