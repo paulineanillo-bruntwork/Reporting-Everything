@@ -1024,6 +1024,13 @@ function render() {
       if (!kd.some(function(v){ return v !== null; })) return;
       dsets.push({ type:'line', label:ks.label, data:kd, _fmt:ks.fmt, _aux:!!ks.perFTE, borderColor:color, backgroundColor:'transparent', borderWidth:2.5, tension:.3, pointRadius:3,
         datalabels: manySeries ? { display:false } : { display:true, anchor:'end', align:'top', color:color, font:{size:9,weight:'bold'}, formatter:fmtLabel[ks.fmt] } });
+      // Dashed target line from the KPI tracker's monthly targets
+      if (_showBudget && !ks.perFTE) {
+        var kt = kpiVals.map(function(p){ var v = p && p.tgt ? p.tgt[ks.field] : null; return (v === null || v === undefined) ? null : v; });
+        if (kt.some(function(v){ return v !== null; })) {
+          dsets.push({ type:'line', label:'Target ' + ks.label, data:kt, _fmt:ks.fmt, borderColor:color, backgroundColor:'transparent', borderWidth:1.5, borderDash:[6,4], tension:0, pointRadius:0, pointHoverRadius:4 });
+        }
+      }
       return;
     }
     var nm = k.split('|')[0];
@@ -1347,7 +1354,19 @@ function loadKpi() {
     if (_act.length || _bud.length) render();
   }).catch(function(){ _kpi = []; });
 }
-function fmtKpiNum(v, dp) { return v === null ? '—' : v.toLocaleString('en-US', { maximumFractionDigits: dp === undefined ? 1 : dp }); }
+// Monthly KPI targets from the KPI tracker's Targets tab ("budget" for the
+// non-financial KPIs), keyed 'YYYY-MM'.
+var _kpiTgt = null;
+function loadKpiTargets() {
+  fetch('/api/kpi-targets').then(function(r){ return r.json(); }).then(function(d){
+    _kpiTgt = {};
+    if (d && !d.error && d.targets) {
+      d.targets.forEach(function(t){ if (t && t.month) _kpiTgt[String(t.month).slice(0, 7)] = t; });
+    }
+    if (_act.length || _bud.length) render();
+  }).catch(function(){ _kpiTgt = {}; });
+}
+function fmtKpiNum(v, dp) { return (v === null || v === undefined) ? '—' : v.toLocaleString('en-US', { maximumFractionDigits: dp === undefined ? 1 : dp }); }
 // Per-period KPI values aligned with the chart/table periods. Returns null
 // until the KPI history has loaded; entries are null for periods with no data.
 function computeKpiVals(shared) {
@@ -1369,6 +1388,20 @@ function computeKpiVals(shared) {
     mks.forEach(function(mk){ var v = col(mk, c); if (v !== null) s = (s === null ? 0 : s) + v; });
     return s;
   };
+  var tgtOf = function(mk, f) {
+    var t = _kpiTgt ? _kpiTgt[mk] : null;
+    var v = t ? t[f] : null;
+    return (v === null || v === undefined || isNaN(v)) ? null : v;
+  };
+  var tsum = function(mks, f) {
+    var s = null;
+    mks.forEach(function(mk){ var v = tgtOf(mk, f); if (v !== null) s = (s === null ? 0 : s) + v; });
+    return s;
+  };
+  var tavg = function(mks, f) {
+    var a = mks.map(function(mk){ return tgtOf(mk, f); }).filter(function(v){ return v !== null; });
+    return a.length ? a.reduce(function(x, y){ return x + y; }, 0) / a.length : null;
+  };
   function periodVals(pk) {
     var mks = (perMonths[pk] || []).sort();
     if (!mks.length) return null;
@@ -1383,12 +1416,26 @@ function computeKpiVals(shared) {
       var rates = mks.map(function(mk){ return col(mk, KPI_COL.churnRate); }).filter(function(v){ return v !== null; });
       churn = rates.length ? Math.round(rates.reduce(function(a, b){ return a + b; }, 0) / rates.length * 10) / 10 : null;
     }
+    // Targets aggregate like the actuals: flows sum, stocks take end of period,
+    // churn averages, cost per call = target spend / target calls.
+    var tHires = tsum(mks, 'fte_hires'), tLost = tsum(mks, 'lost_ftes'), tNet = tsum(mks, 'net_fte');
+    var tMqls = tsum(mks, 'mqls'), tSpend = tsum(mks, 'ads_spend');
+    var tgt = {
+      endFTE: tgtOf(last, 'active_fte'), // targets are stated as-at end of month
+      hires: tHires, lost: tLost,
+      netFTE: tNet !== null ? tNet : ((tHires !== null && tLost !== null) ? tHires - tLost : null),
+      churn: mks.length === 1 ? tgtOf(mks[0], 'churn_rate') : tavg(mks, 'churn_rate'),
+      mqls: tMqls,
+      cpc: (tSpend !== null && tMqls) ? tSpend / tMqls : (mks.length === 1 ? tgtOf(mks[0], 'cost_per_call') : tavg(mks, 'cost_per_call')),
+      clients: tgtOf(last, 'active_clients')
+    };
     return {
       endFTE: col(next, KPI_COL.activeFTE), // active FTE is stored as-at start of month; next month's start = this period's end
       hires: hires, lost: lost, churn: churn, mqls: mqls,
       netFTE: (hires !== null && lost !== null) ? hires - lost : null,
       cpc: (spend !== null && mqls) ? spend / mqls : null,
-      clients: (function(){ var v = col(last, KPI_COL.existingClients); return v !== null ? v : (CLIENT_FILL[last] !== undefined ? CLIENT_FILL[last] : null); })()
+      clients: (function(){ var v = col(last, KPI_COL.existingClients); return v !== null ? v : (CLIENT_FILL[last] !== undefined ? CLIENT_FILL[last] : null); })(),
+      tgt: tgt
     };
   }
   return shared.periods.map(function(pk){ return periodVals(pk); });
@@ -1397,23 +1444,65 @@ function renderKpiTable(shared) {
   var block = document.getElementById('kpiBlock');
   var vals = computeKpiVals(shared);
   if (!vals) { block.style.display = 'none'; return; }
+  var fN1 = function(v){ return fmtKpiNum(v); };
+  var fN0 = function(v){ return fmtKpiNum(v, 0); };
+  var fPct = function(v){ return (v === null || v === undefined) ? '—' : v.toFixed(1) + '%'; };
+  var fMon = function(v){ return (v === null || v === undefined) ? '—' : '$' + Math.round(v).toLocaleString('en-US'); };
+  var vN = function(v){ return (v > 0 ? '+' : '') + v.toLocaleString('en-US', { maximumFractionDigits: 1 }); };
+  var vPct = function(v){ return (v > 0 ? '+' : '') + v.toFixed(1) + 'pp'; };
+  var vMon = function(v){ return (v > 0 ? '+' : '') + '$' + Math.round(v).toLocaleString('en-US'); };
   var rows = [
-    { label: 'Active Staff FTE (end of period)', get: function(p){ return fmtKpiNum(p.endFTE); } },
-    { label: 'FTEs Hired', get: function(p){ return fmtKpiNum(p.hires); } },
-    { label: 'Lost FTEs', get: function(p){ return fmtKpiNum(p.lost); } },
-    { label: 'Net FTE Gain', get: function(p){ return fmtKpiNum(p.netFTE); } },
-    { label: 'Monthly Churn Rate (avg over period)', get: function(p){ return p.churn === null ? '—' : p.churn.toFixed(1) + '%'; } },
-    { label: 'Discovery Calls (MQLs) Booked', get: function(p){ return fmtKpiNum(p.mqls, 0); } },
-    { label: 'Cost Per Discovery Call', get: function(p){ return p.cpc === null ? '—' : '$' + Math.round(p.cpc).toLocaleString('en-US'); } },
-    { label: 'Number of Active Clients', get: function(p){ return fmtKpiNum(p.clients, 0); } }
+    { label: 'Active Staff FTE (end of period)', f: 'endFTE', fmt: fN1, vf: vN },
+    { label: 'FTEs Hired', f: 'hires', fmt: fN1, vf: vN },
+    { label: 'Lost FTEs', f: 'lost', fmt: fN1, vf: vN },
+    { label: 'Net FTE Gain', f: 'netFTE', fmt: fN1, vf: vN },
+    { label: 'Monthly Churn Rate (avg over period)', f: 'churn', fmt: fPct, vf: vPct },
+    { label: 'Discovery Calls (MQLs) Booked', f: 'mqls', fmt: fN0, vf: vN },
+    { label: 'Cost Per Discovery Call', f: 'cpc', fmt: fMon, vf: vMon },
+    { label: 'Number of Active Clients', f: 'clients', fmt: fN0, vf: vN }
   ];
   if (!vals.some(function(v){ return v !== null; })) { block.style.display = 'none'; return; }
-  var h = '<thead><tr><th>Metric</th>';
-  shared.labels.forEach(function(l){ h += '<th>' + escH(l) + '</th>'; });
-  h += '</tr></thead><tbody>';
+  // Target ("budget") sub-columns follow the same Actuals/Budget/Variance pills
+  // as the P&L table, and only appear when the KPI tracker has targets in range.
+  var hasTgt = vals.some(function(p){
+    return p && p.tgt && rows.some(function(r){ return p.tgt[r.f] !== null && p.tgt[r.f] !== undefined; });
+  });
+  var kModes = _tblModes.filter(function(m){ return m === 'actual' ? true : hasTgt; });
+  if (!kModes.length) kModes = ['actual'];
+  var kSub = { actual: 'Actual', budget: 'Target', variance: 'Var' };
+  var kMulti = kModes.length > 1;
+  document.getElementById('kpiTitle').textContent = 'Non-Financial KPIs' + (kMulti ? ' — ' + kModes.map(function(m){ return kSub[m]; }).join(' + ') : '');
+  var h = '<thead><tr><th' + (kMulti ? ' rowspan="2"' : '') + '>Metric</th>';
+  shared.labels.forEach(function(l){
+    h += '<th' + (kMulti ? ' colspan="' + kModes.length + '" style="border-left:1px solid var(--border)"' : '') + '>' + escH(l) + '</th>';
+  });
+  h += '</tr>';
+  if (kMulti) {
+    h += '<tr>';
+    shared.labels.forEach(function(){
+      kModes.forEach(function(m, mi){
+        h += '<th' + (mi === 0 ? ' style="border-left:1px solid var(--border)"' : '') + '>' + kSub[m] + '</th>';
+      });
+    });
+    h += '</tr>';
+  }
+  h += '</thead><tbody>';
   rows.forEach(function(r) {
     h += '<tr><td>' + escH(r.label) + '</td>';
-    vals.forEach(function(p){ h += '<td>' + (p === null ? '—' : r.get(p)) + '</td>'; });
+    vals.forEach(function(p) {
+      kModes.forEach(function(m, mi) {
+        var txt = '—';
+        if (p) {
+          var a = p[r.f], t = p.tgt ? p.tgt[r.f] : null;
+          if (a === undefined) a = null;
+          if (t === undefined) t = null;
+          if (m === 'actual') txt = r.fmt(a);
+          else if (m === 'budget') txt = r.fmt(t);
+          else txt = (a !== null && t !== null) ? r.vf(a - t) : '—';
+        }
+        h += '<td' + (mi === 0 && kMulti ? ' style="border-left:1px solid var(--border)"' : '') + '>' + txt + '</td>';
+      });
+    });
     h += '</tr>';
   });
   h += '</tbody>';
@@ -1444,6 +1533,7 @@ function load() {
     setRangePreset(12, true); // default view: last 12 months, monthly
     render();
     loadKpi();
+    loadKpiTargets();
   }).catch(function(e){
     if (e.message !== 'unauth') {
       document.getElementById('loading').style.display = 'none';
