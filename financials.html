@@ -1383,6 +1383,15 @@ function computeKpiVals(shared) {
     if (!(pk in shared.pIndex)) return;
     (perMonths[pk] = perMonths[pk] || []).push(m.key);
   });
+  // Months that have targets but no KPI history yet (future months) still get
+  // a period entry so target-only columns render.
+  if (_kpiTgt) Object.keys(_kpiTgt).forEach(function(mk) {
+    if (!inRange(mk)) return;
+    var pk = periodOf(mk);
+    if (!(pk in shared.pIndex)) return;
+    var arr = (perMonths[pk] = perMonths[pk] || []);
+    if (arr.indexOf(mk) === -1) arr.push(mk);
+  });
   var col = function(mk, c) { return byMonth[mk] ? kpiNum(byMonth[mk][c]) : null; };
   var sum = function(mks, c) {
     var s = null;
