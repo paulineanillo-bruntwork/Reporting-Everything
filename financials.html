@@ -979,9 +979,10 @@ function render() {
   var opKey = keyForRow(PAT.op, true) || keyForRow(PAT.net, true);
   _quickKeys = { rev: revKey, gp: gpKey, op: opKey, exp: expKey };
   var defaultKeys = [revKey, opKey].filter(Boolean);
-  if (!_selLines || !_selLines.length) _selLines = defaultKeys.slice();
+  // Defaults apply only on first load (null). An explicitly emptied selection
+  // stays empty — the chart is allowed to show nothing.
+  if (_selLines === null) _selLines = defaultKeys.slice();
   _selLines = _selLines.filter(function(k){ return availMap[k] || RATIOS[k] || KPI_SERIES[k]; });
-  if (!_selLines.length) _selLines = defaultKeys.slice();
   renderLinePicker(availList);
 
   var dsets = [];
@@ -1062,7 +1063,7 @@ function render() {
   var groupOfD = function(d){ return d._aux ? fmtOf(d) + '@aux' : fmtOf(d); };
   var uniqF = [];
   dsets.forEach(function(d){ var g = groupOfD(d); if (uniqF.indexOf(g) === -1) uniqF.push(g); });
-  var mainGroup = uniqF.length === 1 ? uniqF[0] : (uniqF.indexOf('money') !== -1 ? 'money' : uniqF[0]);
+  var mainGroup = uniqF.length === 0 ? 'money' : (uniqF.length === 1 ? uniqF[0] : (uniqF.indexOf('money') !== -1 ? 'money' : uniqF[0]));
   var mainFmt = mainGroup.split('@')[0];
   var auxFmts = [];
   if (uniqF.length > 1) {
