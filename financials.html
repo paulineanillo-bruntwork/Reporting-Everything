@@ -261,8 +261,8 @@ var KPI_SERIES = {
   'kpi:cpc':     { label: 'Cost Per Discovery Call', field: 'cpc', fmt: 'money' },
   'kpi:clients': { label: 'Active Clients', field: 'clients', fmt: 'num' },
   // Calculated: P&L actuals divided by Active Staff FTE (end of period)
-  'kpi:revPerFTE': { label: 'Revenue per Active FTE', perFTE: 'rev', fmt: 'money' },
-  'kpi:gpPerFTE':  { label: 'Gross Profit per Active FTE', perFTE: 'gp', fmt: 'money' }
+  'kpi:revPerFTE': { label: 'Revenue per Active FTE (monthly avg)', perFTE: 'rev', fmt: 'money' },
+  'kpi:gpPerFTE':  { label: 'Gross Profit per Active FTE (monthly avg)', perFTE: 'gp', fmt: 'money' }
 };
 function chipName(k) { return RATIOS[k] ? RATIOS[k].label : (KPI_SERIES[k] ? KPI_SERIES[k].label : k.split('|')[0]); }
 function addChartLine(k) {
@@ -1013,12 +1013,36 @@ function render() {
       if (!kpiVals) return; // KPI history not loaded yet — re-rendered when it arrives
       var kd;
       if (ks.perFTE) {
-        var numRow = metricRow(mxA, ks.perFTE === 'rev' ? PAT.rev : PAT.gp);
-        kd = kpiVals.map(function(p, ci) {
-          var fte = p ? p.endFTE : null;
-          var n = numRow ? numRow[ci] : null;
-          return (fte && n !== null) ? Math.round(n / fte) : null;
+        // Monthly-average metric: compute revenue (or GP) / active FTE for each
+        // month, then average the monthly ratios within each displayed period.
+        var pats = ks.perFTE === 'rev' ? PAT.rev : PAT.gp;
+        var lineVal = function(monthObj) {
+          for (var pi = 0; pi < pats.length; pi++) {
+            for (var li = 0; li < monthObj.lines.length; li++) {
+              if (pats[pi].test(monthObj.lines[li][0]) && monthObj.lines[li][1] !== null && monthObj.lines[li][1] !== undefined) return monthObj.lines[li][1];
+            }
+          }
+          return null;
+        };
+        var byM = {};
+        (_kpi || []).forEach(function(m){ byM[m.key] = m.vals; });
+        var fteOf = function(mk) { // end-of-month FTE = next month's start-of-month value
+          var nv = byM[monthAdd(mk, 1)];
+          return nv ? kpiNum(nv[KPI_COL.activeFTE]) : null;
+        };
+        var perOf = periodOfFn();
+        var sums = {}, counts = {};
+        _act.forEach(function(mo) {
+          if (!inRange(mo.month)) return;
+          var pk = perOf(mo.month);
+          if (!(pk in shared.pIndex)) return;
+          var n = lineVal(mo), f = fteOf(mo.month);
+          if (n === null || !f) return;
+          var pi2 = shared.pIndex[pk];
+          sums[pi2] = (sums[pi2] || 0) + n / f;
+          counts[pi2] = (counts[pi2] || 0) + 1;
         });
+        kd = shared.periods.map(function(_, ci){ return counts[ci] ? Math.round(sums[ci] / counts[ci]) : null; });
       } else {
         kd = kpiVals.map(function(p){ var v = p ? p[ks.field] : null; return (v === null || v === undefined) ? null : v; });
       }
